@@ -13,7 +13,7 @@ sources = [source.strip() for source in sources]
 util = Utility()
 
 if not os.access(sync_destination, os.W_OK):
-    print('kobo not plugged in')
+    print('kobo not plugged in, skipping sync')
 else:
     print('✓ kobo detected')
 

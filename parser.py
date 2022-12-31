@@ -6,12 +6,16 @@ import contextlib, io, zipfile
 
 class Utility:
 
+    # Private constructor
     def __init__(self):
         self.cli = MangaDexPy.MangaDex()
-        with open("mangadex.secret") as f:
-            secrets = f.readlines()
-            secrets = [line.strip() for line in secrets]
-        self.cli.login(secrets[0], secrets[1])
+
+    # Static instance method
+    @staticmethod
+    def instance():
+        if not hasattr(Utility, "_instance"):
+            Utility._instance = Utility()
+        return Utility._instance
 
     def extract(self, url):
         if('danke' in url):
@@ -93,7 +97,12 @@ class Utility:
         match = re.search(pattern, source)
         guid = match.group("guid")
 
-        manga = self.cli.get_manga(guid)
+        # Get the single instance of the Utility class
+        utility = Utility.instance()
+
+        # Use the cli attribute of the Utility instance
+        manga = utility.cli.get_manga(guid)
+        
         print(manga.title['en'], '- mangadex')
         tmp_dir = f"tmp/{manga.title['en']}"
 

@@ -198,10 +198,10 @@ class Utility:
 
                     self.create_cbz(tmp_chapter)
                     did_work = True
-                    print('  ✓', manga.title['en'], chapter.volume)
+                    print('  ✓', manga.title['en'], chapter.chapter)
 
         if not did_work:
-            print('  ✓ up-to-date: Chapter:', latest_chapter.volume)
+            print('  ✓ up-to-date: Chapter:', latest_chapter.chapter)
 
         return tmp_dir, manga.title['en'], did_work
 

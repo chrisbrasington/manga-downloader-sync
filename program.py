@@ -1,5 +1,5 @@
 from parser import Utility 
-import os
+import os, shutil
 
 sync_destination = '/run/media/chris/KOBOeReader/manga'
 
@@ -26,12 +26,11 @@ for source in sources:
 
         sync_dest = os.path.join(sync_destination, title)
 
-        # print('✓', title)
-
         print('Syncing:', tmp_dir, '<-->', sync_dest)
 
         for filename in os.listdir(tmp_dir):
             
+            filepath = os.path.join(tmp_dir, filename)
             sync_dest_file = os.path.join(sync_dest, filename)
 
             if os.access(sync_destination, os.W_OK):

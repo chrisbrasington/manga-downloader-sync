@@ -1,6 +1,8 @@
-import feedparser, os, requests, shutil, urllib
+import feedparser, os, re, requests, shutil, urllib
 from tqdm import tqdm
 import MangaDexPy
+from MangaDexPy import downloader
+import contextlib, io, zipfile
 
 class Utility:
     def extract(self, url):
@@ -23,8 +25,8 @@ class Utility:
             source = source.replace('https://danke.moe/read/manga/','https://danke.moe/read/other/rss/').strip('/')
 
         if('mangadex' in source):
-            print('supported - mangadex')
-            self.parse_mangadex(source)
+            result, name = self.parse_mangadex(source)
+            return True, result, name
 
         if('rss' in source):
             result, name = self.parse_rss_feed(source)
@@ -74,10 +76,50 @@ class Utility:
         return tmp_dir, feed.feed.title
 
     def parse_mangadex(self, source):
-        print(source)
+        pattern = r"/mangadex/(?P<guid>[\w-]+)/"
+        match = re.search(pattern, source)
+        guid = match.group("guid")
+
         cli = MangaDexPy.MangaDex()
-        
         with open("mangadex.secret") as f:
-            lines = f.readlines()
-            lines = [source.strip() for source in sources]
-            print(lines)
+            secrets = f.readlines()
+            secrets = [line.strip() for line in secrets]
+
+        manga = cli.get_manga(guid)
+        print(manga.title['en'], '| mangadex')
+        tmp_dir = f"tmp/{manga.title['en']}"
+
+        chapters = reversed(manga.get_chapters())
+        for chapter in chapters:
+            if(chapter.language == 'en'):
+
+                tmp_chapter = f"{tmp_dir}/{manga.title['en']} - {chapter.volume}"
+                print(manga.title['en'], chapter.volume, '...')
+                zip_name = f"{tmp_chapter}.cbz"
+                print(zip_name)
+
+                if not os.path.exists(zip_name):
+
+                    if not os.path.exists(tmp_chapter):
+                        os.makedirs(tmp_chapter)       
+
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        downloader.dl_chapter(chapter, tmp_chapter)
+
+                    # Create a new ZIP file
+                    cbz_file = zipfile.ZipFile(f"{tmp_chapter}.cbz", "w")
+
+                    # Walk through the files and directories in the comic directory
+                    for root, dirs, files in os.walk(tmp_chapter):
+                        # Add the files to the ZIP file
+                        for file in files:
+                            cbz_file.write(os.path.join(root, file))
+
+                    # Close the ZIP file
+                    cbz_file.close()
+
+                    shutil.rmtree(tmp_chapter)
+
+                print('✓', manga.title['en'], chapter.volume)
+
+        return tmp_dir, manga.title['en']

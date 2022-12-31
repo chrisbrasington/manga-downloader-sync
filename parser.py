@@ -148,10 +148,23 @@ class Utility:
 
     def parse_mangadex(self, source):
         did_work = False
+        guid = None
 
         pattern = r"/mangadex/(?P<guid>[\w-]+)/"
         match = re.search(pattern, source)
-        guid = match.group("guid")
+
+        if match:
+            guid = match.group("guid")
+        else:
+            pattern = r"/title/(?P<guid>[\w-]+)/"
+            match = re.search(pattern, source)
+            if match:
+                guid = match.group("guid")
+            else:
+                print('failure parsing mangadex guid')
+                return
+
+
 
         # Get the single instance of the Utility class
         utility = Utility.instance()
@@ -171,7 +184,7 @@ class Utility:
                 if latest_chapter is None:
                     latest_chapter = chapter
 
-                tmp_chapter = f"{tmp_dir}/{manga.title['en']} - {chapter.volume}"
+                tmp_chapter = f"{tmp_dir}/{manga.title['en']} - {chapter.chapter}" # chapter number not volume
                 # print(manga.title['en'], '- Chapter', chapter.volume)
                 zip_name = f"{tmp_chapter}.cbz"
 

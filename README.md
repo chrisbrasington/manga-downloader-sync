@@ -2,8 +2,9 @@
 
 ## site support
 
-- danke.moe (best)
-- mangadex
+- [danke.moe](https://danke.moe/) (best)
+- [mangadex](https://mangadex.org/)
+- generic rss feeds maybe ?
 
 ## device support
 

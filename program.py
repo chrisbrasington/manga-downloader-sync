@@ -34,7 +34,8 @@ for source in sources:
         sync_dest = os.path.join(sync_destination, title)
 
         if os.access(sync_destination, os.W_OK):
-            print('  Syncing:', tmp_dir, '<-->', sync_dest)
+            # print('  Syncing:', tmp_dir, '<-->', sync_dest)
+            print('  Syncing to device...')
 
             if combine:
                 if os.access(sync_destination, os.W_OK):

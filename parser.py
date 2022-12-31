@@ -43,7 +43,7 @@ class Utility:
         if('mangadex' in source):
             result, name, did_work = self.parse_mangadex(source)
             success = True
-        if('rss' in source):
+        elif('rss' in source):
             result, name, did_work = self.parse_rss_feed(source)
             success = True
         else: 
@@ -78,7 +78,7 @@ class Utility:
                 folder = os.path.join(dir, folder)
                 folders.append(folder)
 
-        print('combining:', folders)
+        print('combining:', len(folders))
         
         shutil.make_archive('combo', 'zip', dir)
         shutil.move(f'combo.zip', f'tmp/{file_name}/{file_name}.cbz')
@@ -106,7 +106,7 @@ class Utility:
 
         # Print each entry in the feed
         for entry in feed.entries:
-            print(' ', entry.title) #entry.link
+            # print(' ', entry.title) #entry.link
 
             result = self.extract(entry.link)
             is_known, dl, name = result
@@ -134,8 +134,15 @@ class Utility:
                                 # Update the progress bar manually
                                 t.update(len(chunk))
                     did_work = True
+                    print('  ✓', name)
 
-                print('  ✓', name)
+        if not did_work:
+            match = re.search(r'\d+', feed.entries[0].title)
+            if match:
+                number = match.group()
+                print(f'  ✓ up-to-date: Chapter:', number)
+            else:
+                print(f'  ✓ up-to-date: Chapter:', feed.entries[0].title)
 
         return tmp_dir, feed.feed.title, did_work
 
@@ -155,12 +162,17 @@ class Utility:
         print(manga.title['en'], '- mangadex')
         tmp_dir = f"tmp/{manga.title['en']}"
 
+        latest_chapter = None
+
         chapters = reversed(manga.get_chapters())
         for chapter in chapters:
             if(chapter.language == 'en'):
 
+                if latest_chapter is None:
+                    latest_chapter = chapter
+
                 tmp_chapter = f"{tmp_dir}/{manga.title['en']} - {chapter.volume}"
-                print(manga.title['en'], '- Chapter', chapter.volume)
+                # print(manga.title['en'], '- Chapter', chapter.volume)
                 zip_name = f"{tmp_chapter}.cbz"
 
                 if not os.path.exists(zip_name):
@@ -173,8 +185,10 @@ class Utility:
 
                     self.create_cbz(tmp_chapter)
                     did_work = True
+                    print('  ✓', manga.title['en'], chapter.volume)
 
-                print('  ✓', manga.title['en'], chapter.volume)
+        if not did_work:
+            print('  ✓ up-to-date: Chapter:', latest_chapter.volume)
 
         return tmp_dir, manga.title['en'], did_work
 

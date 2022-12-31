@@ -51,8 +51,7 @@ OL-cafe-crush-3.cbz: 100%|██████████████████
     ✓ OL-cafe-crush-3.cbz
     ✓ OL-cafe-crush-2.cbz
     ✓ OL-cafe-crush-1.cbz
-Dark Summoner to Dekiteiru - mangadex
-  ✓ up-to-date: Chapter: 1
-  Syncing to device...
-    ✓ Dark Summoner to Dekiteiru - 1.cbz
+Crest of the Stars - mangadex
+  ✓ Crest of the Stars 5
+  [...]
 ```

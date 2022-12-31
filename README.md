@@ -2,8 +2,14 @@
 
 ## site support
 
-danke.moe (best)
-mangadex
+- danke.moe (best)
+- mangadex
+
+## run
+
+Modify `sources.txt` run with python 3
+
+> python program.py  
 
 ## device support
 

@@ -33,6 +33,10 @@ https://danke.moe/read/manga/OL-cafe-crush/
 https://mangadex.org/title/e5148679-29de-4fff-b1a1-c77c44c41d5a/crest-of-the-stars
 ```
 
+## language
+
+Hardcoded to `en` atm
+
 ## output
 ```
 ✓ kobo detected

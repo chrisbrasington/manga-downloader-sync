@@ -23,7 +23,17 @@ Modify `sources.txt` run with python 3
 
 > python program.py  
 
-# output
+## sample sources
+
+> Note: `mangadex` is looking for the GUID out of the url
+
+```
+https://danke.moe/read/manga/the-tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere-girl/, True
+https://danke.moe/read/manga/OL-cafe-crush/
+https://mangadex.org/title/e5148679-29de-4fff-b1a1-c77c44c41d5a/crest-of-the-stars
+```
+
+## output
 ```
 ✓ kobo detected
 The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day - danke.moe

@@ -31,24 +31,70 @@ class Utility:
         base = 'https://danke.moe/api/download_chapter/'
         return f'{base}{dl}', f'{dl.replace("/","-")}.cbz'
 
-    def parse_feed(self, source):
+    def parse_feed(self, source, combine):
         if('danke.moe' in source and 'rss' not in source):
             source = source.replace('https://danke.moe/read/manga/','https://danke.moe/read/other/rss/').strip('/')
 
-        if('mangadex' in source):
-            result, name = self.parse_mangadex(source)
-            return True, result, name
+        success = False
+        result = None
+        name = None
+        did_work = False
 
+        if('mangadex' in source):
+            result, name, did_work = self.parse_mangadex(source)
+            success = True
         if('rss' in source):
-            result, name = self.parse_rss_feed(source)
-            return True, result, name
+            result, name, did_work = self.parse_rss_feed(source)
+            success = True
         else: 
             print(f'unsupported feed: {source}')
-            return False, None, None
+            success = False
+
+        if(combine) and did_work:
+            self.combine(result)
         
+        return success, result, name
+        
+
+    def combine(self, dir):
+        file_name = dir.replace("tmp/","")
+        if(os.path.exists(f'tmp/{file_name}/{file_name}.cbz')):
+            os.remove(f'tmp/{file_name}/{file_name}.cbz')
+
+        for root, dirs, files in os.walk(dir):
+            # Add the files to the ZIP file
+            for file in files:
+                if(file.endswith('cbz') or file.endswith('zip')):
+                    file = os.path.join(root, file)
+                    dest = file.rsplit('.',1)[0]
+                    with zipfile.ZipFile(file, "r") as zip_ref:
+                        zip_ref.extractall(dest)
+                    os.remove(file) 
+        
+        folders = []
+        for root, dirs, _ in os.walk(dir):
+            # folders.extend(dirs)
+            for folder in dirs:
+                folder = os.path.join(dir, folder)
+                folders.append(folder)
+
+        print('combining:', folders)
+        
+        shutil.make_archive('combo', 'zip', dir)
+        shutil.move(f'combo.zip', f'tmp/{file_name}/{file_name}.cbz')
+
+        # re-archive
+        for root, dirs, files in os.walk(f'tmp/{file_name}'):
+            for chapter in dirs:
+                chapter = f'{dir}/{chapter}'
+                print(chapter)
+                self.create_cbz(chapter)
+
     def parse_rss_feed(self, source):
         # Parse the RSS feed
         feed = feedparser.parse(source)
+
+        did_work = False
 
         # Print the feed information
         if('danke.moe' in feed.feed.link):
@@ -87,12 +133,15 @@ class Utility:
                                 f.write(chunk)
                                 # Update the progress bar manually
                                 t.update(len(chunk))
-                
+                    did_work = True
+
                 print('  ✓', name)
 
-        return tmp_dir, feed.feed.title
+        return tmp_dir, feed.feed.title, did_work
 
     def parse_mangadex(self, source):
+        did_work = False
+
         pattern = r"/mangadex/(?P<guid>[\w-]+)/"
         match = re.search(pattern, source)
         guid = match.group("guid")
@@ -122,20 +171,14 @@ class Utility:
                     with contextlib.redirect_stdout(io.StringIO()):
                         downloader.dl_chapter(chapter, tmp_chapter)
 
-                    # Create a new ZIP file
-                    cbz_file = zipfile.ZipFile(f"{tmp_chapter}.cbz", "w")
-
-                    # Walk through the files and directories in the comic directory
-                    for root, dirs, files in os.walk(tmp_chapter):
-                        # Add the files to the ZIP file
-                        for file in files:
-                            cbz_file.write(os.path.join(root, file))
-
-                    # Close the ZIP file
-                    cbz_file.close()
-
-                    shutil.rmtree(tmp_chapter)
+                    self.create_cbz(tmp_chapter)
+                    did_work = True
 
                 print('  ✓', manga.title['en'], chapter.volume)
 
-        return tmp_dir, manga.title['en']
+        return tmp_dir, manga.title['en'], did_work
+
+    def create_cbz(self, tmp_chapter):
+        shutil.make_archive(tmp_chapter, 'zip', tmp_chapter)
+        shutil.move(f'{tmp_chapter}.zip', f'{tmp_chapter}.cbz')
+        shutil.rmtree(tmp_chapter)

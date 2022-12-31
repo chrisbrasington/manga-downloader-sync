@@ -20,7 +20,14 @@ else:
 # Iterate over the list of sources
 for source in sources:
 
-    known, tmp_dir, title = util.parse_feed(source)
+    parts = source.split(",")
+
+    if len(parts) == 2:
+        source, combine = parts
+    else:
+        source, combine = parts[0], False
+
+    known, tmp_dir, title = util.parse_feed(source, combine)
 
     if(known):
 
@@ -29,13 +36,31 @@ for source in sources:
         if os.access(sync_destination, os.W_OK):
             print('  Syncing:', tmp_dir, '<-->', sync_dest)
 
-            for filename in os.listdir(tmp_dir):
-                
-                filepath = os.path.join(tmp_dir, filename)
-                sync_dest_file = os.path.join(sync_dest, filename)
-
+            if combine:
                 if os.access(sync_destination, os.W_OK):
+                    filename = f'{title}.cbz'
+                    filepath = os.path.join(tmp_dir, filename)
+                    sync_dest_file = os.path.join(sync_dest, filename)
+
                     if not os.path.exists(sync_dest_file):
                         os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
                         shutil.copy(filepath, sync_dest_file)
-                    print(f'    ✓ {filename}')
+                    print(f'    ✓ {filename} (combined)')
+
+            else:
+
+                for filename in os.listdir(tmp_dir):
+                    
+                    if(filename == f'{title}.cbz'):
+                        continue
+
+                    filepath = os.path.join(tmp_dir, filename)
+                    sync_dest_file = os.path.join(sync_dest, filename)
+
+                    if os.access(sync_destination, os.W_OK):
+                        if not os.path.exists(sync_dest_file):
+                            os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
+                            shutil.copy(filepath, sync_dest_file)
+                        print(f'    ✓ {filename}')
+
+    break

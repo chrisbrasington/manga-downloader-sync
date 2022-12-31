@@ -75,3 +75,9 @@ class Utility:
 
     def parse_mangadex(self, source):
         print(source)
+        cli = MangaDexPy.MangaDex()
+        
+        with open("mangadex.secret") as f:
+            lines = f.readlines()
+            lines = [source.strip() for source in sources]
+            print(lines)

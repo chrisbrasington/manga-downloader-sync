@@ -9,7 +9,7 @@ mangadex
 
 tested with `kobo libra 2` and will work with any device that supports cbz (zip) files
 
-![](.img/sample.png){width=20%}
+<img src=".img/sample.png" style="width:70%">
 
 # output
 ```

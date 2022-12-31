@@ -5,6 +5,14 @@ from MangaDexPy import downloader
 import contextlib, io, zipfile
 
 class Utility:
+
+    def __init__(self):
+        self.cli = MangaDexPy.MangaDex()
+        with open("mangadex.secret") as f:
+            secrets = f.readlines()
+            secrets = [line.strip() for line in secrets]
+        self.cli.login(secrets[0], secrets[1])
+
     def extract(self, url):
         if('danke' in url):
             url, name = self.extract_danke_moe(url)
@@ -85,12 +93,7 @@ class Utility:
         match = re.search(pattern, source)
         guid = match.group("guid")
 
-        cli = MangaDexPy.MangaDex()
-        with open("mangadex.secret") as f:
-            secrets = f.readlines()
-            secrets = [line.strip() for line in secrets]
-
-        manga = cli.get_manga(guid)
+        manga = self.cli.get_manga(guid)
         print(manga.title['en'], '- mangadex')
         tmp_dir = f"tmp/{manga.title['en']}"
 

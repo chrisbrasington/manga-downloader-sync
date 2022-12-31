@@ -1,5 +1,7 @@
 # manga-downloader-sync
 
+Downloads manga from the web into cbz files and syncs between local cache and a device folder. Cache ensures files will not redownload.
+
 ## site support
 
 - [danke.moe](https://danke.moe/) (best)
@@ -12,7 +14,7 @@ tested with `kobo libra 2` and will work with any device that supports cbz (zip)
 
 <img src=".img/sample.png" style="width:100%">
 
-## feature 
+## features
 `sources.txt` can support a flag to combine all chapters into a single file for thos manga that like to be a page or two a chapter
 
 > url, True

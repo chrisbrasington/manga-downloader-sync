@@ -21,7 +21,6 @@ class Utility:
 
     def parse_feed(self, source):
         if('danke.moe' in source and 'rss' not in source):
-            print('supported - danke.moe')
             source = source.replace('https://danke.moe/read/manga/','https://danke.moe/read/other/rss/').strip('/')
 
         if('mangadex' in source):
@@ -40,13 +39,16 @@ class Utility:
         feed = feedparser.parse(source)
 
         # Print the feed information
-        print(f'{feed.feed.title} - {feed.feed.link}')
+        if('danke.moe' in feed.feed.link):
+            print(f'{feed.feed.title} - danke.moe')
+        else:    
+            print(f'{feed.feed.title} - {feed.feed.link}')
 
         tmp_dir = f'tmp/{feed.feed.title}'
 
         # Print each entry in the feed
         for entry in feed.entries:
-            print(entry.title) #entry.link
+            print(' ', entry.title) #entry.link
 
             result = self.extract(entry.link)
             is_known, dl, name = result
@@ -73,6 +75,9 @@ class Utility:
                                 f.write(chunk)
                                 # Update the progress bar manually
                                 t.update(len(chunk))
+                
+                print('  ✓', name)
+
         return tmp_dir, feed.feed.title
 
     def parse_mangadex(self, source):
@@ -86,7 +91,7 @@ class Utility:
             secrets = [line.strip() for line in secrets]
 
         manga = cli.get_manga(guid)
-        print(manga.title['en'], '| mangadex')
+        print(manga.title['en'], '- mangadex')
         tmp_dir = f"tmp/{manga.title['en']}"
 
         chapters = reversed(manga.get_chapters())
@@ -94,9 +99,8 @@ class Utility:
             if(chapter.language == 'en'):
 
                 tmp_chapter = f"{tmp_dir}/{manga.title['en']} - {chapter.volume}"
-                print(manga.title['en'], chapter.volume, '...')
+                print(manga.title['en'], '- Chapter', chapter.volume)
                 zip_name = f"{tmp_chapter}.cbz"
-                print(zip_name)
 
                 if not os.path.exists(zip_name):
 
@@ -120,6 +124,6 @@ class Utility:
 
                     shutil.rmtree(tmp_chapter)
 
-                print('✓', manga.title['en'], chapter.volume)
+                print('  ✓', manga.title['en'], chapter.volume)
 
         return tmp_dir, manga.title['en']

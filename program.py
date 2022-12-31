@@ -26,17 +26,16 @@ for source in sources:
 
         sync_dest = os.path.join(sync_destination, title)
 
-        print('Syncing:', tmp_dir, '<-->', sync_dest)
+        if os.access(sync_destination, os.W_OK):
+            print('  Syncing:', tmp_dir, '<-->', sync_dest)
 
-        for filename in os.listdir(tmp_dir):
-            
-            filepath = os.path.join(tmp_dir, filename)
-            sync_dest_file = os.path.join(sync_dest, filename)
+            for filename in os.listdir(tmp_dir):
+                
+                filepath = os.path.join(tmp_dir, filename)
+                sync_dest_file = os.path.join(sync_dest, filename)
 
-            if os.access(sync_destination, os.W_OK):
-                if not os.path.exists(sync_dest_file):
-                    os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
-                    shutil.copy(filepath, sync_dest_file)
-                print(f'✓ {filename}')
-
-    break
+                if os.access(sync_destination, os.W_OK):
+                    if not os.path.exists(sync_dest_file):
+                        os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
+                        shutil.copy(filepath, sync_dest_file)
+                    print(f'    ✓ {filename}')

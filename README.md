@@ -9,7 +9,9 @@ mangadex
 
 tested with `kobo libra 2` and will work with any device that supports cbz (zip) files
 
-<img src=".img/sample.png" style="width:70%">
+<div style="text-align:center">
+  <img src=".img/sample.png" style="width:50%; display:block; margin:auto">
+</div>
 
 # output
 ```

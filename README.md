@@ -5,6 +5,12 @@
 - danke.moe (best)
 - mangadex
 
+## device support
+
+tested with `kobo libra 2` and will work with any device that supports cbz (zip) files
+
+<img src=".img/sample.png" style="width:80%">
+
 ## feature 
 `sources.txt` can support a flag to combine all chapters into a single file for thos manga that like to be a page or two a chapter
 
@@ -15,12 +21,6 @@
 Modify `sources.txt` run with python 3
 
 > python program.py  
-
-## device support
-
-tested with `kobo libra 2` and will work with any device that supports cbz (zip) files
-
-<img src=".img/sample.png" style="width:70%">
 
 # output
 ```

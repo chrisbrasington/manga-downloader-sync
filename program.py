@@ -1,6 +1,8 @@
 from parser import Utility 
-import feedparser, os, requests, urllib
+import feedparser, os, requests, shutil, urllib
 from tqdm import tqdm
+
+sync_destination = '/run/media/chris/KOBOeReader/manga'
 
 # Open the text file and read the lines into a list
 with open("sources.txt") as f:
@@ -17,7 +19,7 @@ for source in sources:
     feed = feedparser.parse(source)
 
     # Print the feed information
-    print(feed.feed.title, feed.feed.link, end='\n\n')
+    print(f'{feed.feed.title} - {feed.feed.link}')
 
     # Print each entry in the feed
     for entry in feed.entries:
@@ -49,5 +51,11 @@ for source in sources:
                             f.write(chunk)
                             # Update the progress bar manually
                             t.update(len(chunk))
-            else: 
-                print('✓ ', name)
+
+            sync_dest_file = os.path.join(feed.feed.title, filename)
+            
+            if not os.path.exists(sync_dest_file):
+                os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
+                shutil.copy(filepath, sync_dest_file)
+
+            print('✓ ', name)

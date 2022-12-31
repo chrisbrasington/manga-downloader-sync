@@ -5,6 +5,11 @@
 - danke.moe (best)
 - mangadex
 
+## feature 
+`sources.txt` can support a flag to combine all chapters into a single file for thos manga that like to be a page or two a chapter
+
+> url, True
+
 ## run
 
 Modify `sources.txt` run with python 3

@@ -1,9 +1,15 @@
-# manga-downloader
+# manga-downloader-sync
 
-## support
+## site support
 
 danke.moe (best)
-mangadex 
+mangadex
+
+## device support
+
+tested with `kobo libra 2` and will work with any device that supports cbz (zip) files
+
+![](.img/sample.png){width=20%}
 
 # output
 ```

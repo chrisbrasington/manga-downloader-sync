@@ -83,7 +83,4 @@ for source in sources:
                                     shutil.copy(filepath, sync_dest_file)
                                 print(f'    ✓ {filename}')
 
-    break
-
-
 util.print_summary()

@@ -6,6 +6,7 @@ import contextlib, io, zipfile
 from PIL import Image
 # from PyPDF2 import PdfReader, PdfWriter
 from pdfrw import PdfReader, PdfWriter   
+import textwrap
 
 class Utility:
 
@@ -179,7 +180,7 @@ class Utility:
         else:    
             print(f'{feed.feed.title} - {feed.feed.link}')
 
-        tmp_dir = f'tmp/{feed.feed.title}'
+        tmp_dir = f'tmp/{feed.feed.title}'  
 
         # Print each entry in the feed
         for entry in feed.entries:
@@ -255,6 +256,16 @@ class Utility:
         print(manga.title['en'], '- mangadex')
         tmp_dir = f"tmp/{manga.title['en']}"
 
+        desc = manga.desc['en'][:300].rstrip()
+        if len(manga.desc['en']) > 300:
+            desc += " [...]"
+
+        wrapped_desc = textwrap.fill(desc, width=80)
+        indented_desc = textwrap.indent(wrapped_desc, ' ')
+        print('  ~~~~~')
+        print(indented_desc)
+        print('  ~~~~~')
+
         latest_chapter = None
 
         chapters = reversed(manga.get_chapters())
@@ -273,8 +284,10 @@ class Utility:
                     if not os.path.exists(tmp_chapter):
                         os.makedirs(tmp_chapter)       
 
-                    with contextlib.redirect_stdout(io.StringIO()):
+                    print(f'  ✓ {tmp_chapter} please wait, downloading..')
+                    with contextlib.redirect_stdout(io.StringIO()):    
                         downloader.dl_chapter(chapter, tmp_chapter)
+                    print(f'  ✓ {tmp_chapter} done')
 
                     self.create_cbz(tmp_chapter)
                     did_work = True

@@ -83,8 +83,6 @@ class Utility:
                     if combine and file not in combo_file:
                         # print(f'ignoring {file}')
                         continue
-                    else:
-                        print('  combo file match!')
             
                     file_path = os.path.join(dir, file)
                     pdf_path = file_path.replace('cbz','pdf')
@@ -109,7 +107,10 @@ class Utility:
                                     for image in os.listdir(sub_dir):
                                         images.append(Image.open(os.path.join(sub_dir, image)))                                
                         else:
-                            for image in os.listdir('convert'):
+                            images_dr = os.listdir('convert')
+                            images_dr = sorted(images_dr, key=self.extract_number)
+
+                            for image in images_dr:
                                 images.append(Image.open(os.path.join('convert', image)))
 
                         converted_images = []
@@ -233,8 +234,6 @@ class Utility:
             else:
                 print('failure parsing mangadex guid')
                 return
-
-
 
         # Get the single instance of the Utility class
         utility = Utility.instance()

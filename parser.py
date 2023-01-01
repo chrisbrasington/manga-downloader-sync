@@ -3,6 +3,7 @@ from tqdm import tqdm
 import MangaDexPy
 from MangaDexPy import downloader
 import contextlib, io, zipfile
+from PIL import Image
 
 class Utility:
 
@@ -53,8 +54,77 @@ class Utility:
         if(combine) and did_work:
             self.combine(result)
         
-        return success, result, name
+        # conver from cbz to pdf
+        self.convert_to_pdf(result, combine)
         
+        return success, result, name
+    
+    def extract_number(self, s):
+        match = re.search(r'\d+(\.\d+)?', s)
+        value = match.group()
+        return int(value)
+
+
+    def convert_to_pdf(self,dir, combine):
+
+        print('converting...')
+
+        combo_file = f'{dir}.cbz'
+
+        print(combo_file)
+        
+        for root, dirs, files in os.walk(dir):
+            # Add the files to the ZIP file
+            for file in files:
+
+                # skip over existing pdfs
+                if 'pdf' not in file:
+
+                    if combine and file not in combo_file:
+                        # print(f'ignoring {file}')
+                        continue
+                    else:
+                        print('  combo file match!')
+            
+                    file_path = os.path.join(dir, file)
+                    pdf_path = file_path.replace('cbz','pdf')
+
+                    if not os.path.exists(pdf_path):
+                        print(f'  converting to pdf...')
+
+                        with zipfile.ZipFile(file_path, 'r') as cbz_file:    
+                            cbz_file.extractall('convert')
+                        
+                        num_pages = len(os.listdir('convert'))
+
+                        images = []
+
+                        directories = [d for d in os.listdir('convert') if os.path.isdir(os.path.join('convert', d))]
+                        directories = sorted(directories, key=self.extract_number)
+
+                        if len(directories) > 0:
+                            for image in directories:
+                                if(os.path.isdir(os.path.join('convert', image))):
+                                    sub_dir = os.path.join('convert', image)
+                                    for image in os.listdir(sub_dir):
+                                        images.append(Image.open(os.path.join(sub_dir, image)))                                
+                        else:
+                            for image in os.listdir('convert'):
+                                images.append(Image.open(os.path.join('convert', image)))
+
+                        converted_images = []
+
+                        # Iterate through the list of images and convert each one to grayscale
+                        for image in images:
+                            converted_images.append(image.convert("L"))
+
+                        # Save the images as a PDF
+                        converted_images[0].save(pdf_path, "PDF" ,resolution=100.0, save_all=True, append_images=converted_images[1:])
+
+                        shutil.rmtree('convert')
+
+                    else:
+                        print(f'  ✓ {pdf_path} exists')
 
     def combine(self, dir):
         file_name = dir.replace("tmp/","")

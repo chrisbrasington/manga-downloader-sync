@@ -6,7 +6,7 @@ Downloads images (manga) from the web into cbz files, converts to pdf,  and sync
 
 ## site support
 
-- [danke.moe](https://danke.moe/) (best)
+- [danke.moe](https://danke.moe/)
 - [mangadex](https://mangadex.org/)
 - generic rss feeds maybe ?
 

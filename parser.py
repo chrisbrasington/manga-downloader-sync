@@ -101,7 +101,15 @@ class Utility:
 
         match = re.search(r'\d+(\.\d+)?', s)
         value = match.group()
-        return float(value)
+
+        value = float(value)
+
+        # return as int if int (prettier print)
+        if value == int(value):
+            return int(value)
+
+        # return as float if float
+        return value
 
 
     def convert_to_pdf(self, dir, combine, author):

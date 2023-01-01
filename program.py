@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 from parser import Utility 
-import os, shutil
+import os, shutil, sys
 
+# change sync destination 
 sync_destination = '/run/media/chris/KOBOeReader/manga'
+if len(sys.argv) > 1:
+    sync_destination = sys.argv[1]
 
 # Open the text file and read the lines into a list
 with open("sources.txt") as f:
@@ -11,8 +14,10 @@ with open("sources.txt") as f:
 # Strip the leading and trailing whitespace from each line
 sources = [source.strip() for source in sources]
 
+# parsing utility
 util = Utility()
 
+# check device existence 
 if not os.access(sync_destination, os.W_OK):
     print('kobo not plugged in, skipping sync')
 else:
@@ -21,23 +26,26 @@ else:
 # Iterate over the list of sources
 for source in sources:
 
+    # url and secondary optional "combine" flag
     parts = source.split(",")
-
     if len(parts) == 2:
         source, combine = parts
     else:
         source, combine = parts[0], False
 
+    # parse feed if known source
     known, tmp_dir, title = util.parse_feed(source, combine)
 
+    # sync to device
     if(known):
 
+        # chapter destination
         sync_dest = os.path.join(sync_destination, title)
 
+        # if device exists
         if os.access(sync_destination, os.W_OK):
-            # print('  Syncing:', tmp_dir, '<-->', sync_dest)
-            # print('  Syncing to device...', end='')
 
+            # if combined, only move single file
             if combine:
                 if os.access(sync_destination, os.W_OK):
                     filename = f'{title}.pdf'
@@ -52,29 +60,35 @@ for source in sources:
 
                     print(f'    ✓ {filename} (combined)')
 
+            # if not combined move latest chapters
             else:
+
+                # find latest chapter on device
                 latest_chapter_num = 0
                 try:
                     latest_chapter = sorted(os.listdir(sync_dest), key=util.extract_number)[-1]     
                     latest_chapter_num = util.extract_number(latest_chapter)
                 except:
+                    # no chapters exists, that's fine
                     print('  No chapters on device')
 
+                # print latest on device
                 if latest_chapter_num != 0:
-                    if latest_chapter_num == int(latest_chapter_num):
-                        latest_chapter_num = int(latest_chapter_num)
                     print(f'  ✓ device: {latest_chapter_num}')          
 
+                # check every file on device against cache, pdf only
                 for filename in sorted(os.listdir(tmp_dir), key=util.extract_number):
 
                     if 'pdf' in filename:
+
+                        # get chapter number from file
                         current_chapter_num = util.extract_number(filename)
 
+                        # if cached chapter is newer than device chapter, sync to device
                         if latest_chapter_num < current_chapter_num:
 
                             filepath = os.path.join(tmp_dir, filename)
                             sync_dest_file = os.path.join(sync_dest, filename)
-
                             util.synced.append(filename)
 
                             if os.access(sync_destination, os.W_OK):
@@ -83,4 +97,5 @@ for source in sources:
                                     shutil.copy(filepath, sync_dest_file)
                                 print(f'    ✓ {filename}')
 
+# print summary of download and sync
 util.print_summary()

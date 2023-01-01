@@ -57,3 +57,17 @@ The Overworked Office Lady's Café Crush - danke.moe
   Latest chapter on device: 3
   [...]
 ```
+
+more information from mangadex:
+```
+Isekai Nihon - mangadex - shounen
+  (Monsters, Action, Romance, Survival, Adventure, Post-Apocalyptic, Magic, Isekai, Gore, Drama, Fantasy)
+  ~~~~~
+  As two worlds collide into one, a fateful counter between the "killer hero" and
+  the "elf princess from another world" has led to a great adventure to defeat the
+  even greater evil!
+  ~~~~~
+  ✓ up-to-date: Chapter: 1
+  Syncing to device...
+  Latest chapter on device: 2
+```

@@ -253,7 +253,7 @@ class Utility:
         if(len(manga.author) > 0):
             author = manga.author[0].name
 
-        print(manga.title['en'], '- mangadex')
+        print(manga.title['en'], f'- mangadex - {manga.type}')
         tmp_dir = f"tmp/{manga.title['en']}"
 
         desc = manga.desc['en'][:300].rstrip()
@@ -261,7 +261,14 @@ class Utility:
             desc += " [...]"
 
         wrapped_desc = textwrap.fill(desc, width=80)
-        indented_desc = textwrap.indent(wrapped_desc, ' ')
+        indented_desc = textwrap.indent(wrapped_desc, '  ')
+
+        tag_output = ''
+        for tag in manga.tags:
+            tag_output += tag.name['en'] + ', '
+        tag_output = tag_output.rstrip(', ')
+        print(' ', f'({tag_output})')
+
         print('  ~~~~~')
         print(indented_desc)
         print('  ~~~~~')

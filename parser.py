@@ -4,6 +4,8 @@ import MangaDexPy
 from MangaDexPy import downloader
 import contextlib, io, zipfile
 from PIL import Image
+# from PyPDF2 import PdfReader, PdfWriter
+from pdfrw import PdfReader, PdfWriter   
 
 class Utility:
 
@@ -42,10 +44,10 @@ class Utility:
         did_work = False
 
         if('mangadex' in source):
-            result, name, did_work = self.parse_mangadex(source)
+            result, name, did_work, author = self.parse_mangadex(source)
             success = True
         elif('rss' in source):
-            result, name, did_work = self.parse_rss_feed(source)
+            result, name, did_work, author = self.parse_rss_feed(source)
             success = True
         else: 
             print(f'unsupported feed: {source}')
@@ -55,7 +57,7 @@ class Utility:
             self.combine(result)
         
         # conver from cbz to pdf
-        self.convert_to_pdf(result, combine)
+        self.convert_to_pdf(result, combine, author)
         
         return success, result, name
     
@@ -65,7 +67,7 @@ class Utility:
         return int(value)
 
 
-    def convert_to_pdf(self,dir, combine):
+    def convert_to_pdf(self, dir, combine, author):
 
         print('converting...')
 
@@ -124,6 +126,11 @@ class Utility:
 
                         shutil.rmtree('convert')
 
+                        trailer = PdfReader(pdf_path)    
+                        trailer.Info.Author = author
+                        PdfWriter(pdf_path, trailer=trailer).write()
+
+
                     else:
                         print(f'  ✓ {pdf_path} exists')
 
@@ -166,6 +173,7 @@ class Utility:
         feed = feedparser.parse(source)
 
         did_work = False
+        author = ''
 
         # Print the feed information
         if('danke.moe' in feed.feed.link):
@@ -178,6 +186,8 @@ class Utility:
         # Print each entry in the feed
         for entry in feed.entries:
             # print(' ', entry.title) #entry.link
+            author = re.search(r'https://twitter\.com/(\w+)', entry.description).group(1)
+            # print(author)
 
             result = self.extract(entry.link)
             is_known, dl, name = result
@@ -215,11 +225,12 @@ class Utility:
             else:
                 print(f'  ✓ up-to-date: Chapter:', feed.entries[0].title)
 
-        return tmp_dir, feed.feed.title, did_work
+        return tmp_dir, feed.feed.title, did_work, author
 
     def parse_mangadex(self, source):
         did_work = False
         guid = None
+        author = ''
 
         pattern = r"/mangadex/(?P<guid>[\w-]+)/"
         match = re.search(pattern, source)
@@ -240,7 +251,9 @@ class Utility:
 
         # Use the cli attribute of the Utility instance
         manga = utility.cli.get_manga(guid)
-        
+        if(len(manga.author) > 0):
+            author = manga.author[0].name
+
         print(manga.title['en'], '- mangadex')
         tmp_dir = f"tmp/{manga.title['en']}"
 
@@ -272,7 +285,7 @@ class Utility:
         if not did_work:
             print('  ✓ up-to-date: Chapter:', latest_chapter.chapter)
 
-        return tmp_dir, manga.title['en'], did_work
+        return tmp_dir, manga.title['en'], did_work, author
 
     def create_cbz(self, tmp_chapter):
         shutil.make_archive(tmp_chapter, 'zip', tmp_chapter)

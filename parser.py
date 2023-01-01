@@ -1,13 +1,12 @@
-import feedparser, os, re, requests, shutil, urllib
-from tqdm import tqdm
 import MangaDexPy
 from MangaDexPy import downloader
-import contextlib, io, zipfile
+import feedparser, os, re, requests, shutil, urllib
+from tqdm import tqdm
+import contextlib, io, sys, textwrap, traceback, zipfile
 from PIL import Image
-# from PyPDF2 import PdfReader, PdfWriter
 from pdfrw import PdfReader, PdfWriter   
-import textwrap, sys, traceback
 
+# utility parser class
 class Utility:
 
     # Private constructor
@@ -23,160 +22,7 @@ class Utility:
             Utility._instance = Utility()
         return Utility._instance
 
-    def print_summary(self):
-        print()
-        print('~~~~~~~~~~~~~~~~~~~~~')
-
-        if len(self.summary) == 0 and len(self.synced) == 0:
-            print('Done, nothing new.')
-            return
-
-        if len(self.summary) > 0:
-            print('New content:')
-        
-        for entry in self.summary:
-            print(' ', entry)
-
-        if len(self.summary) == len(self.synced):
-            print('Synced to device')
-        else:
-
-            if len(self.summary) > 0 and len(self.synced) == 0:
-                print('Not synced to device')
-            elif len(self.synced) > 0:
-                print('Content missing from device, synced to device')
-                for s in self.synced:
-                    print(s)
-            else:
-                print('Downloaded:', self.summary)
-                print('Sycned:', self.sycned)
-
-
-
-    def extract(self, url):
-        if('danke' in url):
-            url, name = self.extract_danke_moe(url)
-            return True, url, name
-        else:
-            print('unsupported feed')
-            return False, None, dl
-
-    def extract_danke_moe(self, url):
-        dl = url.split("read/manga/")[-1].strip('/')
-        dl = dl.rsplit("/", 1)[0]
-        base = 'https://danke.moe/api/download_chapter/'
-        return f'{base}{dl}', f'{dl.replace("/","-")}.cbz'
-
-    def parse_feed(self, source, combine):
-        if('danke.moe' in source and 'rss' not in source):
-            source = source.replace('https://danke.moe/read/manga/','https://danke.moe/read/other/rss/').strip('/')
-
-        success = False
-        result = None
-        name = None
-        did_work = False
-
-        if('mangadex' in source):
-            result, name, did_work, author = self.parse_mangadex(source)
-            success = True
-        elif('rss' in source):
-            result, name, did_work, author = self.parse_rss_feed(source)
-            success = True
-        else: 
-            print(f'unsupported feed: {source}')
-            success = False
-
-        if(combine) and did_work:
-            self.combine(result)
-        
-        # conver from cbz to pdf
-        self.convert_to_pdf(result, combine, author)
-        
-        return success, result, name
-    
-    def extract_number(self, s):
-        
-        if type(s) == MangaDexPy.chapter.Chapter:
-            return float(s.chapter)
-
-        match = re.search(r'\d+(\.\d+)?', s)
-        value = match.group()
-
-        value = float(value)
-
-        # return as int if int (prettier print)
-        if value == int(value):
-            return int(value)
-
-        # return as float if float
-        return value
-
-
-    def convert_to_pdf(self, dir, combine, author):
-        
-        combo_file = f'{dir}.cbz'
-
-        # print('converting...')
-        # print(combo_file)
-        
-        for root, dirs, files in os.walk(dir):
-            # Add the files to the ZIP file
-            for file in files:
-
-                # skip over existing pdfs
-                if 'pdf' not in file:
-
-                    if combine and file not in combo_file:
-                        # print(f'ignoring {file}')
-                        continue
-            
-                    file_path = os.path.join(dir, file)
-                    pdf_path = file_path.replace('cbz','pdf')
-
-                    if not os.path.exists(pdf_path):
-                        print(f'  converting to pdf... {pdf_path}')
-
-                        with zipfile.ZipFile(file_path, 'r') as cbz_file:    
-                            cbz_file.extractall('convert')
-                        
-                        num_pages = len(os.listdir('convert'))
-
-                        images = []
-
-                        directories = [d for d in os.listdir('convert') if os.path.isdir(os.path.join('convert', d))]
-                        directories = sorted(directories, key=self.extract_number)
-
-                        if len(directories) > 0:
-                            for image in directories:
-                                if(os.path.isdir(os.path.join('convert', image))):
-                                    sub_dir = os.path.join('convert', image)
-                                    for image in os.listdir(sub_dir):
-                                        images.append(Image.open(os.path.join(sub_dir, image)))                                
-                        else:
-                            images_dr = os.listdir('convert')
-                            images_dr = sorted(images_dr, key=self.extract_number)
-
-                            for image in images_dr:
-                                images.append(Image.open(os.path.join('convert', image)))
-
-                        converted_images = []
-
-                        # Iterate through the list of images and convert each one to grayscale
-                        for image in images:
-                            converted_images.append(image.convert("L"))
-
-                        # Save the images as a PDF
-                        converted_images[0].save(pdf_path, "PDF" ,resolution=100.0, save_all=True, append_images=converted_images[1:])
-
-                        shutil.rmtree('convert')
-
-                        trailer = PdfReader(pdf_path)    
-                        trailer.Info.Author = author
-                        PdfWriter(pdf_path, trailer=trailer).write()
-
-                    # else:
-                    #     print(f'  ✓ {pdf_path} exists')
-
+    # combine all files into single pdf (if requested)
     def combine(self, dir):
         file_name = dir.replace("tmp/","")
         if(os.path.exists(f'tmp/{file_name}/{file_name}.cbz')):
@@ -194,7 +40,6 @@ class Utility:
         
         folders = []
         for root, dirs, _ in os.walk(dir):
-            # folders.extend(dirs)
             for folder in dirs:
                 folder = os.path.join(dir, folder)
                 folders.append(folder)
@@ -211,87 +56,161 @@ class Utility:
                 print(chapter)
                 self.create_cbz(chapter)
 
-    def parse_rss_feed(self, source):
-        # Parse the RSS feed
-        feed = feedparser.parse(source)
+    # convert individual file from cbz to pdf
+    def convert_to_pdf(self, dir, combine, author):
+        
+        # if combo requested, use {title}.cbz
+        combo_file = f'{dir}.cbz'
+        
+        for root, dirs, files in os.walk(dir):
+            # Add the files to the ZIP file
+            for file in files:
+                # skip over existing pdfs
+                if 'pdf' not in file:
 
-        did_work = False
-        author = ''
-
-        # Print the feed information
-        print()
-        if('danke.moe' in feed.feed.link):
-            print(f'{feed.feed.title} - danke.moe')
-        else:    
-            print(f'{feed.feed.title} - {feed.feed.link}')
-
-        tmp_dir = f'tmp/{feed.feed.title}'  
-
-        latest_chapter_num_on_disk = -1
-        try:
-            latest_chapter_num_on_disk = self.get_latest_chapter_num_on_disk(tmp_dir)
-        except Exception as e:
-            # this is ok, may not exist on disk yet
-            latest_chapter_num_on_disk = -1
-
-
-        print(f'  ✓ cache: {latest_chapter_num_on_disk}')
-
-        # Print each entry in the feed
-        for entry in feed.entries:
-            # print(' ', entry.title) #entry.link
-            author = re.search(r'https://twitter\.com/(\w+)', entry.description).group(1)
-            # print(author)
-
-            result = self.extract(entry.link)
-            is_known, dl, name = result
+                    # if combo, ignore other pdfs
+                    if combine and file not in combo_file:
+                        continue
             
-            if(is_known):
-                
-                if not os.path.exists(tmp_dir):
-                    os.makedirs(tmp_dir)            
+                    # get cbz and pdf name
+                    file_path = os.path.join(dir, file)
+                    pdf_path = file_path.replace('cbz','pdf')
 
-                filename = os.path.basename(name)
-                filepath = os.path.join(tmp_dir, filename)
+                    # if pdf not existing, convert
+                    if not os.path.exists(pdf_path):
+                        print(f'  converting to pdf... {pdf_path}')
 
-                current_chapter_num = self.extract_number(filename)
+                        # extract cbz/zip
+                        with zipfile.ZipFile(file_path, 'r') as cbz_file:    
+                            cbz_file.extractall('convert')
+                        
+                        num_pages = len(os.listdir('convert'))
 
-                # if not os.path.exists(filepath):
-                if current_chapter_num > latest_chapter_num_on_disk:
+                        images = []
+                        directories = [d for d in os.listdir('convert') if os.path.isdir(os.path.join('convert', d))]
+                        directories = sorted(directories, key=self.extract_number)
 
-                    # Send an HTTP request to get the file size (if available) and the file content
-                    response = requests.get(dl, headers={"Range": "bytes=0-"})
-                    file_size = int(response.headers.get("Content-Length", 0))
+                        # some chapters include subdirectories, allow a depth of 1
+                        if len(directories) > 0:
+                            for image in directories:
+                                if(os.path.isdir(os.path.join('convert', image))):
+                                    sub_dir = os.path.join('convert', image)
+                                    for image in os.listdir(sub_dir):
+                                        images.append(Image.open(os.path.join(sub_dir, image)))                               
+                        # most chapters have images at root
+                        else:
+                            images_dr = os.listdir('convert')
+                            images_dr = sorted(images_dr, key=self.extract_number)
 
-                    # Download the file and show a progress bar
-                    with tqdm(total=file_size, unit="B", unit_scale=True, miniters=1, desc=filename) as t:
-                        with open(filepath, "wb") as f:
-                            for chunk in response.iter_content(chunk_size=1024):
-                                # Write the chunk to the file
-                                f.write(chunk)
-                                # Update the progress bar manually
-                                t.update(len(chunk))
-                    did_work = True
+                            for image in images_dr:
+                                images.append(Image.open(os.path.join('convert', image)))
 
-                    self.summary.append(f'{current_chapter_num} - {feed.feed.title}')
+                        converted_images = []
 
-        if not did_work:
-            match = re.search(r'\d+', feed.entries[0].title)
-            if match:
-                number = match.group()
-                print(f'  ✓ up-to-date: Chapter:', number)
-            else:
-                print(f'  ✓ up-to-date: Chapter:', feed.entries[0].title)
+                        # Iterate through the list of images and convert each one to grayscale
+                        for image in images:
+                            converted_images.append(image.convert("L"))
 
-        return tmp_dir, feed.feed.title, did_work, author
+                        # Save the images as a PDF
+                        converted_images[0].save(pdf_path, "PDF" ,resolution=100.0, save_all=True, append_images=converted_images[1:])
 
+                        # remove temp image extraction folder
+                        shutil.rmtree('convert')
+
+                        # set author metadata of pdf
+                        trailer = PdfReader(pdf_path)    
+                        trailer.Info.Author = author
+                        PdfWriter(pdf_path, trailer=trailer).write()
+
+    # create cbz - rename zip to cbz
+    def create_cbz(self, tmp_chapter):
+        shutil.make_archive(tmp_chapter, 'zip', tmp_chapter)
+        shutil.move(f'{tmp_chapter}.zip', f'{tmp_chapter}.cbz')
+        shutil.rmtree(tmp_chapter)
+
+    # extract rss name from danke feed
+    def extract_danke_moe(self, url):
+        dl = url.split("read/manga/")[-1].strip('/')
+        dl = dl.rsplit("/", 1)[0]
+        base = 'https://danke.moe/api/download_chapter/'
+        return f'{base}{dl}', f'{dl.replace("/","-")}.cbz'
+
+    # extract number from chapter metadata or filename
+    def extract_number(self, s):
+        
+        if type(s) == MangaDexPy.chapter.Chapter:
+            return float(s.chapter)
+
+        match = re.search(r'\d+(\.\d+)?', s)
+        value = match.group()
+        value = float(value)
+
+        # return as int if int (prettier print)
+        if value == int(value):
+            return int(value)
+
+        # return as float if float
+        return value
+
+    # extract name from rss feed if known
+    def extract_rss_feed_name(self, url):
+        if('danke' in url):
+            url, name = self.extract_danke_moe(url)
+            return True, url, name
+        else:
+            print('unsupported feed')
+            return False, None, dl
+
+    # get latest chapter number on disk
+    def get_latest_chapter_num_on_disk(self, dir):
+        files = os.listdir(dir)       
+        file = sorted(files, key=self.extract_number)[-1]
+        result = self.extract_number(file)
+        if result == int(result):
+            return int(result)  # int prints prettier
+        return result # float
+
+    # parse feed, rss or mangadex
+    def parse_feed(self, source, combine):
+
+        # if danke, translate to rss
+        if('danke.moe' in source and 'rss' not in source):
+            source = source.replace('https://danke.moe/read/manga/','https://danke.moe/read/other/rss/').strip('/')
+
+        success = False
+        result = None
+        name = None
+        did_work = False
+        
+        # supported known types
+        if('mangadex' in source):
+            result, name, did_work, author = self.parse_mangadex(source)
+            success = True
+        elif('rss' in source):
+            result, name, did_work, author = self.parse_rss_feed(source)
+            success = True
+        else: 
+            print(f'unsupported feed: {source}')
+            success = False
+
+        # combine result into single pdf if requested
+        if(combine) and did_work:
+            self.combine(result)
+        
+        # conver from cbz to pdf
+        self.convert_to_pdf(result, combine, author)
+        
+        return success, result, name
+
+    # parse mangadex with MangaDex.py - do not log in
     def parse_mangadex(self, source):
         did_work = False
         guid = None
         author = ''
+
+        # extract manga GUID
         pattern = r"/mangadex/(?P<guid>[\w-]+)/?"
         match = re.search(pattern, source)
-
         if match:
             guid = match.group("guid")
         else:
@@ -311,6 +230,7 @@ class Utility:
         if(len(manga.author) > 0):
             author = manga.author[0].name
 
+        # print title/type
         print()
         if manga.type == None:
             print(manga.title['en'], f'- mangadex')
@@ -318,13 +238,14 @@ class Utility:
             print(manga.title['en'], f'- mangadex - {manga.type}')
         tmp_dir = f"tmp/{manga.title['en']}"
 
+        # print truncated description
         desc = manga.desc['en'][:300].rstrip()
         if len(manga.desc['en']) > 300:
             desc += " [...]"
-
         wrapped_desc = textwrap.fill(desc, width=80)
         indented_desc = textwrap.indent(wrapped_desc, '  ')
 
+        # print tags
         tag_output = ''
         for tag in manga.tags:
             tag_output += tag.name['en'] + ', '
@@ -335,8 +256,8 @@ class Utility:
         print(indented_desc)
         print('  ~~~~~')
 
+        # get latest chapter remote and on disk
         latest_chapter_remote = None
-
         latest_chapter_num_on_disk = -1
         try:
             latest_chapter_num_on_disk = self.get_latest_chapter_num_on_disk(tmp_dir)
@@ -344,30 +265,28 @@ class Utility:
             # this is ok, may not exist on disk yet
             latest_chapter_num_on_disk = -1
 
-        if latest_chapter_num_on_disk == int(latest_chapter_num_on_disk):
-            latest_chapter_num_on_disk = int(latest_chapter_num_on_disk)
+        # print cache info
         print(f'  ✓ cache: {latest_chapter_num_on_disk}')
 
+        # sort chapters by newest to earliest 
+        # (unlike rss mangadex order may be incoherent - with multiple languages and authors)
         chapters = reversed(sorted(manga.get_chapters(), key=self.extract_number))
 
-        # for c in chapters:
-        #     print(c.chapter, '-', c.id)
-        # sys.exit()
-
+        # for every chapter
         for chapter in chapters:
             if(chapter.language == 'en'):
-
+                
+                # largest number is latest chapter on remote
                 if latest_chapter_remote is None:
                     latest_chapter_remote = chapter
 
+                # setup cbz file name for download
                 tmp_chapter = f"{tmp_dir}/{manga.title['en']} - {chapter.chapter}" # chapter number not volume
-                # print(manga.title['en'], '- Chapter', chapter.volume)
                 zip_name = f"{tmp_chapter}.cbz"
-
                 chapter_num = self.extract_number(tmp_chapter)
-                # print(chapter_num, '-', tmp_chapter)
 
-                # if not os.path.exists(zip_name):
+                # download if remote chapter is newer than cached in number
+                # because feed may change for same content, do not strictly match the file/feed information
                 if chapter_num > latest_chapter_num_on_disk:
 
                     if not os.path.exists(tmp_chapter):
@@ -383,24 +302,130 @@ class Utility:
 
                     self.create_cbz(tmp_chapter)
                     did_work = True
-                    # print('  ✓', manga.title['en'], chapter.chapter)
-                # else:
-                    # break # exit cause exists on disk
 
+        # up to date
+        # matching local to remote
         if not did_work:
             print('  ✓ remote:', latest_chapter_remote.chapter)
 
         return tmp_dir, manga.title['en'], did_work, author
 
-    def get_latest_chapter_num_on_disk(self, dir):
-        files = os.listdir(dir)       
-        file = sorted(files, key=self.extract_number)[-1]
-        result = self.extract_number(file)
-        if result == int(result):
-            return int(result)
-        return result # float
+    # parse rss feed
+    def parse_rss_feed(self, source):
+        # Parse the RSS feed
+        feed = feedparser.parse(source)
 
-    def create_cbz(self, tmp_chapter):
-        shutil.make_archive(tmp_chapter, 'zip', tmp_chapter)
-        shutil.move(f'{tmp_chapter}.zip', f'{tmp_chapter}.cbz')
-        shutil.rmtree(tmp_chapter)
+        did_work = False
+        author = ''
+
+        # Print the feed information
+        print()
+        if('danke.moe' in feed.feed.link):
+            print(f'{feed.feed.title} - danke.moe')
+        else:    
+            print(f'{feed.feed.title} - {feed.feed.link}')
+
+        tmp_dir = f'tmp/{feed.feed.title}'  
+
+        # get latest chapter on disk cache
+        latest_chapter_num_on_disk = -1
+        try:
+            latest_chapter_num_on_disk = self.get_latest_chapter_num_on_disk(tmp_dir)
+        except Exception as e:
+            # this is ok, may not exist on disk yet
+            latest_chapter_num_on_disk = -1
+
+        print(f'  ✓ cache: {latest_chapter_num_on_disk}')
+
+        # Print each entry in the feed
+        for entry in feed.entries:
+
+            # print(' ', entry.title) #entry.link
+            # get author within reason
+            try:
+                author = re.search(r'https://twitter\.com/(\w+)', entry.description).group(1)
+            except:
+                author = ''
+
+            # see if feed is known
+            result = self.extract_rss_feed_name(entry.link)
+            is_known, dl, name = result
+            
+            if(is_known):
+                
+                if not os.path.exists(tmp_dir):
+                    os.makedirs(tmp_dir)            
+
+                # setup download name
+                filename = os.path.basename(name)
+                filepath = os.path.join(tmp_dir, filename)
+
+                current_chapter_num = self.extract_number(filename)
+
+                # download if remote chapter is newer than cached in number
+                # because feed may change for same content, do not strictly match the file/feed information
+                if current_chapter_num > latest_chapter_num_on_disk:
+
+                    # Send an HTTP request to get the file size (if available) and the file content
+                    response = requests.get(dl, headers={"Range": "bytes=0-"})
+                    file_size = int(response.headers.get("Content-Length", 0))
+
+                    # Download the file and show a progress bar
+                    with tqdm(total=file_size, unit="B", unit_scale=True, miniters=1, desc=filename) as t:
+                        with open(filepath, "wb") as f:
+                            for chunk in response.iter_content(chunk_size=1024):
+                                # Write the chunk to the file
+                                f.write(chunk)
+                                # Update the progress bar manually
+                                t.update(len(chunk))
+                    did_work = True
+
+                    self.summary.append(f'{current_chapter_num} - {feed.feed.title}')
+
+        # up to date
+        # matching local to remote
+        if not did_work:
+            match = re.search(r'\d+', feed.entries[0].title)
+            if match:
+                number = match.group()
+                print(f'  ✓ up-to-date: Chapter:', number)
+            else:
+                print(f'  ✓ up-to-date: Chapter:', feed.entries[0].title)
+
+        return tmp_dir, feed.feed.title, did_work, author
+
+    # print summary
+    def print_summary(self):
+        print()
+        print('~~~~~~~~~~~~~~~~~~~~~')
+
+        # nothing done
+        if len(self.summary) == 0 and len(self.synced) == 0:
+            print('Done, nothing new.')
+            return
+
+        # new downloaded content
+        if len(self.summary) > 0:
+            print('New content:')
+        
+        # print downloaded content
+        for entry in self.summary:
+            print(' ', entry)
+
+        # fully synced to device
+        if len(self.summary) == len(self.synced):
+            print('Synced to device')
+        else:
+
+            # downloaded but not synced
+            if len(self.summary) > 0 and len(self.synced) == 0:
+                print('Not synced to device')
+            # not downloaded but cached was newer than device and was synced
+            elif len(self.synced) > 0:
+                print('Content missing from device, synced to device')
+                for s in self.synced:
+                    print(s)
+            # unsure if possible, print all
+            else:
+                print('Downloaded:', self.summary)
+                print('Sycned:', self.sycned)

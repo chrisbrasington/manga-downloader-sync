@@ -8,7 +8,6 @@ Downloads images (manga) from the web into cbz files, converts to pdf,  and sync
 
 - [danke.moe](https://danke.moe/)
 - [mangadex](https://mangadex.org/)
-- generic rss feeds maybe ?
 
 ## chapter number matching
 

@@ -10,6 +10,10 @@ Downloads images (manga) from the web into cbz files, converts to pdf,  and sync
 - [mangadex](https://mangadex.org/)
 - generic rss feeds maybe ?
 
+## chapter number matching
+
+Even if the feed changes, the chapter number is attempted to be extracted from the feed. This will not redownload cached chapter numbers even if the file name would be different.
+
 ## device support
 
 tested with `kobo libra 2` and will work with any device that supports cbz (zip) files
@@ -22,6 +26,10 @@ tested with `kobo libra 2` and will work with any device that supports cbz (zip)
 `sources.txt` can support a flag to combine all chapters into a single file for thos manga that like to be a page or two a chapter
 
 > url, True
+
+## summary
+
+Summary will display both download and synced information. If device is absent, will inform. If only sync happens, will inform.
 
 ## run
 

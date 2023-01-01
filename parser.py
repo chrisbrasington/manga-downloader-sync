@@ -6,13 +6,15 @@ import contextlib, io, zipfile
 from PIL import Image
 # from PyPDF2 import PdfReader, PdfWriter
 from pdfrw import PdfReader, PdfWriter   
-import textwrap
+import textwrap, sys, traceback
 
 class Utility:
 
     # Private constructor
     def __init__(self):
         self.cli = MangaDexPy.MangaDex()
+        self.summary = []
+        self.synced = []
 
     # Static instance method
     @staticmethod
@@ -20,6 +22,36 @@ class Utility:
         if not hasattr(Utility, "_instance"):
             Utility._instance = Utility()
         return Utility._instance
+
+    def print_summary(self):
+        print()
+        print('~~~~~~~~~~~~~~~~~~~~~')
+
+        if len(self.summary) == 0 and len(self.synced) == 0:
+            print('Done, nothing new.')
+            return
+
+        if len(self.summary) > 0:
+            print('New content:')
+        
+        for entry in self.summary:
+            print(' ', entry)
+
+        if len(self.summary) == len(self.synced):
+            print('Synced to device')
+        else:
+
+            if len(self.summary) > 0 and len(self.synced) == 0:
+                print('Not synced to device')
+            elif len(self.synced) > 0:
+                print('Content missing from device, synced to device')
+                for s in self.synced:
+                    print(s)
+            else:
+                print('Downloaded:', self.summary)
+                print('Sycned:', self.sycned)
+
+
 
     def extract(self, url):
         if('danke' in url):
@@ -63,9 +95,13 @@ class Utility:
         return success, result, name
     
     def extract_number(self, s):
+        
+        if type(s) == MangaDexPy.chapter.Chapter:
+            return float(s.chapter)
+
         match = re.search(r'\d+(\.\d+)?', s)
         value = match.group()
-        return int(value)
+        return float(value)
 
 
     def convert_to_pdf(self, dir, combine, author):
@@ -175,12 +211,23 @@ class Utility:
         author = ''
 
         # Print the feed information
+        print()
         if('danke.moe' in feed.feed.link):
             print(f'{feed.feed.title} - danke.moe')
         else:    
             print(f'{feed.feed.title} - {feed.feed.link}')
 
         tmp_dir = f'tmp/{feed.feed.title}'  
+
+        latest_chapter_num_on_disk = -1
+        try:
+            latest_chapter_num_on_disk = self.get_latest_chapter_num_on_disk(tmp_dir)
+        except Exception as e:
+            # this is ok, may not exist on disk yet
+            latest_chapter_num_on_disk = -1
+
+
+        print(f'  ✓ cache: {latest_chapter_num_on_disk}')
 
         # Print each entry in the feed
         for entry in feed.entries:
@@ -199,7 +246,10 @@ class Utility:
                 filename = os.path.basename(name)
                 filepath = os.path.join(tmp_dir, filename)
 
-                if not os.path.exists(filepath):
+                current_chapter_num = self.extract_number(filename)
+
+                # if not os.path.exists(filepath):
+                if current_chapter_num > latest_chapter_num_on_disk:
 
                     # Send an HTTP request to get the file size (if available) and the file content
                     response = requests.get(dl, headers={"Range": "bytes=0-"})
@@ -214,7 +264,8 @@ class Utility:
                                 # Update the progress bar manually
                                 t.update(len(chunk))
                     did_work = True
-                    print('  ✓', name)
+
+                    self.summary.append(f'{current_chapter_num} - {feed.feed.title}')
 
         if not did_work:
             match = re.search(r'\d+', feed.entries[0].title)
@@ -230,14 +281,13 @@ class Utility:
         did_work = False
         guid = None
         author = ''
-
-        pattern = r"/mangadex/(?P<guid>[\w-]+)/"
+        pattern = r"/mangadex/(?P<guid>[\w-]+)/?"
         match = re.search(pattern, source)
 
         if match:
             guid = match.group("guid")
         else:
-            pattern = r"/title/(?P<guid>[\w-]+)/"
+            pattern = r"/title/(?P<guid>[\w-]+)/?"
             match = re.search(pattern, source)
             if match:
                 guid = match.group("guid")
@@ -253,7 +303,11 @@ class Utility:
         if(len(manga.author) > 0):
             author = manga.author[0].name
 
-        print(manga.title['en'], f'- mangadex - {manga.type}')
+        print()
+        if manga.type == None:
+            print(manga.title['en'], f'- mangadex')
+        else:    
+            print(manga.title['en'], f'- mangadex - {manga.type}')
         tmp_dir = f"tmp/{manga.title['en']}"
 
         desc = manga.desc['en'][:300].rstrip()
@@ -273,37 +327,70 @@ class Utility:
         print(indented_desc)
         print('  ~~~~~')
 
-        latest_chapter = None
+        latest_chapter_remote = None
 
-        chapters = reversed(manga.get_chapters())
+        latest_chapter_num_on_disk = -1
+        try:
+            latest_chapter_num_on_disk = self.get_latest_chapter_num_on_disk(tmp_dir)
+        except Exception as e:
+            # this is ok, may not exist on disk yet
+            latest_chapter_num_on_disk = -1
+
+        if latest_chapter_num_on_disk == int(latest_chapter_num_on_disk):
+            latest_chapter_num_on_disk = int(latest_chapter_num_on_disk)
+        print(f'  ✓ cache: {latest_chapter_num_on_disk}')
+
+        chapters = reversed(sorted(manga.get_chapters(), key=self.extract_number))
+
+        # for c in chapters:
+        #     print(c.chapter, '-', c.id)
+        # sys.exit()
+
         for chapter in chapters:
             if(chapter.language == 'en'):
 
-                if latest_chapter is None:
-                    latest_chapter = chapter
+                if latest_chapter_remote is None:
+                    latest_chapter_remote = chapter
 
                 tmp_chapter = f"{tmp_dir}/{manga.title['en']} - {chapter.chapter}" # chapter number not volume
                 # print(manga.title['en'], '- Chapter', chapter.volume)
                 zip_name = f"{tmp_chapter}.cbz"
 
-                if not os.path.exists(zip_name):
+                chapter_num = self.extract_number(tmp_chapter)
+                # print(chapter_num, '-', tmp_chapter)
+
+                # if not os.path.exists(zip_name):
+                if chapter_num > latest_chapter_num_on_disk:
 
                     if not os.path.exists(tmp_chapter):
                         os.makedirs(tmp_chapter)       
 
-                    print(f'  ✓ {tmp_chapter} please wait, downloading..')
+                    print(f'  ✓ downloading: {chapter_num}, please wait..')
+
+                    self.summary.append(f"{chapter_num} - {manga.title['en']}")
+
                     with contextlib.redirect_stdout(io.StringIO()):    
                         downloader.dl_chapter(chapter, tmp_chapter)
-                    print(f'  ✓ {tmp_chapter} done')
+                    print(f'  ✓ done: {chapter_num}')
 
                     self.create_cbz(tmp_chapter)
                     did_work = True
                     # print('  ✓', manga.title['en'], chapter.chapter)
+                # else:
+                    # break # exit cause exists on disk
 
         if not did_work:
-            print('  ✓ up-to-date: Chapter:', latest_chapter.chapter)
+            print('  ✓ remote:', latest_chapter_remote.chapter)
 
         return tmp_dir, manga.title['en'], did_work, author
+
+    def get_latest_chapter_num_on_disk(self, dir):
+        files = os.listdir(dir)       
+        file = sorted(files, key=self.extract_number)[-1]
+        result = self.extract_number(file)
+        if result == int(result):
+            return int(result)
+        return result # float
 
     def create_cbz(self, tmp_chapter):
         shutil.make_archive(tmp_chapter, 'zip', tmp_chapter)

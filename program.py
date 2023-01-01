@@ -36,7 +36,7 @@ for source in sources:
 
         if os.access(sync_destination, os.W_OK):
             # print('  Syncing:', tmp_dir, '<-->', sync_dest)
-            print('  Syncing to device...')
+            # print('  Syncing to device...', end='')
 
             if combine:
                 if os.access(sync_destination, os.W_OK):
@@ -47,6 +47,9 @@ for source in sources:
                     if not os.path.exists(sync_dest_file):
                         os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
                         shutil.copy(filepath, sync_dest_file)
+
+                        util.synced.append(filename)
+
                     print(f'    ✓ {filename} (combined)')
 
             else:
@@ -58,7 +61,9 @@ for source in sources:
                     print('  No chapters on device')
 
                 if latest_chapter_num != 0:
-                    print(f'  Latest chapter on device: {latest_chapter_num}')          
+                    if latest_chapter_num == int(latest_chapter_num):
+                        latest_chapter_num = int(latest_chapter_num)
+                    print(f'  ✓ device: {latest_chapter_num}')          
 
                 for filename in sorted(os.listdir(tmp_dir), key=util.extract_number):
 
@@ -70,8 +75,15 @@ for source in sources:
                             filepath = os.path.join(tmp_dir, filename)
                             sync_dest_file = os.path.join(sync_dest, filename)
 
+                            util.synced.append(filename)
+
                             if os.access(sync_destination, os.W_OK):
                                 if not os.path.exists(sync_dest_file):
                                     os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
                                     shutil.copy(filepath, sync_dest_file)
                                 print(f'    ✓ {filename}')
+
+    break
+
+
+util.print_summary()

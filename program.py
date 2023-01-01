@@ -50,16 +50,28 @@ for source in sources:
                     print(f'    ✓ {filename} (combined)')
 
             else:
+                latest_chapter_num = 0
+                try:
+                    latest_chapter = sorted(os.listdir(sync_dest), key=util.extract_number)[-1]     
+                    latest_chapter_num = util.extract_number(latest_chapter)
+                except:
+                    print('  No chapters on device')
 
+                if latest_chapter_num != 0:
+                    print(f'  Latest chapter on device: {latest_chapter_num}')          
 
-                for filename in os.listdir(tmp_dir):
+                for filename in sorted(os.listdir(tmp_dir), key=util.extract_number):
 
                     if 'pdf' in filename:
-                        filepath = os.path.join(tmp_dir, filename)
-                        sync_dest_file = os.path.join(sync_dest, filename)
+                        current_chapter_num = util.extract_number(filename)
 
-                        if os.access(sync_destination, os.W_OK):
-                            if not os.path.exists(sync_dest_file):
-                                os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
-                                shutil.copy(filepath, sync_dest_file)
-                            print(f'    ✓ {filename}')
+                        if latest_chapter_num < current_chapter_num:
+
+                            filepath = os.path.join(tmp_dir, filename)
+                            sync_dest_file = os.path.join(sync_dest, filename)
+
+                            if os.access(sync_destination, os.W_OK):
+                                if not os.path.exists(sync_dest_file):
+                                    os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
+                                    shutil.copy(filepath, sync_dest_file)
+                                print(f'    ✓ {filename}')

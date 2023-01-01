@@ -89,7 +89,7 @@ class Utility:
                     pdf_path = file_path.replace('cbz','pdf')
 
                     if not os.path.exists(pdf_path):
-                        print(f'  converting to pdf...')
+                        print(f'  converting to pdf... {pdf_path}')
 
                         with zipfile.ZipFile(file_path, 'r') as cbz_file:    
                             cbz_file.extractall('convert')

@@ -2,6 +2,8 @@
 
 Downloads images (manga) from the web into cbz files, converts to pdf,  and syncs between local cache and a device folder. Cache ensures files will not redownload.
 
+Only syncs newer chapters. If older chapters are deleted from the device, only chapters after the latest chapter on device will be added. If no chapters exist on device, all chapters will be synced to device
+
 ## site support
 
 - [danke.moe](https://danke.moe/) (best)

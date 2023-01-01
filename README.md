@@ -23,13 +23,19 @@ tested with `kobo libra 2` and will work with any device that supports cbz (zip)
 <img src=".img/sample2.jpg" style="width:100%">
 
 ## features
-`sources.txt` can support a flag to combine all chapters into a single file for thos manga that like to be a page or two a chapter
+
+### sources
+`sources.txt` can support a flag to combine all chapters into a single file for those manga that like to be a page or two a chapter
 
 > url, True
 
-## summary
+### summary of download/sync
 
 Summary will display both download and synced information. If device is absent, will inform. If only sync happens, will inform.
+
+### author
+
+Author is added to PDF metadata
 
 ## run
 

@@ -45,17 +45,15 @@ Hardcoded to `en` atm
 ```
 ✓ kobo detected
 The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day - danke.moe
-  ✓ up-to-date: Chapter: 83
+the-tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere-girl-83.cbz: 100%|██████████████████████████████████████████████████████████████████████| 5.73M/5.73M [00:00<00:00, 525MB/s]
+  ✓ the-tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere-girl-83.cbz
+  converting to pdf... tmp/The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day/the-tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere-girl-83.pdf
   Syncing to device...
-    ✓ The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day.cbz (combined)
+  Latest chapter on device: 82
+    ✓ the-tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere-girl-83.pdf
 The Overworked Office Lady's Café Crush - danke.moe
-OL-cafe-crush-3.cbz: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 15.1M/15.1M [00:00<00:00, 458MB/s]
-  ✓ OL-cafe-crush-3.cbz
+  ✓ up-to-date: Chapter: 3
   Syncing to device...
-    ✓ OL-cafe-crush-3.cbz
-    ✓ OL-cafe-crush-2.cbz
-    ✓ OL-cafe-crush-1.cbz
-Crest of the Stars - mangadex
-  ✓ Crest of the Stars 5
+  Latest chapter on device: 3
   [...]
 ```

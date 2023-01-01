@@ -68,12 +68,11 @@ class Utility:
 
 
     def convert_to_pdf(self, dir, combine, author):
-
-        print('converting...')
-
+        
         combo_file = f'{dir}.cbz'
 
-        print(combo_file)
+        # print('converting...')
+        # print(combo_file)
         
         for root, dirs, files in os.walk(dir):
             # Add the files to the ZIP file
@@ -130,9 +129,8 @@ class Utility:
                         trailer.Info.Author = author
                         PdfWriter(pdf_path, trailer=trailer).write()
 
-
-                    else:
-                        print(f'  ✓ {pdf_path} exists')
+                    # else:
+                    #     print(f'  ✓ {pdf_path} exists')
 
     def combine(self, dir):
         file_name = dir.replace("tmp/","")
@@ -280,7 +278,7 @@ class Utility:
 
                     self.create_cbz(tmp_chapter)
                     did_work = True
-                    print('  ✓', manga.title['en'], chapter.chapter)
+                    # print('  ✓', manga.title['en'], chapter.chapter)
 
         if not did_work:
             print('  ✓ up-to-date: Chapter:', latest_chapter.chapter)

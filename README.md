@@ -1,6 +1,6 @@
 # manga-downloader-sync
 
-Downloads manga from the web into cbz files and syncs between local cache and a device folder. Cache ensures files will not redownload.
+Downloads images (manga) from the web into cbz files, converts to pdf,  and syncs between local cache and a device folder. Cache ensures files will not redownload.
 
 ## site support
 

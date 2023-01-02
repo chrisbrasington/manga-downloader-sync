@@ -76,11 +76,10 @@ class Utility:
         # remove temp dir
         shutil.rmtree(working_dir)
 
-        print(f'  ✓ {file_name}.pdf')
+        print(f'\n  ✓ {file_name}.pdf')
 
     # convert individual file from cbz to pdf
     def convert_to_pdf(self, dir, author):
-        combine = False
 
         # if combo requested, use {title}.cbz
         combo_file = f'{dir}.cbz'
@@ -90,10 +89,6 @@ class Utility:
             for file in sorted(files, key=self.extract_number):
                 # skip over existing pdfs
                 if 'pdf' not in file:
-
-                    # if combo, ignore other pdfs
-                    if combine and file not in combo_file:
-                        continue
             
                     # get cbz and pdf name
                     file_path = os.path.join(dir, file)

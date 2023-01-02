@@ -44,6 +44,9 @@ for source in sources:
 
         # if device exists
         if os.access(sync_destination, os.W_OK):
+            
+            if not os.path.exists(sync_dest):
+                os.makedirs(sync_dest)
 
             # if combined, only move single file
             if combine:
@@ -65,8 +68,10 @@ for source in sources:
 
                     print(f'  ✓ synced: {file_name} (combined)')
 
+
+
             # if more than combo file exists in destination, update individual chapters too
-            if len(os.listdir(sync_dest)) > 1:
+            if len(os.listdir(sync_dest)) == 0 or len(os.listdir(sync_dest)) > 1:
 
                 # find latest chapter on device
                 latest_chapter_num = -1

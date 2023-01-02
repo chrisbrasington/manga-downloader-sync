@@ -258,11 +258,19 @@ class Utility:
 
         # print title/type
         print()
+        key = 'en'
+        if not 'en' in manga.title:
+            if 'ja-ro' in manga.title:
+                key = 'ja-ro'
+            else:
+                # first value in dictionary of title
+                key = next(iter(manga.title))
+
         if manga.type == None:
-            print(manga.title['en'], f'- mangadex')
+            print(manga.title[key], f'- mangadex')
         else:    
-            print(manga.title['en'], f'- mangadex - {manga.type}')
-        tmp_dir = f"tmp/{manga.title['en']}"
+            print(manga.title[key], f'- mangadex - {manga.type}')
+        tmp_dir = f"tmp/{manga.title[key]}"
 
         # print truncated description
         desc = manga.desc['en'][:300].rstrip()

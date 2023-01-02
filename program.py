@@ -64,7 +64,7 @@ for source in sources:
             else:
 
                 # find latest chapter on device
-                latest_chapter_num = 0
+                latest_chapter_num = -1
                 try:
                     latest_chapter = sorted(os.listdir(sync_dest), key=util.extract_number)[-1]     
                     latest_chapter_num = util.extract_number(latest_chapter)
@@ -96,6 +96,7 @@ for source in sources:
                                     os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
                                     shutil.copy(filepath, sync_dest_file)
                                 print(f'    ✓ {filename}')
+    break
 
 # print summary of download and sync
 util.print_summary()

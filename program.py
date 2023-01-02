@@ -56,6 +56,10 @@ for source in sources:
                         for prior_combo in glob.glob(f'{sync_dest}/*combo.pdf'):
                             os.remove(prior_combo)
 
+                        sync_dir = os.path.dirname(sync_dest_file)
+                        if not os.path.exists(sync_dir):
+                            os.makedirs(sync_dir)
+
                         shutil.copy(source_path, sync_dest_file)
                         util.synced.append(file_name)
 

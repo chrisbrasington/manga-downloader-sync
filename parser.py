@@ -62,8 +62,8 @@ class Utility:
                 # grayscale convert
                 converted_image = Image.open(image_path).convert("L")
                 images.append(converted_image)
-        
-        pdf_path = f'tmp/{file_name}/{file_name}-{chapter_lowest}-{chapter_highest}-combo.pdf'
+
+        pdf_path = f'tmp/{file_name}/{file_name}.pdf'
 
         # Save the images as a PDF
         images[0].save(pdf_path, "PDF" ,resolution=100.0, save_all=True, append_images=images[1:])
@@ -217,7 +217,7 @@ class Utility:
             success = False
 
         # combine result into single pdf if requested
-        if(combine) and (did_work or not len(glob.glob(f'tmp/{name}/{name}*combo.pdf')) > 0):
+        if(combine) and (did_work or not len(glob.glob(f'tmp/{name}/{name}.pdf')) > 0):
             self.combine(result, author)
         elif combine:
             print('  ✓ combo pdf exists')

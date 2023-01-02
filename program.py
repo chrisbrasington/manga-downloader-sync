@@ -48,15 +48,13 @@ for source in sources:
             # if combined, only move single file
             if combine:
                 if os.access(sync_destination, os.W_OK):
-                    source_path = glob.glob(f'{tmp_dir}/*combo.pdf')[0]
+                    source_path = glob.glob(f'{tmp_dir}/{title}.pdf')[0]
                     file_name = os.path.basename(source_path)
 
                     sync_dest_file = os.path.join(sync_dest, file_name)
                     if not os.path.exists(sync_dest_file):
-                        for prior_combo in glob.glob(f'{sync_dest}/*combo.pdf'):
-                            os.remove(prior_combo)
 
-                        shutil.copy(source_path, sync_dest_file)
+                        shutil.copy(source_path, os.path.join(sync_destination, f'{title}.pdf'))
                         util.synced.append(file_name)
 
                     print(f'  ✓ synced: {file_name} (combined)')
@@ -97,7 +95,7 @@ for source in sources:
                                     os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
                                     shutil.copy(filepath, sync_dest_file)
                                 print(f'    ✓ {filename}')
-    # break
+    break
 
 # print summary of download and sync
 util.print_summary()

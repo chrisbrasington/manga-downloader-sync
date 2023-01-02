@@ -2,7 +2,7 @@ import MangaDexPy
 from MangaDexPy import downloader
 import feedparser, os, re, requests, shutil, urllib
 from tqdm import tqdm
-import contextlib, io, sys, textwrap, traceback, zipfile
+import contextlib, glob, io, sys, textwrap, traceback, zipfile
 from PIL import Image
 from pdfrw import PdfReader, PdfWriter   
 
@@ -23,48 +23,71 @@ class Utility:
         return Utility._instance
 
     # combine all files into single pdf (if requested)
-    def combine(self, dir):
+    def combine(self, dir, author):
+
         file_name = dir.replace("tmp/","")
         if(os.path.exists(f'tmp/{file_name}/{file_name}.cbz')):
             os.remove(f'tmp/{file_name}/{file_name}.cbz')
 
+        # work in manga/tmp folder
+        working_dir = f'tmp/{file_name}/tmp'
+        os.makedirs(working_dir)      
+
         for root, dirs, files in os.walk(dir):
             # Add the files to the ZIP file
-            for file in files:
+            for file in sorted(files, key=self.extract_number):
                 if(file.endswith('cbz') or file.endswith('zip')):
                     file = os.path.join(root, file)
-                    dest = file.rsplit('.',1)[0]
+                    # dest = file.rsplit('.',1)[0]
+                    dest = f"{working_dir}/{file.rsplit('.',1)[0].split('/')[-1]}"
                     with zipfile.ZipFile(file, "r") as zip_ref:
                         zip_ref.extractall(dest)
-                    os.remove(file) 
-        
-        folders = []
-        for root, dirs, _ in os.walk(dir):
-            for folder in dirs:
-                folder = os.path.join(dir, folder)
-                folders.append(folder)
+    
+        images = []
 
-        print('combining:', len(folders))
-        
-        shutil.make_archive('combo', 'zip', dir)
-        shutil.move(f'combo.zip', f'tmp/{file_name}/{file_name}.cbz')
+        chapter_lowest = None
+        chapter_highest = None
 
-        # re-archive
-        for root, dirs, files in os.walk(f'tmp/{file_name}'):
-            for chapter in dirs:
-                chapter = f'{dir}/{chapter}'
-                print(chapter)
-                self.create_cbz(chapter)
+        # for each chapter (sorted) and images (sorted)
+        for chapter in sorted(os.listdir(working_dir), key=self.extract_number):
+
+            if chapter_lowest is None:
+                chapter_lowest = self.extract_number(chapter)
+
+            print('\n', chapter)
+            for image in sorted(os.listdir(os.path.join(working_dir, chapter)), key=self.extract_number):
+                chapter_highest = self.extract_number(chapter)
+                print(' ', image.split('.')[0], end=' ')
+                image_path = os.path.join(working_dir, chapter, image)
+                # grayscale convert
+                converted_image = Image.open(image_path).convert("L")
+                images.append(converted_image)
+        
+        pdf_path = f'tmp/{file_name}/{file_name}-{chapter_lowest}-{chapter_highest}-combo.pdf'
+
+        # Save the images as a PDF
+        images[0].save(pdf_path, "PDF" ,resolution=100.0, save_all=True, append_images=images[1:])
+
+        # set author metadata of pdf
+        trailer = PdfReader(pdf_path)    
+        trailer.Info.Author = author
+        PdfWriter(pdf_path, trailer=trailer).write()
+
+        # remove temp dir
+        shutil.rmtree(working_dir)
+
+        print(f'  ✓ {file_name}.pdf')
 
     # convert individual file from cbz to pdf
-    def convert_to_pdf(self, dir, combine, author):
-        
+    def convert_to_pdf(self, dir, author):
+        combine = False
+
         # if combo requested, use {title}.cbz
         combo_file = f'{dir}.cbz'
         
         for root, dirs, files in os.walk(dir):
             # Add the files to the ZIP file
-            for file in files:
+            for file in sorted(files, key=self.extract_number):
                 # skip over existing pdfs
                 if 'pdf' not in file:
 
@@ -138,19 +161,22 @@ class Utility:
     # extract number from chapter metadata or filename
     def extract_number(self, s):
         
-        if type(s) == MangaDexPy.chapter.Chapter:
-            return float(s.chapter)
+        try:
+            if type(s) == MangaDexPy.chapter.Chapter:
+                return float(s.chapter)
 
-        match = re.search(r'\d+(\.\d+)?', s)
-        value = match.group()
-        value = float(value)
+            match = re.search(r'\d+(\.\d+)?', s)
+            value = match.group()
+            value = float(value)
 
-        # return as int if int (prettier print)
-        if value == int(value):
-            return int(value)
+            # return as int if int (prettier print)
+            if value == int(value):
+                return int(value)
 
-        # return as float if float
-        return value
+            # return as float if float
+            return value
+        except:
+            return -1 # no number in file
 
     # extract name from rss feed if known
     def extract_rss_feed_name(self, url):
@@ -163,8 +189,10 @@ class Utility:
 
     # get latest chapter number on disk
     def get_latest_chapter_num_on_disk(self, dir):
+
         files = os.listdir(dir)       
         file = sorted(files, key=self.extract_number)[-1]
+
         result = self.extract_number(file)
         if result == int(result):
             return int(result)  # int prints prettier
@@ -194,11 +222,14 @@ class Utility:
             success = False
 
         # combine result into single pdf if requested
-        if(combine) and did_work:
-            self.combine(result)
-        
-        # conver from cbz to pdf
-        self.convert_to_pdf(result, combine, author)
+        if(combine) and (did_work or not len(glob.glob(f'tmp/{name}/{name}*combo.pdf')) > 0):
+            self.combine(result, author)
+        elif combine:
+            print('  ✓ combo pdf exists')
+
+        # convert from cbz to pdf
+        if not combine:
+            self.convert_to_pdf(result, author)
         
         return success, result, name
 

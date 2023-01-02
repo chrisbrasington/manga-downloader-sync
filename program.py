@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from parser import Utility 
-import os, shutil, sys
+import glob, os, shutil, sys
 
 # change sync destination 
 sync_destination = '/run/media/chris/KOBOeReader/manga'
@@ -48,17 +48,18 @@ for source in sources:
             # if combined, only move single file
             if combine:
                 if os.access(sync_destination, os.W_OK):
-                    filename = f'{title}.pdf'
-                    filepath = os.path.join(tmp_dir, filename)
-                    sync_dest_file = os.path.join(sync_dest, filename)
+                    source_path = glob.glob(f'{tmp_dir}/*combo.pdf')[0]
+                    file_name = os.path.basename(source_path)
 
+                    sync_dest_file = os.path.join(sync_dest, file_name)
                     if not os.path.exists(sync_dest_file):
-                        os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
-                        shutil.copy(filepath, sync_dest_file)
+                        for prior_combo in glob.glob(f'{sync_dest}/*combo.pdf'):
+                            os.remove(prior_combo)
 
-                        util.synced.append(filename)
+                        shutil.copy(source_path, sync_dest_file)
+                        util.synced.append(file_name)
 
-                    print(f'    ✓ {filename} (combined)')
+                    print(f'  ✓ synced: {file_name} (combined)')
 
             # if not combined move latest chapters
             else:

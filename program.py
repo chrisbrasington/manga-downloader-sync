@@ -68,8 +68,6 @@ for source in sources:
 
                     print(f'  ✓ synced: {file_name} (combined)')
 
-
-
             # if more than combo file exists in destination, update individual chapters too
             if len(os.listdir(sync_dest)) == 0 or len(os.listdir(sync_dest)) > 1:
 

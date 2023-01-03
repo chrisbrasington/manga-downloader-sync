@@ -416,8 +416,6 @@ class Utility:
         if not did_work:
             print('  ✓ remote:', latest_chapter_remote.chapter)
 
-        sys.exit()
-
         return tmp_dir, manga.title[key], did_work, author
 
     # parse rss feed

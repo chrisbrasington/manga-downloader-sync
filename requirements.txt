@@ -1,5 +1,4 @@
 # https://github.com/Proxymiity/MangaDex.py
-MangaDex.py
 PyPDF2
 tqdm
 pdfrw

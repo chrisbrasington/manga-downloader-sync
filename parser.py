@@ -1,11 +1,80 @@
-import MangaDexPy
-from MangaDexPy import downloader
 import feedparser, os, re, requests, shutil, urllib
 from tqdm import tqdm
 import contextlib, glob, io, sys, textwrap, traceback, zipfile
 from PIL import Image
 from pdfrw import PdfReader, PdfWriter   
 from operator import attrgetter
+import json
+
+class Manga:
+    def __init__(self, data):
+        self.id = data["id"]
+        self.tags = data["attributes"]["tags"]
+        self.relationships = data["relationships"]
+        self.desc = ''
+        self.tags = []
+
+        key = 'en'
+        if not 'en' in data["attributes"]["title"]:
+            if 'ja-ro' in data["attributes"]["title"]:
+                key = 'ja-ro'
+            else:
+                # first value in dictionary of title
+                key = next(iter(data["attributes"]["title"]))
+
+        self.title = data["attributes"]["title"][key]
+
+        if 'en' in data['attributes']['description']:
+            self.desc = data['attributes']['description']['en']
+
+        for tag in data['attributes']['tags']:
+            if 'name' in tag['attributes'] and 'en' in tag['attributes']['name']:
+                self.tags.append(tag['attributes']['name']['en'])
+    
+        for relation in data['relationships']:
+            if relation['type'] == 'author':
+                self._author_id = relation['id']
+            elif relation['type'] == 'artist':
+                self._artist_id = relation['id']
+
+    @property
+    def type(self):
+        if len(self.tags) == 0:
+            return ''
+        return ', '.join(self.tags)
+
+    @property
+    def author(self):
+        if not self._author_id:
+            return 'unknown'
+        return self.get_author(self._author_id)
+
+    @property
+    def artist(self):
+        if not self._artist_id:
+            return 'unknown'
+        return self.get_author(self._artist_id)
+
+    def get_author(self, id):
+        response = requests.get(
+            f'https://api.mangadex.org/author/{id}'
+        )
+        return response.json()['data']['attributes']['name']
+
+    def to_json(self):
+        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+
+    def __str__(self):
+
+        key = 'en'
+        if not 'en' in self.title:
+            if 'ja-ro' in self.title:
+                key = 'ja-ro'
+            else:
+                # first value in dictionary of title
+                key = next(iter(self.title))
+
+        return f'{self.title}'
 
 # Define a Chapter class
 class Chapter:
@@ -45,12 +114,14 @@ class Chapter:
 
         return self._images
 
+    def __str__(self):
+        return f'{self.chapter} {self.language} {self.title}'
+
 # utility parser class
 class Utility:
 
     # Private constructor
     def __init__(self):
-        self.cli = MangaDexPy.MangaDex()
         self.summary = []
         self.synced = []
 
@@ -93,7 +164,7 @@ class Utility:
             if chapter_lowest is None:
                 chapter_lowest = self.extract_number(chapter)
 
-            print('\n', chapter)
+            print('\n', self.extract_number(chapter), end=': ')
             for image in sorted(os.listdir(os.path.join(working_dir, chapter)), key=self.extract_number):
                 chapter_highest = self.extract_number(chapter)
                 print(' ', image.split('.')[0], end=' ')
@@ -135,7 +206,7 @@ class Utility:
 
                     # if pdf not existing, convert
                     if not os.path.exists(pdf_path):
-                        print(f'  converting to pdf... {pdf_path}')
+                        print(f'  converting to pdf... {os.path.basename(pdf_path)}')
 
                         # extract cbz/zip
                         with zipfile.ZipFile(file_path, 'r') as cbz_file:    
@@ -196,8 +267,6 @@ class Utility:
     def extract_number(self, s):
         
         try:
-            if type(s) == MangaDexPy.chapter.Chapter:
-                return float(s.chapter)
 
             match = re.search(r'\d+(\.\d+)?', s)
             value = match.group()
@@ -225,11 +294,12 @@ class Utility:
     # very quick due to lazy-loading of images
     def get_chapters(self, manga):
 
-        guid = manga.id
+        url = f'https://api.mangadex.org/manga/{manga.id}/feed'
+        # print(url)
 
         # Make the request
         response = requests.get(
-            f'https://api.mangadex.org/manga/{guid}/feed',
+            url,
             params={
                 'translatedLanguage[]': 'en',
                 'order[chapter]': 'desc',
@@ -267,7 +337,7 @@ class Utility:
         result = None
         name = None
         did_work = False
-        
+
         # supported known types
         if('mangadex' in source):
             result, name, did_work, author = self.parse_mangadex(source)
@@ -295,7 +365,6 @@ class Utility:
     def parse_mangadex(self, source):
         did_work = False
         guid = None
-        author = ''
 
         # extract manga GUID
         pattern = r"/mangadex/(?P<guid>[\w-]+)/?"
@@ -313,41 +382,42 @@ class Utility:
 
         # Get the single instance of the Utility class
         utility = Utility.instance()
+        response = requests.get(
+            f'https://api.mangadex.org/manga/{guid}'
+        )
+        data = response.json()['data']
 
-        # Use the cli attribute of the Utility instance
-        manga = utility.cli.get_manga(guid)
-        if(len(manga.author) > 0):
-            author = manga.author[0].name
+        manga = Manga(data)
+
+        # print(manga)
+        # print(manga.tags)
+        # print(manga.author)
+        # print(manga.artist)
 
         # print title/type
         print()
-        key = 'en'
-        if not 'en' in manga.title:
-            if 'ja-ro' in manga.title:
-                key = 'ja-ro'
-            else:
-                # first value in dictionary of title
-                key = next(iter(manga.title))
+
 
         if manga.type == None:
-            print(manga.title[key], f'- mangadex')
+            print(manga.title, f'- mangadex')
         else:    
-            print(manga.title[key], f'- mangadex - {manga.type}')
-        tmp_dir = f"tmp/{manga.title[key]}"
+            print(manga.title, f'- mangadex - {manga.type}')
+        tmp_dir = f"tmp/{manga.title}"
 
         # print truncated description
-        desc = manga.desc['en'][:300].rstrip()
-        if len(manga.desc['en']) > 300:
+        desc = manga.desc[:300].rstrip()
+        if len(manga.desc) > 300:
             desc += " [...]"
         wrapped_desc = textwrap.fill(desc, width=80)
         indented_desc = textwrap.indent(wrapped_desc, '  ')
 
         # print tags
-        tag_output = ''
-        for tag in manga.tags:
-            tag_output += tag.name['en'] + ', '
-        tag_output = tag_output.rstrip(', ')
-        print(' ', f'({tag_output})')
+        # tag_output = ''
+        # for tag in manga.tags:
+        #     tag_output += tag.name + ', '
+        # tag_output = tag_output.rstrip(', ')
+        # print(' ', f'({tag_output})')
+        # print()
 
         print('  ~~~~~')
         print(indented_desc)
@@ -370,16 +440,18 @@ class Utility:
 
         # get chapters
         chapters = self.get_chapters(manga)
-
         latest_chapter_remote = chapters[0]
+
+        # remote
+        print('  ✓ remote:', latest_chapter_remote.chapter)
 
         # for every chapter
         for chapter in chapters:
 
             # setup cbz file name for download
-            tmp_chapter = f"{tmp_dir}/{manga.title[key]} - {chapter.chapter}" # chapter number not volume
+            tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}" # chapter number not volume
             zip_name = f"{tmp_chapter}.cbz"
-            chapter_num = self.extract_number(tmp_chapter)
+            chapter_num = float(chapter.chapter)
 
             # download if remote chapter is newer than cached in number
             # because feed may change for same content, do not strictly match the file/feed information
@@ -390,7 +462,7 @@ class Utility:
 
                 print(f'  ✓ downloading:', chapter.chapter, f'({chapter.language})', chapter.title)
 
-                self.summary.append(f"{chapter_num} - {manga.title[key]}")
+                self.summary.append(f"{chapter_num} - {manga.title}")
 
                 i = 0
                 for url in tqdm(chapter.images):
@@ -402,6 +474,8 @@ class Utility:
                     open(f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}", "wb").write(response.content)
                     pass
 
+                if chapter_num == int(chapter_num):
+                    chapter_num = int(chapter_num)
                 print(f'  ✓ done: {chapter_num}')
 
                 self.create_cbz(tmp_chapter)
@@ -409,14 +483,9 @@ class Utility:
 
         # convert entire dir to pdf (where pdfs do not exist)
         if did_work: 
-            self.convert_to_pdf(tmp_dir, author)
+            self.convert_to_pdf(tmp_dir, manga.author)
 
-        # up to date
-        # matching local to remote
-        if not did_work:
-            print('  ✓ remote:', latest_chapter_remote.chapter)
-
-        return tmp_dir, manga.title[key], did_work, author
+        return tmp_dir, manga.title, did_work, manga.author
 
     # parse rss feed
     def parse_rss_feed(self, source):

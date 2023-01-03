@@ -68,8 +68,12 @@ for source in sources:
 
                     print(f'  ✓ synced: {file_name} (combined)')
 
+            force_sync = False
+            if len(os.listdir(sync_dest)) == 1 and 'combo' not in os.listdir(sync_dest)[0]:
+                force_sync = True
+
             # if more than combo file exists in destination, update individual chapters too
-            if len(os.listdir(sync_dest)) == 0 or len(os.listdir(sync_dest)) > 1:
+            if len(os.listdir(sync_dest)) == 0 or len(os.listdir(sync_dest)) > 1 or force_sync:
 
                 # find latest chapter on device
                 latest_chapter_num = -1

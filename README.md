@@ -6,8 +6,8 @@ Downloads images (manga) from the web into cbz files, converts to pdf,  and sync
 
 ## site support
 
-- [danke.moe](https://danke.moe/)
 - [mangadex](https://mangadex.org/)
+- [danke.moe](https://danke.moe/)
 
 ## chapter number matching
 
@@ -59,30 +59,19 @@ Hardcoded to `en` atm
 ## output
 ```
 ✓ kobo detected
-The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day - danke.moe
-the-tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere-girl-83.cbz: 100%|██████████████████████████████████████████████████████████████████████| 5.73M/5.73M [00:00<00:00, 525MB/s]
-  ✓ the-tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere-girl-83.cbz
-  converting to pdf... tmp/The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day/the-tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere-girl-83.pdf
-  Syncing to device...
-  Latest chapter on device: 82
-    ✓ the-tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere-girl-83.pdf
-The Overworked Office Lady's Café Crush - danke.moe
-  ✓ up-to-date: Chapter: 3
-  Syncing to device...
-  Latest chapter on device: 3
-  [...]
-```
-
-more information from mangadex:
-```
-Isekai Nihon - mangadex - shounen
-  (Monsters, Action, Romance, Survival, Adventure, Post-Apocalyptic, Magic, Isekai, Gore, Drama, Fantasy)
+Isekai Nihon - mangadex - Monsters, Action, Romance, Survival, Adventure, Post-Apocalyptic, Magic, Isekai, Gore, Drama, Fantasy
   ~~~~~
   As two worlds collide into one, a fateful counter between the "killer hero" and
   the "elf princess from another world" has led to a great adventure to defeat the
   even greater evil!
   ~~~~~
-  ✓ up-to-date: Chapter: 1
-  Syncing to device...
-  Latest chapter on device: 2
+  ✓ cache: 1
+  ✓ remote: 2
+  ✓ downloading: 2 (en) None
+100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 23/23 [00:13<00:00,  1.68it/s]
+  ✓ done: 2
+  converting to pdf... Isekai Nihon - 2.pdf
+~~~~~~~~~~~~~~~~~~~~~
+Content missing from device, synced to device
+Isekai Nihon - 2.pdf
 ```

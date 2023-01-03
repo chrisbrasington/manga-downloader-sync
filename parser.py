@@ -397,7 +397,6 @@ class Utility:
         # print title/type
         print()
 
-
         if manga.type == None:
             print(manga.title, f'- mangadex')
         else:    
@@ -410,14 +409,6 @@ class Utility:
             desc += " [...]"
         wrapped_desc = textwrap.fill(desc, width=80)
         indented_desc = textwrap.indent(wrapped_desc, '  ')
-
-        # print tags
-        # tag_output = ''
-        # for tag in manga.tags:
-        #     tag_output += tag.name + ', '
-        # tag_output = tag_output.rstrip(', ')
-        # print(' ', f'({tag_output})')
-        # print()
 
         print('  ~~~~~')
         print(indented_desc)
@@ -432,15 +423,17 @@ class Utility:
             # this is ok, may not exist on disk yet
             latest_chapter_num_on_disk = -1
 
-        # print cache info
-        if latest_chapter_num_on_disk == -1:
-            print('  x - no cache')
-        else:
-            print(f'  ✓ cache: {latest_chapter_num_on_disk}')
-
         # get chapters
         chapters = self.get_chapters(manga)
         latest_chapter_remote = chapters[0]
+
+        # print cache info
+        if latest_chapter_num_on_disk == -1:
+            print('  x - no cache')
+            for chapter in chapters:
+                print(' ', chapter)
+        else:
+            print(f'  ✓ cache: {latest_chapter_num_on_disk}')
 
         # remote
         print('  ✓ remote:', latest_chapter_remote.chapter)
@@ -514,6 +507,8 @@ class Utility:
 
         if latest_chapter_num_on_disk == -1:
             print('  x - no cache')
+            for chapter in feed.entries:
+                print(' ', chapter.title)
         else:
             print(f'  ✓ cache: {latest_chapter_num_on_disk}')
 

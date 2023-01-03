@@ -5,6 +5,7 @@ from PIL import Image
 from pdfrw import PdfReader, PdfWriter   
 from operator import attrgetter
 import json
+import PyPDF2
 
 class Manga:
     def __init__(self, data):
@@ -135,58 +136,42 @@ class Utility:
     # combine all files into single pdf (if requested)
     def combine(self, dir, author):
 
-        file_name = dir.replace("tmp/","")
-        if(os.path.exists(f'tmp/{file_name}/{file_name}.cbz')):
-            os.remove(f'tmp/{file_name}/{file_name}.cbz')
+        # Create a PDF merger object
+        pdfMerger = PyPDF2.PdfMerger()
 
-        # work in manga/tmp folder
-        working_dir = f'tmp/{file_name}/tmp'
-        os.makedirs(working_dir)      
+        chapter_pdfs = os.listdir(dir)
+        chapter_pdfs = sorted(chapter_pdfs, key=self.extract_number)
 
-        for root, dirs, files in os.walk(dir):
-            # Add the files to the ZIP file
-            for file in sorted(files, key=self.extract_number):
-                if(file.endswith('cbz') or file.endswith('zip')):
-                    file = os.path.join(root, file)
-                    # dest = file.rsplit('.',1)[0]
-                    dest = f"{working_dir}/{file.rsplit('.',1)[0].split('/')[-1]}"
-                    with zipfile.ZipFile(file, "r") as zip_ref:
-                        zip_ref.extractall(dest)
-    
-        images = []
+        # Iterate over the list of PDF files
+        for filePath in chapter_pdfs:
+            filePath = os.path.join(dir, filePath)
+            # Check if the file is a PDF
+            if filePath.endswith('.pdf'):
+                # Open the PDF file
+                with open(filePath, 'rb') as f:
+                    # Read the PDF
+                    pdfReader = PyPDF2.PdfReader(f)
 
-        chapter_lowest = None
-        chapter_highest = None
+                    # Get the base name of the file
+                    chapterTitle = os.path.basename(filePath)
 
-        # for each chapter (sorted) and images (sorted)
-        for chapter in sorted(os.listdir(working_dir), key=self.extract_number):
+                    # Add the chapter title to each page of the PDF
+                    for i in range(len(pdfReader.pages)):
+                        page = pdfReader.pages[i]
+                        page.update({
+                            PyPDF2.generic.NameObject('/Title'): PyPDF2.generic.TextStringObject(chapterTitle)
+                        })
 
-            if chapter_lowest is None:
-                chapter_lowest = self.extract_number(chapter)
+                    # Add the PDF to the merger object
+                    pdfMerger.append(f)
 
-            print('\n', self.extract_number(chapter), end=': ')
-            for image in sorted(os.listdir(os.path.join(working_dir, chapter)), key=self.extract_number):
-                chapter_highest = self.extract_number(chapter)
-                print(' ', image.split('.')[0], end=' ')
-                image_path = os.path.join(working_dir, chapter, image)
-                # grayscale convert
-                converted_image = Image.open(image_path).convert("L")
-                images.append(converted_image)
-        
-        pdf_path = f'tmp/{file_name}/{file_name}-{chapter_lowest}-{chapter_highest}-combo.pdf'
+        outputFile = os.path.join(dir, 'combo.pdf')
+        # Open the output file
+        with open(outputFile, 'wb') as f:
+            # Write the merged PDF to the output file
+            pdfMerger.write(f)
 
-        # Save the images as a PDF
-        images[0].save(pdf_path, "PDF" ,resolution=100.0, save_all=True, append_images=images[1:])
 
-        # set author metadata of pdf
-        trailer = PdfReader(pdf_path)    
-        trailer.Info.Author = author
-        PdfWriter(pdf_path, trailer=trailer).write()
-
-        # remove temp dir
-        shutil.rmtree(working_dir)
-
-        print(f'\n  ✓ {file_name}.pdf')
 
     # convert individual file from cbz to pdf
     def convert_to_pdf(self, dir, author):

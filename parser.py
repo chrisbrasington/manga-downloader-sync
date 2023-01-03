@@ -5,6 +5,45 @@ from tqdm import tqdm
 import contextlib, glob, io, sys, textwrap, traceback, zipfile
 from PIL import Image
 from pdfrw import PdfReader, PdfWriter   
+from operator import attrgetter
+
+# Define a Chapter class
+class Chapter:
+    def __init__(self, chapter_data):
+        self.id = chapter_data['id']
+        self.type = chapter_data['type']
+        self.volume = chapter_data['attributes']['volume']
+        self.chapter = chapter_data['attributes']['chapter']
+        self.title = chapter_data['attributes']['title']
+        self.language = chapter_data['attributes']['translatedLanguage']
+        self.external_url = chapter_data['attributes']['externalUrl']
+        self.publish_date = chapter_data['attributes']['publishAt']
+        self.readable_date = chapter_data['attributes']['readableAt']
+        self.create_date = chapter_data['attributes']['createdAt']
+        self.update_date = chapter_data['attributes']['updatedAt']
+        self.pages = chapter_data['attributes']['pages']
+        self.version = chapter_data['attributes']['version']
+        self.relationships = chapter_data['relationships']
+        self._images = {}
+
+    @property
+    def images(self):
+        if not self._images:
+
+            response = requests.get(
+                    f'https://api.mangadex.org/at-home/server/{self.id}'
+                )
+
+            self._images = response.json()['chapter']['data']
+            hash = response.json()['chapter']['hash']
+
+            full_images = []
+            for image in self._images:
+                full_images.append(f'https://uploads.mangadex.org/data/{hash}/{image}')
+
+            self._images = full_images
+
+        return self._images
 
 # utility parser class
 class Utility:
@@ -182,6 +221,30 @@ class Utility:
             print('unsupported feed')
             return False, None, dl
 
+    # get chapter information
+    # very quick due to lazy-loading of images
+    def get_chapters(self, manga):
+
+        guid = manga.id
+
+        # Make the request
+        response = requests.get(
+            f'https://api.mangadex.org/manga/{guid}/feed',
+            params={
+                'translatedLanguage[]': 'en',
+                'order[chapter]': 'desc',
+                'limit': 500
+            }
+        )
+        data = response.json()['data']
+        chapters = [Chapter(d) for d in data]
+        chapters = self.remove_duplicate_chapters(chapters)
+
+        # for c in chapters:
+        #     print('  ', c.chapter, c.language, c.title)
+
+        return chapters
+
     # get latest chapter number on disk
     def get_latest_chapter_num_on_disk(self, dir):
 
@@ -300,49 +363,62 @@ class Utility:
             latest_chapter_num_on_disk = -1
 
         # print cache info
-        print(f'  ✓ cache: {latest_chapter_num_on_disk}')
+        if latest_chapter_num_on_disk == -1:
+            print('  x - no cache')
+        else:
+            print(f'  ✓ cache: {latest_chapter_num_on_disk}')
 
-        # sort chapters by newest to earliest 
-        # (unlike rss mangadex order may be incoherent - with multiple languages and authors)
-        chapters = reversed(sorted(manga.get_chapters(), key=self.extract_number))
+        # get chapters
+        chapters = self.get_chapters(manga)
+
+        latest_chapter_remote = chapters[0]
 
         # for every chapter
         for chapter in chapters:
-            if(chapter.language == 'en'):
-                
-                # largest number is latest chapter on remote
-                if latest_chapter_remote is None:
-                    latest_chapter_remote = chapter
 
-                # setup cbz file name for download
-                tmp_chapter = f"{tmp_dir}/{manga.title['en']} - {chapter.chapter}" # chapter number not volume
-                zip_name = f"{tmp_chapter}.cbz"
-                chapter_num = self.extract_number(tmp_chapter)
+            # setup cbz file name for download
+            tmp_chapter = f"{tmp_dir}/{manga.title[key]} - {chapter.chapter}" # chapter number not volume
+            zip_name = f"{tmp_chapter}.cbz"
+            chapter_num = self.extract_number(tmp_chapter)
 
-                # download if remote chapter is newer than cached in number
-                # because feed may change for same content, do not strictly match the file/feed information
-                if chapter_num > latest_chapter_num_on_disk:
+            # download if remote chapter is newer than cached in number
+            # because feed may change for same content, do not strictly match the file/feed information
+            if chapter_num > latest_chapter_num_on_disk:
 
-                    if not os.path.exists(tmp_chapter):
-                        os.makedirs(tmp_chapter)       
+                if not os.path.exists(tmp_chapter):
+                    os.makedirs(tmp_chapter)       
 
-                    print(f'  ✓ downloading: {chapter_num}, please wait..')
+                print(f'  ✓ downloading:', chapter.chapter, f'({chapter.language})', chapter.title)
 
-                    self.summary.append(f"{chapter_num} - {manga.title['en']}")
+                self.summary.append(f"{chapter_num} - {manga.title[key]}")
 
-                    with contextlib.redirect_stdout(io.StringIO()):    
-                        downloader.dl_chapter(chapter, tmp_chapter)
-                    print(f'  ✓ done: {chapter_num}')
+                i = 0
+                for url in tqdm(chapter.images):
+                    i += 1
+                    response = requests.get(url)
+                    _, file_extension = os.path.splitext(url)
+                    # to keep cbz sorted, works well to pad the page number 1 as 001
+                    # keeps 001 002 003 004 005 006 007 008 009 010 011 etc. well sorted 
+                    open(f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}", "wb").write(response.content)
+                    pass
 
-                    self.create_cbz(tmp_chapter)
-                    did_work = True
+                print(f'  ✓ done: {chapter_num}')
+
+                self.create_cbz(tmp_chapter)
+                did_work = True
+
+        # convert entire dir to pdf (where pdfs do not exist)
+        if did_work: 
+            self.convert_to_pdf(tmp_dir, author)
 
         # up to date
         # matching local to remote
         if not did_work:
             print('  ✓ remote:', latest_chapter_remote.chapter)
 
-        return tmp_dir, manga.title['en'], did_work, author
+        sys.exit()
+
+        return tmp_dir, manga.title[key], did_work, author
 
     # parse rss feed
     def parse_rss_feed(self, source):
@@ -369,7 +445,10 @@ class Utility:
             # this is ok, may not exist on disk yet
             latest_chapter_num_on_disk = -1
 
-        print(f'  ✓ cache: {latest_chapter_num_on_disk}')
+        if latest_chapter_num_on_disk == -1:
+            print('  x - no cache')
+        else:
+            print(f'  ✓ cache: {latest_chapter_num_on_disk}')
 
         # Print each entry in the feed
         for entry in feed.entries:
@@ -463,3 +542,11 @@ class Utility:
             else:
                 print('Downloaded:', self.summary)
                 print('Sycned:', self.sycned)
+
+    # remove duplicate chapters (sometimes mulitple scanlations for English, we're dumbly grabbing the first)
+    def remove_duplicate_chapters(self, chapters):
+        # Create a set of chapters based on the 'chapter' attribute
+        unique_chapters = {c.chapter: c for c in chapters}
+
+        # Return the list of unique chapters, sorted by 'chapter' attribute
+        return [v for k, v in sorted(unique_chapters.items(), reverse=True, key=self.extract_number)]

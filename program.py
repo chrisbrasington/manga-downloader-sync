@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from parser import Utility 
+from classes.parser import Utility 
 import glob, os, shutil, sys
 
 # change sync destination 
@@ -7,12 +7,27 @@ sync_destination = '/run/media/chris/KOBOeReader/manga'
 if len(sys.argv) > 1:
     sync_destination = sys.argv[1]
 
-# Open the text file and read the lines into a list
-with open("sources.txt") as f:
-    sources = f.readlines()
+sources = []
+haitus = []
 
-# Strip the leading and trailing whitespace from each line
-sources = [source.strip() for source in sources]
+# Open the text file and read the lines into a list
+if os.path.exists('sources.txt'):
+    with open("sources.txt") as f:
+        sources = f.readlines()
+
+    # Strip the leading and trailing whitespace from each line
+    sources = [source.strip() for source in sources]
+
+if os.path.exists('haitus.txt'):
+    with open("haitus.txt") as f:
+        haitus = f.readlines()
+
+    # Strip the leading and trailing whitespace from each line
+    haitus = [h.strip() for h in haitus]
+
+if len(sources) == 0 and len(haitus) == 0:
+    print('no sources, aborting')
+    sys.exit()
 
 # parsing utility
 util = Utility()

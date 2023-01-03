@@ -1,4 +1,7 @@
-# https://github.com/Proxymiity/MangaDex.py
+# pip install -r .\requirements.txt
 PyPDF2
 tqdm
 pdfrw
+feedparser
+requests
+pillow

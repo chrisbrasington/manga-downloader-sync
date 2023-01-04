@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 from classes.parser import Utility 
 import glob, os, shutil, sys
+from tqdm import tqdm
+import subprocess
 
 # change sync destination 
-sync_destination = '/run/media/chris/KOBOeReader/manga'
+device = '/run/media/chris/KOBOeReader'
+sync_destination = f'{device}/manga'
 if len(sys.argv) > 1:
     sync_destination = sys.argv[1]
 
@@ -78,13 +81,22 @@ for source in sources:
                         if not os.path.exists(sync_dir):
                             os.makedirs(sync_dir)
 
+                        print(f'copying {file_name}, please wait.., do not unplug!')
+                        pbar = tqdm(total=1)
                         shutil.copy(source_path, sync_dest_file)
+                        pbar.update(1)
+                        pbar.close()
                         util.synced.append(file_name)
+                    else:
+                        # fake 100% 1/1 bar for consistent look
+                        pbar = tqdm(total=1)
+                        pbar.update(1)
+                        pbar.close()
 
                     print(f'  ✓ synced: {file_name} (combined)')
 
             force_sync = False
-            if len(os.listdir(sync_dest)) == 1 and 'combo' not in os.listdir(sync_dest)[0]:
+            if len(os.listdir(sync_dest)) == 1 and not any(file.endswith('combo.pdf') for file in os.listdir(sync_dest)):
                 force_sync = True
 
             # if more than combo file exists in destination, update individual chapters too
@@ -104,7 +116,7 @@ for source in sources:
                     print(f'  ✓ device: {latest_chapter_num}')          
 
                 # check every file on device against cache, pdf only
-                for filename in sorted(os.listdir(tmp_dir), key=util.extract_number):
+                for filename in tqdm(sorted(glob.glob(tmp_dir + '/*.pdf'), key=util.extract_number)):
 
                     if 'pdf' in filename:
 
@@ -114,16 +126,17 @@ for source in sources:
                         # if cached chapter is newer than device chapter, sync to device
                         if latest_chapter_num < current_chapter_num:
 
-                            filepath = os.path.join(tmp_dir, filename)
-                            sync_dest_file = os.path.join(sync_dest, filename)
-                            util.synced.append(filename)
+                            sync_dest_file = os.path.join(sync_dest, os.path.basename(filename))
+                            util.synced.append(os.path.basename(filename))
 
                             if os.access(sync_destination, os.W_OK):
                                 if not os.path.exists(sync_dest_file):
                                     os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
-                                    shutil.copy(filepath, sync_dest_file)
-                                print(f'    ✓ {filename}')
-    # break
+                                    shutil.copy(filename, sync_dest_file)
+                                # print(f'    ✓ {filename}')
+                    pass
+
+    break
 
 # print summary of download and sync
 util.print_summary()

@@ -132,6 +132,18 @@ class Utility:
             Utility._instance = Utility()
         return Utility._instance
 
+    # cleanup may find unconverted files but they may not be in a good structure to 
+    # convert to pdf
+    # def cleanup(self):
+    #     print('cleanup...')
+    #     for dir in reversed(sorted(os.listdir('tmp'))):
+    #         self.convert_to_pdf(f'tmp/{dir}', 'unknown')
+    #         # for cbz in glob.glob(f'tmp/{dir}/*.cbz'):
+    #         #     pdf = cbz.replace('.cbz', '.pdf')
+    #         #     if not os.path.exists(pdf):
+    #         #         print(f'  converting to pdf: {os.path.basename(pdf)}')
+    #         break
+
     # combine all files into single pdf (if requested)
     def combine(self, dir, author):
 
@@ -207,6 +219,8 @@ class Utility:
                     # if pdf not existing, convert
                     if not os.path.exists(pdf_path):
                         print(f'  converting to pdf... {os.path.basename(pdf_path)}')
+
+                        print(file_path)
 
                         # extract cbz/zip
                         with zipfile.ZipFile(file_path, 'r') as cbz_file:    
@@ -446,14 +460,26 @@ class Utility:
             zip_name = f"{tmp_chapter}.cbz"
             chapter_num = float(chapter.chapter)
 
+            # change force_all_download to true if you want old chapters to download 
+            #   when new chapters exist on disk
+            # otherwise, the app will find the largest chapter number on disk and only
+            #   download chapters greater than that
+            # force_all_download as True risks duplication from different feeds
+            #   as it checks file_name directly not chapter number
+            force_all_download = False
+
             # download if remote chapter is newer than cached in number
             # because feed may change for same content, do not strictly match the file/feed information
-            if chapter_num > latest_chapter_num_on_disk:
+            if chapter_num > latest_chapter_num_on_disk or force_all_download:
 
                 if not os.path.exists(tmp_chapter):
                     os.makedirs(tmp_chapter)       
+                
+                if os.path.exists(f'{tmp_chapter}.cbz'):
+                    print('  ✓ exists:', chapter.chapter, f'({chapter.language})', chapter.title)
+                    continue
 
-                print(f'  ✓ downloading:', chapter.chapter, f'({chapter.language})', chapter.title)
+                print('  ✓ downloading:', chapter.chapter, f'({chapter.language})', chapter.title)
 
                 self.summary.append(f"{chapter_num} - {manga.title}")
 
@@ -607,6 +633,21 @@ class Utility:
 
     # remove duplicate chapters (sometimes mulitple scanlations for English, we're dumbly grabbing the first)
     def remove_duplicate_chapters(self, chapters):
+
+        # external sources are not something we know how to download, so we're going to remove those first
+        external_sources = []
+
+        for c in chapters:
+            if c.external_url is not None:
+                external_sources.append(c)
+
+        for external_chapter in external_sources:
+            if(len([c for c in chapters if c.chapter == external_chapter.chapter])):
+                chapters.remove(external_chapter)
+
+        # for c in chapters:
+        #     print(c, c.external_url)
+
         # Create a set of chapters based on the 'chapter' attribute
         unique_chapters = {c.chapter: c for c in chapters}
 

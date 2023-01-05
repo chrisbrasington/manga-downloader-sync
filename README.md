@@ -43,6 +43,8 @@ Author is added to PDF metadata
 
 ## run
 
+>  pip install -r requirements.txt       
+
 Modify `sources.txt` run with python 3
 
 > python program.py  
@@ -59,7 +61,7 @@ https://mangadex.org/title/e5148679-29de-4fff-b1a1-c77c44c41d5a/crest-of-the-sta
 
 ## language
 
-Hardcoded to `en` atm
+Hardcoded to `en` atm, and pretty much the first non-external source
 
 ## output
 ```

@@ -13,6 +13,15 @@ Downloads images (manga) from the web into cbz files, converts to pdf,  and sync
 
 Even if the feed changes, the chapter number is attempted to be extracted from the feed. This will not redownload cached chapter numbers even if the file name would be different.
 
+### sources
+`sources.txt` can support a flag to combine all chapters into a single file for those manga that like to be a page or two a chapter
+
+> url, True
+
+Or keeping as separate chapters..
+
+> url
+
 ## device support
 
 tested with `kobo libra 2` and will work with any device that supports cbz (zip) files
@@ -21,12 +30,8 @@ tested with `kobo libra 2` and will work with any device that supports cbz (zip)
 
 <img src=".img/sample2.jpg" style="width:100%">
 
+
 ## features
-
-### sources
-`sources.txt` can support a flag to combine all chapters into a single file for those manga that like to be a page or two a chapter
-
-> url, True
 
 ### summary of download/sync
 

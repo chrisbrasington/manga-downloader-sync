@@ -24,7 +24,7 @@ Or keeping as separate chapters..
 
 ## device support
 
-tested with `kobo libra 2` and will work with any device that supports cbz (zip) files
+tested with `kobo libra 2` and will work with any device that supports pdf or cbz (zip) files
 
 <img src=".img/sample.png" style="width:100%">
 

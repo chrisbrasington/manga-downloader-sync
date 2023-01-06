@@ -458,6 +458,11 @@ class Utility:
             # setup cbz file name for download
             tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}" # chapter number not volume
             zip_name = f"{tmp_chapter}.cbz"
+
+            # oneshots have dumb no numbering..
+            if chapter.chapter is None:
+                chapter.chapter = 1
+
             chapter_num = float(chapter.chapter)
 
             # change force_all_download to true if you want old chapters to download 

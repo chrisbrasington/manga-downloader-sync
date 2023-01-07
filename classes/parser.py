@@ -5,6 +5,7 @@ from PIL import Image
 from pdfrw import PdfReader, PdfWriter   
 from operator import attrgetter
 import colorama, json
+import traceback
 
 class Manga:
     def __init__(self, data):
@@ -286,12 +287,22 @@ class Utility:
 
     # extract number from chapter metadata or filename
     def extract_number(self, s):
+        
+        if type(s) == tuple:
+            s = s[0]   
+
+        if type(s) == int:
+            return s 
+        if type(s) == float:
+            return s          
 
         try:
 
-            match = re.search(r'\d+(\.\d+)?', s)
+            match = re.search(r'(\d+)(?!.*\d)', s)
             value = match.group()
             value = float(value)
+
+            # print(f'{s}... matches to number: {value}')
 
             # return as int if int (prettier print)
             if value == int(value):
@@ -300,6 +311,9 @@ class Utility:
             # return as float if float
             return value
         except:
+            print(f'error: {s} {type(s)}')
+            traceback.print_tb(limit=None, file=None)
+            sys.exit()
             return -1 # no number in file
 
     # extract name from rss feed if known

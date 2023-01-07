@@ -70,7 +70,7 @@ Hardcoded to `en` atm, and pretty much the first non-external source
 The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day - mangadex
     ✓ cache: 84       ✓ remote: 85          downloading: 84 to 85.0
 100%|█████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:01<00:00,  1.20it/s]
-  x device: 84      
+   x device: 84      
 The Overworked Office Lady's Café Crush - danke.moe
    ✓ cache: 3         ✓ remote: 3         ✓ device: 3      
 ~~~~~~~~~~~~~~~~~~~~~

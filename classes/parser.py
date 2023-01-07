@@ -4,7 +4,7 @@ import contextlib, glob, io, sys, textwrap, traceback, zipfile
 from PIL import Image
 from pdfrw import PdfReader, PdfWriter   
 from operator import attrgetter
-import json
+import colorama, json
 
 class Manga:
     def __init__(self, data):
@@ -131,6 +131,8 @@ class Utility:
     def __init__(self):
         self.summary = []
         self.synced = []
+
+        colorama.init()
 
     # Static instance method
     @staticmethod
@@ -490,7 +492,7 @@ class Utility:
                 self.summary.append(f"{chapter_num} - {manga.title}")
 
                 if not download_print_once:
-                    print(f'    downloading: {latest_chapter_num_on_disk} to {chapter_num}'.ljust(self.pad_value))
+                    print(colorama.Fore.RED + f'    downloading: {latest_chapter_num_on_disk} to {chapter_num}'.ljust(self.pad_value) + colorama.Style.RESET_ALL)
                     download_print_once = True
 
                 i = 0
@@ -614,7 +616,7 @@ class Utility:
 
         # new downloaded content
         if len(self.summary) > 0:
-            print('New content:')
+            print(colora.Style.GREEN + 'New content:')
         
         # print downloaded content
         for entry in self.summary:
@@ -761,7 +763,7 @@ class Utility:
             result_output = None
             if device_output is not None:
                 # singular issues and combo
-                result_output = f'  {char} device: {device_output}'
+                result_output = f'   {char} device: {device_output}'
                 if combo_output is not None:
                     result_output += f' and {combo_output}'
             else:
@@ -771,6 +773,9 @@ class Utility:
 
 
             if result_output is None:
-                print('  x device', end='')
+                print(colorama.Fore.RED + '   x device'+ colorama.Style.RESET_ALL, end='')
             else:
-                print(result_output.ljust(self.pad_value), end='')
+                if did_work:
+                    print(colorama.Fore.RED + result_output.ljust(self.pad_value) + colorama.Style.RESET_ALL, end='')
+                else:
+                    print(result_output.ljust(self.pad_value), end='')

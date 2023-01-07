@@ -616,7 +616,7 @@ class Utility:
 
         # new downloaded content
         if len(self.summary) > 0:
-            print(colora.Style.GREEN + 'New content:')
+            print(colorama.Style.GREEN + 'New content:')
         
         # print downloaded content
         for entry in self.summary:

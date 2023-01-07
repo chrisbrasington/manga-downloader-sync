@@ -59,8 +59,6 @@ for source in sources:
     if(known):
         util.sync(tmp_dir, sync_destination, title, combine)
 
-sys.exit()
-
 # Iterate over the list of sources in hiatus
 for source in haitus:
 

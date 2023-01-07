@@ -66,19 +66,14 @@ Hardcoded to `en` atm, and pretty much the first non-external source
 ## output
 ```
 ✓ kobo detected
-Isekai Nihon - mangadex - Monsters, Action, Romance, Survival, Adventure, Post-Apocalyptic, Magic, Isekai, Gore, Drama, Fantasy
-  ~~~~~
-  As two worlds collide into one, a fateful counter between the "killer hero" and
-  the "elf princess from another world" has led to a great adventure to defeat the
-  even greater evil!
-  ~~~~~
-  ✓ cache: 1
-  ✓ remote: 2
-  ✓ downloading: 2 (en) None
-100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 23/23 [00:13<00:00,  1.68it/s]
-  ✓ done: 2
-  converting to pdf... Isekai Nihon - 2.pdf
+
+The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day - mangadex
+    ✓ cache: 84       ✓ remote: 85          downloading: 84 to 85.0
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:01<00:00,  1.20it/s]
+  x device: 84      
+The Overworked Office Lady's Café Crush - danke.moe
+   ✓ cache: 3         ✓ remote: 3         ✓ device: 3      
 ~~~~~~~~~~~~~~~~~~~~~
 Content missing from device, synced to device
-Isekai Nihon - 2.pdf
+The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day - 85.pdf
 ```

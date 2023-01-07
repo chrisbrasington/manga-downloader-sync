@@ -675,6 +675,7 @@ class Utility:
 
             combo_output = None
             device_output = None
+            did_work = False
 
             # if combined, only move single file
             if combine:
@@ -743,6 +744,8 @@ class Utility:
                         # if cached chapter is newer than device chapter, sync to device
                         if latest_chapter_num < current_chapter_num:
 
+                            did_work = True
+
                             sync_dest_file = os.path.join(sync_dest, os.path.basename(filename))
                             self.synced.append(os.path.basename(filename))
 
@@ -754,16 +757,17 @@ class Utility:
             # else:
             #     print(f'  ✓ device: n/a'.rjust(self.pad_value), end='')
 
+            char = '✓' if not did_work else 'x'
             result_output = None
             if device_output is not None:
                 # singular issues and combo
-                result_output = f'  ✓ device: {device_output}'
+                result_output = f'  {char} device: {device_output}'
                 if combo_output is not None:
                     result_output += f' and {combo_output}'
             else:
                 # combo only
                 if combo_output is not None:
-                    result_output = f'  ✓ device: {combo_output}'
+                    result_output = f'  {char} device: {combo_output}'
 
 
             if result_output is None:

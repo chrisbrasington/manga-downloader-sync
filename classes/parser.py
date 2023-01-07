@@ -616,7 +616,7 @@ class Utility:
 
         # new downloaded content
         if len(self.summary) > 0:
-            print(colorama.Style.GREEN + 'New content:')
+            print(colorama.Fore.GREEN + 'New content:')
         
         # print downloaded content
         for entry in self.summary:
@@ -632,7 +632,7 @@ class Utility:
                 print('Not synced to device')
             # not downloaded but cached was newer than device and was synced
             elif len(self.synced) > 0:
-                print('Content missing from device, synced to device')
+                print(colorama.Fore.GREEN + 'Content missing from device, synced to device')
                 for s in self.synced:
                     print(s)
             # unsure if possible, print all

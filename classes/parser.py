@@ -78,11 +78,10 @@ class Manga:
 
 # Define a Chapter class
 class Chapter:
-    def __init__(self, chapter_data):
+    def __init__(self, chapter_data, manga = None):
         self.id = chapter_data['id']
         self.type = chapter_data['type']
         self.volume = chapter_data['attributes']['volume']
-        self.chapter = chapter_data['attributes']['chapter']
         self.title = chapter_data['attributes']['title']
         self.language = chapter_data['attributes']['translatedLanguage']
         self.external_url = chapter_data['attributes']['externalUrl']
@@ -94,6 +93,11 @@ class Chapter:
         self.version = chapter_data['attributes']['version']
         self.relationships = chapter_data['relationships']
         self._images = {}
+
+        # oneshot detection
+        self.chapter = 1 if chapter_data['attributes']['chapter'] is None else chapter_data['attributes']['chapter']
+        if chapter_data['attributes']['chapter'] is None and self.title is None and manga is not None:
+            self.title = manga.title          
 
     @property
     def images(self):
@@ -115,10 +119,13 @@ class Chapter:
         return self._images
 
     def __str__(self):
+        print(self.title)
         return f'{self.chapter} {self.language} {self.title}'
 
 # utility parser class
 class Utility:
+
+    pad_value = 20
 
     # Private constructor
     def __init__(self):
@@ -218,9 +225,7 @@ class Utility:
 
                     # if pdf not existing, convert
                     if not os.path.exists(pdf_path):
-                        print(f'  converting to pdf... {os.path.basename(pdf_path)}')
-
-                        print(file_path)
+                        # print(f'  converting to pdf... {os.path.basename(pdf_path)}')
 
                         # extract cbz/zip
                         with zipfile.ZipFile(file_path, 'r') as cbz_file:    
@@ -279,7 +284,7 @@ class Utility:
 
     # extract number from chapter metadata or filename
     def extract_number(self, s):
-        
+
         try:
 
             match = re.search(r'\d+(\.\d+)?', s)
@@ -321,7 +326,7 @@ class Utility:
             }
         )
         data = response.json()['data']
-        chapters = [Chapter(d) for d in data]
+        chapters = [Chapter(d, manga) for d in data]
         chapters = self.remove_duplicate_chapters(chapters)
 
         # for c in chapters:
@@ -366,8 +371,8 @@ class Utility:
         # combine result into single pdf if requested
         if(combine) and (did_work or not len(glob.glob(f'tmp/{name}/{name}*combo.pdf')) > 0):
             self.combine(result, author)
-        elif combine:
-            print('  ✓ combo pdf exists')
+        # elif combine:
+        #     print('  ✓ combo pdf exists')
 
         # convert from cbz to pdf
         if not combine:
@@ -411,10 +416,10 @@ class Utility:
         # print title/type
         print()
 
-        if manga.type == None:
-            print(manga.title, f'- mangadex')
-        else:    
-            print(manga.title, f'- mangadex - {manga.type}')
+        # if manga.type == None:
+        print(manga.title, f'- mangadex')
+        # else:    
+            # print(manga.title, f'- mangadex - {manga.type}')
         tmp_dir = f"tmp/{manga.title}"
 
         # print truncated description
@@ -424,9 +429,9 @@ class Utility:
         wrapped_desc = textwrap.fill(desc, width=80)
         indented_desc = textwrap.indent(wrapped_desc, '  ')
 
-        print('  ~~~~~')
-        print(indented_desc)
-        print('  ~~~~~')
+        # print('  ~~~~~')
+        # print(indented_desc)
+        # print('  ~~~~~')
 
         # get latest chapter remote and on disk
         latest_chapter_remote = None
@@ -443,14 +448,16 @@ class Utility:
 
         # print cache info
         if latest_chapter_num_on_disk == -1:
-            print('  x - no cache')
-            for chapter in chapters:
-                print(' ', chapter)
+            print('  x - no cache'.ljust(self.pad_value), end='')
+            # for chapter in chapters:
+            #     print(' ', chapter)
         else:
-            print(f'  ✓ cache: {latest_chapter_num_on_disk}')
+            print(f'    ✓ cache: {latest_chapter_num_on_disk}'.ljust(self.pad_value), end='')
 
         # remote
-        print('  ✓ remote:', latest_chapter_remote.chapter)
+        print(f'  ✓ remote: {latest_chapter_remote.chapter}'.ljust(self.pad_value), end='')
+
+        download_print_once = False
 
         # for every chapter
         for chapter in chapters:
@@ -458,10 +465,6 @@ class Utility:
             # setup cbz file name for download
             tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}" # chapter number not volume
             zip_name = f"{tmp_chapter}.cbz"
-
-            # oneshots have dumb no numbering..
-            if chapter.chapter is None:
-                chapter.chapter = 1
 
             chapter_num = float(chapter.chapter)
 
@@ -484,9 +487,11 @@ class Utility:
                     print('  ✓ exists:', chapter.chapter, f'({chapter.language})', chapter.title)
                     continue
 
-                print('  ✓ downloading:', chapter.chapter, f'({chapter.language})', chapter.title)
-
                 self.summary.append(f"{chapter_num} - {manga.title}")
+
+                if not download_print_once:
+                    print(f'    downloading: {latest_chapter_num_on_disk} to {chapter_num}'.ljust(self.pad_value))
+                    download_print_once = True
 
                 i = 0
                 for url in tqdm(chapter.images):
@@ -500,7 +505,6 @@ class Utility:
 
                 if chapter_num == int(chapter_num):
                     chapter_num = int(chapter_num)
-                print(f'  ✓ done: {chapter_num}')
 
                 self.create_cbz(tmp_chapter)
                 did_work = True
@@ -537,11 +541,9 @@ class Utility:
             latest_chapter_num_on_disk = -1
 
         if latest_chapter_num_on_disk == -1:
-            print('  x - no cache')
-            for chapter in feed.entries:
-                print(' ', chapter.title)
+            print('  x - no cache'.ljust(self.pad_value), end='')
         else:
-            print(f'  ✓ cache: {latest_chapter_num_on_disk}')
+            print(f'   ✓ cache: {latest_chapter_num_on_disk}'.ljust(self.pad_value), end='')
 
         # Print each entry in the feed
         for entry in feed.entries:
@@ -594,9 +596,9 @@ class Utility:
             match = re.search(r'\d+', feed.entries[0].title)
             if match:
                 number = match.group()
-                print(f'  ✓ up-to-date: Chapter:', number)
+                print(f'  ✓ remote: {number}'.ljust(self.pad_value), end='')
             else:
-                print(f'  ✓ up-to-date: Chapter:', feed.entries[0].title)
+                print(f'  ✓ remote: {feed.entries[0].title} ?'.ljust(self.pad_value), end='')
 
         return tmp_dir, feed.feed.title, did_work, author
 
@@ -671,6 +673,9 @@ class Utility:
             if not os.path.exists(sync_dest):
                 os.makedirs(sync_dest)
 
+            combo_output = None
+            device_output = None
+
             # if combined, only move single file
             if combine:
                 if os.access(sync_destination, os.W_OK):
@@ -692,13 +697,19 @@ class Utility:
                         pbar.update(1)
                         pbar.close()
                         self.synced.append(file_name)
-                    else:
+                    # else:
                         # fake 100% 1/1 bar for consistent look
-                        pbar = tqdm(total=1)
-                        pbar.update(1)
-                        pbar.close()
-
-                    print(f'  ✓ synced: {file_name} (combined)')
+                        # pbar = tqdm(total=1)
+                        # pbar.update(1)
+                        # pbar.close()
+                    
+                    try:
+                        match = re.search(r"-(\d+(\.\d+)?)-(\d+(\.\d+)?)-", file_name)
+                        start = match.group(1)
+                        end = match.group(3)
+                        combo_output = f'{start}-{end}(combo)'
+                    except:
+                        combo_output = f'{file_name}(combo)'
 
             force_sync = False
             if len(os.listdir(sync_dest)) == 1 and not any(file.endswith('combo.pdf') for file in os.listdir(sync_dest)):
@@ -714,14 +725,15 @@ class Utility:
                     latest_chapter_num = self.extract_number(latest_chapter)
                 except:
                     # no chapters exists, that's fine
-                    print('  No chapters on device')
+                    # print('  No chapters on device'.rjust(self.pad_value), end='')
+                    device_output = 'nothing!'
 
                 # print latest on device
                 if latest_chapter_num != 0:
-                    print(f'  ✓ device: {latest_chapter_num}')          
+                    device_output = latest_chapter_num
 
                 # check every file on device against cache, pdf only
-                for filename in tqdm(sorted(glob.glob(tmp_dir + '/*.pdf'), key=self.extract_number)):
+                for filename in sorted(glob.glob(tmp_dir + '/*.pdf'), key=self.extract_number):
 
                     if 'pdf' in filename:
 
@@ -739,4 +751,22 @@ class Utility:
                                     os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
                                     shutil.copy(filename, sync_dest_file)
                                 # print(f'    ✓ {filename}')
-                    pass
+            # else:
+            #     print(f'  ✓ device: n/a'.rjust(self.pad_value), end='')
+
+            result_output = None
+            if device_output is not None:
+                # singular issues and combo
+                result_output = f'  ✓ device: {device_output}'
+                if combo_output is not None:
+                    result_output += f' and {combo_output}'
+            else:
+                # combo only
+                if combo_output is not None:
+                    result_output = f'  ✓ device: {combo_output}'
+
+
+            if result_output is None:
+                print('  x device', end='')
+            else:
+                print(result_output.ljust(self.pad_value), end='')

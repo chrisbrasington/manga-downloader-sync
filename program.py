@@ -57,6 +57,7 @@ if not os.access(sync_destination, os.W_OK):
 else:
     print('✓ kobo detected')
 
+print('~~ongoing~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', end='')
 # Iterate over the list of sources
 for source in sources:
 
@@ -74,6 +75,7 @@ for source in sources:
     if(known):
         util.sync(tmp_dir, sync_destination, title, combine)
 
+print('\n~~completed~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', end='')
 # Iterate over the list of sources
 for source in completed:
 
@@ -91,6 +93,7 @@ for source in completed:
     if(known):
         util.sync(tmp_dir, sync_destination, title, combine)
     
+print('\n~~haitus~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', end='')
 # Iterate over the list of sources in hiatus
 for source in haitus:
 

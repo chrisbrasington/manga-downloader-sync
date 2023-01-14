@@ -288,14 +288,18 @@ class Utility:
     # extract number from chapter metadata or filename
     def extract_number(self, s):
         
+        # Chapter class is known and can sort by float value
+        if type(s) == Chapter:
+            return float(s.chapter)
+
         if type(s) == tuple:
             s = s[0]   
-
         if type(s) == int:
             return s 
         if type(s) == float:
             return s          
 
+        # else try to parse from title
         try:
 
             match = re.search(r'(\d+)(?!.*\d)', s)
@@ -460,6 +464,10 @@ class Utility:
 
         # get chapters
         chapters = self.get_chapters(manga)
+
+        # sort chapters
+        chapters = sorted(chapters, key=self.extract_number, reverse=True)
+
         latest_chapter_remote = chapters[0]
 
         # print cache info

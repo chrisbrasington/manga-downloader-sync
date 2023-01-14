@@ -105,7 +105,7 @@ for source in haitus:
     known, tmp_dir, title = util.parse_feed(source, combine)
 
     # do not sync to these to device
-    # print('  haitus, skipping sync')
+    print('  haitus, skipping sync', end='')
 
 # print summary of download and sync
 util.print_summary()

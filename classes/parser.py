@@ -235,6 +235,7 @@ class Utility:
         for root, dirs, files in os.walk(dir):
             # Add the files to the ZIP file
             for file in sorted(files, key=self.extract_number):
+                # print(file)
                 # skip over existing pdfs
                 if 'pdf' not in file:
             
@@ -244,7 +245,7 @@ class Utility:
 
                     # if pdf not existing, convert
                     if not os.path.exists(pdf_path):
-                        # print(f'  converting to pdf... {os.path.basename(pdf_path)}')
+
 
                         # extract cbz/zip
                         with zipfile.ZipFile(file_path, 'r') as cbz_file:    
@@ -392,6 +393,7 @@ class Utility:
         result = None
         name = None
         did_work = False
+        author = ''
 
         # supported known types
         if('mangadex' in source):
@@ -407,12 +409,6 @@ class Utility:
         # combine result into single pdf if requested
         if(combine) and (did_work or not len(glob.glob(f'tmp/{name}/{name}*combo.pdf')) > 0):
             self.combine(result, author)
-        # elif combine:
-        #     print('  ✓ combo pdf exists')
-
-        # convert from cbz to pdf
-        if not combine:
-            self.convert_to_pdf(result, author)
         
         return success, result, name
 
@@ -521,12 +517,9 @@ class Utility:
             # download if remote chapter is newer than cached in number
             # because feed may change for same content, do not strictly match the file/feed information
             if chapter_num > latest_chapter_num_on_disk or force_all_download:
-
-                if not os.path.exists(tmp_chapter):
-                    os.makedirs(tmp_chapter)       
                 
                 if os.path.exists(f'{tmp_chapter}.cbz'):
-                    print('  ✓ exists:', chapter.chapter, f'({chapter.language})', chapter.title, end='')
+                    # print('  ✓ exists:', chapter.chapter, f'({chapter.language})', chapter.title, end='')
                     continue
 
                 self.summary.append(f"{chapter_num} - {manga.title}")

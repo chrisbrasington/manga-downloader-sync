@@ -5,15 +5,18 @@ from PIL import Image
 from pdfrw import PdfReader, PdfWriter   
 from operator import attrgetter
 import colorama, json
-import traceback
+import builtins, traceback
 
 class Manga:
     def __init__(self, data):
+        # print(json.dumps(data, indent=4))
         self.id = data["id"]
         self.tags = data["attributes"]["tags"]
         self.relationships = data["relationships"]
         self.desc = ''
         self.tags = []
+        self.status = data["attributes"]["status"]
+        self.demographic = data['attributes']['publicationDemographic']
 
         key = 'en'
         if not 'en' in data["attributes"]["title"]:
@@ -24,6 +27,11 @@ class Manga:
                 key = next(iter(data["attributes"]["title"]))
 
         self.title = data["attributes"]["title"][key]
+
+        # if self.status == 'completed':
+        #     print()
+        #     print()
+        #     print(f'completed!!!!!!!!!! {self.title}')
 
         if 'en' in data['attributes']['description']:
             self.desc = data['attributes']['description']['en']
@@ -126,14 +134,22 @@ class Chapter:
 # utility parser class
 class Utility:
 
+    # def print_tabbed(self, text = '', end = '\n'):
+    #     wrapped_text = textwrap.fill(text, width=80)
+    #     builtins.print(wrapped_text.replace("\n", "\n    "), end = end)
+
     pad_value = 20
 
     # Private constructor
     def __init__(self):
+        global print
         self.summary = []
         self.synced = []
 
         colorama.init()
+
+        # override print for tabbed print
+        # print = self.print_tabbed
 
     # Static instance method
     @staticmethod
@@ -436,8 +452,10 @@ class Utility:
         # print title/type
         print()
 
-        # if manga.type == None:
-        print(manga.title, f'- mangadex')
+        # hyperlink
+        print(manga.title, end=' - ')
+        print(f"\u001b]8;;{source}\u001b\\mangadex\u001b]8;;\u001b\\")
+
         # else:    
             # print(manga.title, f'- mangadex - {manga.type}')
         tmp_dir = f"tmp/{manga.title}"
@@ -508,7 +526,7 @@ class Utility:
                     os.makedirs(tmp_chapter)       
                 
                 if os.path.exists(f'{tmp_chapter}.cbz'):
-                    print('  ✓ exists:', chapter.chapter, f'({chapter.language})', chapter.title)
+                    print('  ✓ exists:', chapter.chapter, f'({chapter.language})', chapter.title, end='')
                     continue
 
                 self.summary.append(f"{chapter_num} - {manga.title}")
@@ -557,10 +575,13 @@ class Utility:
 
         # Print the feed information
         print()
+
+        # hyperlink
+        print(feed.feed.title, end=' - ')
+        link = feed.feed.link
         if('danke.moe' in feed.feed.link):
-            print(f'{feed.feed.title} - danke.moe')
-        else:    
-            print(f'{feed.feed.title} - {feed.feed.link}')
+            link = 'danke.moe'
+        print(f"\u001b]8;;{source}\u001b\\{link}\u001b]8;;\u001b\\")
 
         tmp_dir = f'tmp/{feed.feed.title}'  
 

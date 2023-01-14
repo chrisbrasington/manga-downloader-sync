@@ -2,7 +2,8 @@ tmp
 __pycache__
 *.secret
 sources.txt
-backup
+completed.txt
 maybe.txt
 haitus.txt
+backup
 convert

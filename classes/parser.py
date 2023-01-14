@@ -514,9 +514,17 @@ class Utility:
                 self.summary.append(f"{chapter_num} - {manga.title}")
 
                 if not download_print_once:
-                    print(colorama.Fore.RED + f'    downloading: {latest_chapter_num_on_disk} to {chapter_num}'.ljust(self.pad_value) + colorama.Style.RESET_ALL)
+                    start = latest_chapter_num_on_disk
+                    end = chapters[0].chapter
+                    if end == int(end):
+                        end = int(end)
+                    if latest_chapter_num_on_disk <= 0:
+                        start = chapters[-1].chapter
+
+                    print(colorama.Fore.RED + f'    downloading: {start}-{end}'.ljust(self.pad_value) + colorama.Style.RESET_ALL)
                     download_print_once = True
 
+                print(chapter_num)
                 i = 0
                 for url in tqdm(chapter.images):
                     i += 1

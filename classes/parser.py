@@ -199,6 +199,9 @@ class Utility:
         # for each chapter (sorted) and images (sorted)
         for chapter in sorted(os.listdir(working_dir), key=self.extract_number):
 
+            # print(chapter)
+            # print(self.extract_number(chapter))
+
             if chapter_lowest is None:
                 chapter_lowest = self.extract_number(chapter)
 
@@ -210,7 +213,7 @@ class Utility:
                 # grayscale convert
                 converted_image = Image.open(image_path).convert("L")
                 images.append(converted_image)
-        
+       
         pdf_path = f'tmp/{file_name}/{file_name}-{chapter_lowest}-{chapter_highest}-combo.pdf'
 
         # Save the images as a PDF
@@ -302,38 +305,52 @@ class Utility:
         base = 'https://danke.moe/api/download_chapter/'
         return f'{base}{dl}', f'{dl.replace("/","-")}.cbz'
 
+
     # extract number from chapter metadata or filename
     def extract_number(self, s):
-        
+
+        original = s
+       
+        # print(s)
         # Chapter class is known and can sort by float value
         if type(s) == Chapter:
             return float(s.chapter)
+
+        if 'combo' in s:
+            return -1
 
         if type(s) == tuple:
             s = s[0]   
         if type(s) == int:
             return s 
         if type(s) == float:
-            return s          
+            return s        
+        
+        if len(s.split('-')) > 1:
+            s = s.replace(s.split('-')[0], '')  
 
-        # else try to parse from title
+        s = ''.join(c for c in s if c.isnumeric() or c == '.' or c == '-')
+        s = s.replace('-', '.')
+
+        # trim any leading periods
+        s = re.sub("^\\.+", "", s)
+        # trim any trailing periods
+        s = re.sub("\\.+$", "", s)
+        # print(s)
+
         try:
 
-            match = re.search(r'(\d+)(?!.*\d)', s)
-            value = match.group()
-            value = float(value)
+            value = float(s)
 
-            # print(f'{s}... matches to number: {value}')
+            if str(value).endswith('.0'):
+                value = int(value)
 
-            # return as int if int (prettier print)
-            if value == int(value):
-                return int(value)
-
-            # return as float if float
             return value
+           
         except:
-            print(f'error: {s} {type(s)}')
-            traceback.print_tb(limit=None, file=None)
+            print()
+            print(f'critical error: {original} as {s}')
+            # traceback.print_tb(limit=None, file=None)
             sys.exit()
             return -1 # no number in file
 
@@ -343,7 +360,7 @@ class Utility:
             url, name = self.extract_danke_moe(url)
             return True, url, name
         else:
-            print('unsupported feed')
+            print(f'\n {url} - unsupported feed')
             return False, None, dl
 
     # get chapter information
@@ -372,14 +389,34 @@ class Utility:
         return chapters
 
     # get latest chapter number on disk
-    def get_latest_chapter_num_on_disk(self, dir):
+    def get_latest_chapter_num_on_disk(self, dir, title=''):
 
-        files = os.listdir(dir)       
-        file = sorted(files, key=self.extract_number)[-1]
+        raw_files = os.listdir(dir)       
+        files = []
 
-        result = self.extract_number(file)
+        for f in raw_files:
+            files.append(f.replace(title, ''))
+
+        try:
+            files = sorted(files, key=self.extract_number)
+        except:
+            print('critical sorting error')
+            sys.exit()
+
+        # verbose chapters on disk
+        # for f in files:
+        #     if 'cbz' in f:
+        #         num = self.extract_number(f)
+        #         print(num, end='')
+        #         if f != files[-1]:
+        #             print(', ', end='')
+        # print()
+
+        result = self.extract_number(files[-1])
+
         if result == int(result):
             return int(result)  # int prints prettier
+
         return result # float
 
     # parse feed, rss or mangadex
@@ -403,7 +440,7 @@ class Utility:
             result, name, did_work, author = self.parse_rss_feed(source)
             success = True
         else: 
-            print(f'unsupported feed: {source}')
+            print(f'\nunsupported feed: {source}', end='')
             success = False
 
         # combine result into single pdf if requested
@@ -471,7 +508,7 @@ class Utility:
         latest_chapter_remote = None
         latest_chapter_num_on_disk = -1
         try:
-            latest_chapter_num_on_disk = self.get_latest_chapter_num_on_disk(tmp_dir)
+            latest_chapter_num_on_disk = self.get_latest_chapter_num_on_disk(tmp_dir, manga.title)
         except Exception as e:
             # this is ok, may not exist on disk yet
             latest_chapter_num_on_disk = -1

@@ -497,6 +497,9 @@ class Utility:
 
         download_print_once = False
 
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir)
+
         # for every chapter
         for chapter in chapters:
 
@@ -527,13 +530,16 @@ class Utility:
                 if not download_print_once:
                     start = latest_chapter_num_on_disk
                     end = chapters[0].chapter
-                    if end == int(end):
-                        end = int(end)
+
                     if latest_chapter_num_on_disk <= 0:
                         start = chapters[-1].chapter
 
                     print(colorama.Fore.RED + f'    downloading: {start}-{end}'.ljust(self.pad_value) + colorama.Style.RESET_ALL)
                     download_print_once = True
+
+                
+                if not os.path.exists(tmp_chapter):
+                    os.makedirs(tmp_chapter)
 
                 print(chapter_num)
                 i = 0

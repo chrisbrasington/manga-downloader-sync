@@ -75,6 +75,9 @@ for source in sources:
     if(known):
         util.sync(tmp_dir, sync_destination, title, combine)
 
+    # print('abort')
+    # sys.exit(0)
+
 print('\n~~completed~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', end='')
 # Iterate over the list of sources
 for source in completed:

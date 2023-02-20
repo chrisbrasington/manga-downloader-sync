@@ -6,6 +6,7 @@ from pdfrw import PdfReader, PdfWriter
 from operator import attrgetter
 import colorama, json
 import builtins, traceback
+from memedetect import is_comic_book
 
 class Manga:
     def __init__(self, data):
@@ -579,6 +580,7 @@ class Utility:
                     os.makedirs(tmp_chapter)
 
                 print(chapter_num)
+                path = ''
                 i = 0
                 for url in tqdm(chapter.images):
                     i += 1
@@ -586,8 +588,17 @@ class Utility:
                     _, file_extension = os.path.splitext(url)
                     # to keep cbz sorted, works well to pad the page number 1 as 001
                     # keeps 001 002 003 004 005 006 007 008 009 010 011 etc. well sorted 
-                    open(f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}", "wb").write(response.content)
+                    path = f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}"
+                    open(path, "wb").write(response.content)
                     pass
+
+                # is_manga, percent = is_comic_book(path)
+
+                # if not is_manga:
+                #     print('MEME DETECTED!!!')
+                #     # os.remove(path)              
+                # else:
+                #     print('keeping all images')  
 
                 if chapter_num == int(chapter_num):
                     chapter_num = int(chapter_num)

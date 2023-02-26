@@ -767,6 +767,9 @@ class Utility:
         # chapter destination
         sync_dest = os.path.join(sync_destination, title)
 
+        # create the directory using the safe path
+        sync_dest = sync_dest.replace('"','')
+
         # if device exists
         if os.access(sync_destination, os.W_OK):
             
@@ -847,6 +850,10 @@ class Utility:
                             did_work = True
 
                             sync_dest_file = os.path.join(sync_dest, os.path.basename(filename))
+
+                            # create the directory using the safe path
+                            sync_dest_file = sync_dest_file.replace('"','')
+
                             self.synced.append(os.path.basename(filename))
 
                             if os.access(sync_destination, os.W_OK):

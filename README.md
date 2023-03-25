@@ -9,6 +9,44 @@ Downloads images (manga) from the web into cbz files, converts to pdf,  and sync
 - [mangadex](https://mangadex.org/)
 - [danke.moe](https://danke.moe/)
 
+## Usage
+`python program.py [-h] [-u URL] [-a [ADD]] [-o [ONGOING]] [-c [COMPLETED]] [-d [HAITUS]]`
+
+## Arguments
+
+    -h, --help: Show help message and exit
+    -u URL, --url URL: Url to read from
+    -a [ADD], --add [ADD]: Add url to sources.txt
+    -o [ONGOING], --ongoing [ONGOING]: Use ongoing sources.txt
+    -c [COMPLETED], --completed [COMPLETED]: Use completed.txt
+    -d [HAITUS], --haitus [HAITUS]: Use dead haitus.txt
+
+All arguments are optional. If no arguments are provided, the program will use the default ongoing source file (sources.txt).
+
+If the -u argument is provided, the program will download the manga from the given url.
+
+If the -a argument is provided with a url, the program will add the url to the sources file.
+
+If any of the -o, -c, or -d arguments are provided, the program will use the corresponding source file instead of the default ongoing file.
+
+## Examples
+
+Download manga from a url:
+
+`python program.py -u https://example.com/manga/1`
+
+Add a url to the sources file:
+
+`python program.py -u https://example.com/manga/1 -a`
+
+Use the completed source file:
+
+`python program.py -c`
+
+Use the dead haitus source file:
+
+`python program.py -d`
+
 ## chapter number matching
 
 Even if the feed changes, the chapter number is attempted to be extracted from the feed. This will not redownload cached chapter numbers even if the file name would be different.

@@ -1,121 +1,76 @@
 #!/usr/bin/env python3
+import argparse, os, sys
 from classes.parser import Utility 
-import glob, os, shutil, sys
-from tqdm import tqdm
-import subprocess
-import builtins, textwrap
-
-# def print_tabbed(text):
-
-#     wrapped_text = textwrap.fill(text, width=80)
-#     builtins.print(wrapped_text.replace("\n", "\n    "))
-
-# print = print_tabbed
+from classes.source_files import SourceFile
 
 # change sync destination 
 device = '/run/media/chris/KOBOeReader'
 sync_destination = f'{device}/manga'
-if len(sys.argv) > 1:
-    sync_destination = sys.argv[1]
 
-sources = []
-haitus = []
-completed = []
+def main(args):
+    # parsing utility
+    util = Utility()
 
-# Open the text file and read the lines into a list
-if os.path.exists('sources.txt'):
-    with open("sources.txt") as f:
-        sources = f.readlines()
+    # if url provided
+    if args.url is not None:
+        # if adding to sources for future runs
+        if args.add:
+            util.add_url_to_file(args.url, args.add)
 
-    # Strip the leading and trailing whitespace from each line
-    sources = [source.strip() for source in sources]
-
-if os.path.exists('haitus.txt'):
-    with open("haitus.txt") as f:
-        haitus = f.readlines()
-
-    # Strip the leading and trailing whitespace from each line
-    haitus = [h.strip() for h in haitus]
-
-if os.path.exists('completed.txt'):
-    with open("completed.txt") as f:
-        completed = f.readlines()
-
-    # Strip the leading and trailing whitespace from each line
-    completed = [h.strip() for h in completed]
-
-if len(sources) == 0 and len(haitus) == 0 and len(completed) == 0:
-    print('no sources, aborting')
-    sys.exit()
-
-# parsing utility
-util = Utility()
-
-# check device existence 
-if not os.access(sync_destination, os.W_OK):
-    print('kobo not plugged in, skipping sync')
-else:
-    print('✓ kobo detected')
-
-i = 0
-
-print('~~ongoing~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', end='')
-# Iterate over the list of sources
-for source in sources:
-    i += 1
-
-    # url and secondary optional "combine" flag
-    parts = source.split(",")
-    if len(parts) == 2:
-        source, combine = parts
-    else:
-        source, combine = parts[0], False
-
-    # parse feed if known source
-    known, tmp_dir, title = util.parse_feed(source, combine)
-
-    # sync to device
-    if(known):
-        util.sync(tmp_dir, sync_destination, title, combine)
-
-    # if i >= 2:
-    #     print('abort')
-    #     sys.exit(0)
-
-print('\n~~completed~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', end='')
-# Iterate over the list of sources
-for source in completed:
-
-    # url and secondary optional "combine" flag
-    parts = source.split(",")
-    if len(parts) == 2:
-        source, combine = parts
-    else:
-        source, combine = parts[0], False
-
-    # parse feed if known source
-    known, tmp_dir, title = util.parse_feed(source, combine)
-
-    # sync to device
-    if(known):
-        util.sync(tmp_dir, sync_destination, title, combine)
+        # process url
+        util.process_collection(args.url, sync_destination)
     
-print('\n~~haitus~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~', end='')
-# Iterate over the list of sources in hiatus
-for source in haitus:
+    # if cbz file to convert to pdf
+    if args.file is not None:
 
-    # url and secondary optional "combine" flag
-    parts = source.split(",")
-    if len(parts) == 2:
-        source, combine = parts
+        if args.file.endswith("cbz"):
+            print(f"Converting to pdf: {args.file}")
+            util.convert_file_to_pdf(args.file)
+        else:
+            print("Converting directory to pdf")
+            util.convert_dir_to_pdf(args.file)
+            print(f'Done: {args.file}')
+
     else:
-        source, combine = parts[0], False
+    
+        # if no param run or ongoing
+        if len(sys.argv) > 1 or args.ongoing:
+            util.process_collection(util.get_collection(args.ongoing), sync_destination)
 
-    # parse feed if known source
-    known, tmp_dir, title = util.parse_feed(source, combine)
+        # if completed run
+        if args.completed:
+            util.process_collection(util.get_collection(args.completed), sync_destination)
+        
+        # if haitus run
+        if args.haitus:
+            util.process_collection(util.get_collection(args.haitus), sync_destination)
 
-    # do not sync to these to device
-    print('  haitus, skipping sync', end='')
+    # print summary 
+    util.print_summary()
 
-# print summary of download and sync
-util.print_summary()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Manga-Kobo downloader and sync', add_help=True)
+    parser.add_argument('-u', '--url', help='Url to read from', required=False)
+    parser.add_argument('-a', '--add', help='Add url to sources.txt', required=False, nargs='?')
+    parser.add_argument('-o', '--ongoing', help='Use ongoing sources.txt', required=False, nargs='?')
+    parser.add_argument('-c', '--completed', help='Use completed.txt', required=False, nargs='?')
+    parser.add_argument('-d', '--haitus', help='Use dead haitus.txt', required=False, nargs='?')
+    parser.add_argument('-f', '--file', help='Convert an existing cbz file to pdf', required=False)
+    args = parser.parse_args()
+
+    # this is a bit dumb but I can't tell the difference between
+    # and args with None vs its absense
+    # so I check for the argv and populate it so that
+    #    "if args.ongoing" is easier to discern later
+    # plus it's easier to match commands to the files in use anyway
+    if '-a' in sys.argv or '--add' in sys.argv:
+        args.add = SourceFile.SOURCES.value
+    if '-o' in sys.argv or '--ongoing' in sys.argv or len(sys.argv) == 1:
+        args.ongoing = SourceFile.SOURCES.value
+    if '-c' in sys.argv or '--completed' in sys.argv:
+        args.ongoing = SourceFile.COMPLETED.value
+    if '-d' in sys.argv or '--haitus' in sys.argv:
+        args.ongoing = SourceFile.HIATUS.value
+    # -f requires a value
+
+    main(args)

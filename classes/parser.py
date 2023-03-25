@@ -135,10 +135,6 @@ class Chapter:
 # utility parser class
 class Utility:
 
-    # def print_tabbed(self, text = '', end = '\n'):
-    #     wrapped_text = textwrap.fill(text, width=80)
-    #     builtins.print(wrapped_text.replace("\n", "\n    "), end = end)
-
     pad_value = 20
 
     # Private constructor
@@ -159,17 +155,27 @@ class Utility:
             Utility._instance = Utility()
         return Utility._instance
 
-    # cleanup may find unconverted files but they may not be in a good structure to 
-    # convert to pdf
-    # def cleanup(self):
-    #     print('cleanup...')
-    #     for dir in reversed(sorted(os.listdir('tmp'))):
-    #         self.convert_to_pdf(f'tmp/{dir}', 'unknown')
-    #         # for cbz in glob.glob(f'tmp/{dir}/*.cbz'):
-    #         #     pdf = cbz.replace('.cbz', '.pdf')
-    #         #     if not os.path.exists(pdf):
-    #         #         print(f'  converting to pdf: {os.path.basename(pdf)}')
-    #         break
+    # add url to file
+    def add_url_to_file(self, url, file_path):
+
+        # Check if file exists, create it if it doesn't
+        if not os.path.isfile(file_path):
+            with open(file_path, 'w'):
+                pass
+
+        # Check if url already exists in file
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+        if url+'\n' in lines:
+            print(f"URL '{url}' already exists in file.")
+            return
+
+        # If url doesn't exist, add it to the top of the file and save it
+        with open(file_path, 'w') as f:
+            f.write(url+'\n')
+            f.writelines(lines)
+
+        print(f"Added URL '{url}' to file '{file_path}'.")
 
     # combine all files into single pdf (if requested)
     def combine(self, dir, author):
@@ -230,8 +236,8 @@ class Utility:
 
         print(f'\n  ✓ {file_name}.pdf')
 
-    # convert individual file from cbz to pdf
-    def convert_to_pdf(self, dir, author):
+    # convert directory from cbz to pdf
+    def convert_dir_to_pdf(self, dir, author=''):
 
         # if combo requested, use {title}.cbz
         combo_file = f'{dir}.cbz'
@@ -242,56 +248,59 @@ class Utility:
                 # print(file)
                 # skip over existing pdfs
                 if 'pdf' not in file:
+                    self.convert_file_to_pdf(os.path.join(dir, file), author)
+
+    # convert individual file from cbz to pdf  
+    def convert_file_to_pdf(self, file, author=''):
+
+        # get cbz and pdf name
+        file_path = file
+        pdf_path = file_path.replace('cbz','pdf')
+
+        # if pdf not existing, convert
+        if not os.path.exists(pdf_path):
+
+            # extract cbz/zip
+            with zipfile.ZipFile(file_path, 'r') as cbz_file:    
+                cbz_file.extractall('convert')
             
-                    # get cbz and pdf name
-                    file_path = os.path.join(dir, file)
-                    pdf_path = file_path.replace('cbz','pdf')
+            num_pages = len(os.listdir('convert'))
 
-                    # if pdf not existing, convert
-                    if not os.path.exists(pdf_path):
+            images = []
+            directories = [d for d in os.listdir('convert') if os.path.isdir(os.path.join('convert', d))]
+            directories = sorted(directories, key=self.extract_number)
 
+            # some chapters include subdirectories, allow a depth of 1
+            if len(directories) > 0:
+                for image in directories:
+                    if(os.path.isdir(os.path.join('convert', image))):
+                        sub_dir = os.path.join('convert', image)
+                        for image in os.listdir(sub_dir):
+                            images.append(Image.open(os.path.join(sub_dir, image)))                               
+            # most chapters have images at root
+            else:
+                images_dr = os.listdir('convert')
+                images_dr = sorted(images_dr, key=self.extract_number)
 
-                        # extract cbz/zip
-                        with zipfile.ZipFile(file_path, 'r') as cbz_file:    
-                            cbz_file.extractall('convert')
-                        
-                        num_pages = len(os.listdir('convert'))
+                for image in images_dr:
+                    images.append(Image.open(os.path.join('convert', image)))
 
-                        images = []
-                        directories = [d for d in os.listdir('convert') if os.path.isdir(os.path.join('convert', d))]
-                        directories = sorted(directories, key=self.extract_number)
+            converted_images = []
 
-                        # some chapters include subdirectories, allow a depth of 1
-                        if len(directories) > 0:
-                            for image in directories:
-                                if(os.path.isdir(os.path.join('convert', image))):
-                                    sub_dir = os.path.join('convert', image)
-                                    for image in os.listdir(sub_dir):
-                                        images.append(Image.open(os.path.join(sub_dir, image)))                               
-                        # most chapters have images at root
-                        else:
-                            images_dr = os.listdir('convert')
-                            images_dr = sorted(images_dr, key=self.extract_number)
+            # Iterate through the list of images and convert each one to grayscale
+            for image in images:
+                converted_images.append(image.convert("L"))
 
-                            for image in images_dr:
-                                images.append(Image.open(os.path.join('convert', image)))
+            # Save the images as a PDF
+            converted_images[0].save(pdf_path, "PDF" ,resolution=100.0, save_all=True, append_images=converted_images[1:])
 
-                        converted_images = []
+            # remove temp image extraction folder
+            shutil.rmtree('convert')
 
-                        # Iterate through the list of images and convert each one to grayscale
-                        for image in images:
-                            converted_images.append(image.convert("L"))
-
-                        # Save the images as a PDF
-                        converted_images[0].save(pdf_path, "PDF" ,resolution=100.0, save_all=True, append_images=converted_images[1:])
-
-                        # remove temp image extraction folder
-                        shutil.rmtree('convert')
-
-                        # set author metadata of pdf
-                        trailer = PdfReader(pdf_path)    
-                        trailer.Info.Author = author
-                        PdfWriter(pdf_path, trailer=trailer).write()
+            # set author metadata of pdf
+            trailer = PdfReader(pdf_path)    
+            trailer.Info.Author = author
+            PdfWriter(pdf_path, trailer=trailer).write()                
 
     # create cbz - rename zip to cbz
     def create_cbz(self, tmp_chapter):
@@ -306,19 +315,22 @@ class Utility:
         base = 'https://danke.moe/api/download_chapter/'
         return f'{base}{dl}', f'{dl.replace("/","-")}.cbz'
 
-
     # extract number from chapter metadata or filename
     def extract_number(self, s):
-
+        
         original = s
-       
         # print(s)
         # Chapter class is known and can sort by float value
         if type(s) == Chapter:
             return float(s.chapter)
 
+        # get largest chapter out of a combo file
         if 'combo' in s:
             return -1
+            # parts = s.split("-combo")[0].split("-")
+            # number = re.findall(r'\d+', parts[-1])[0]
+            # print(s, number)
+            # return number # -1
 
         if type(s) == tuple:
             s = s[0]   
@@ -349,11 +361,17 @@ class Utility:
             return value
            
         except:
-            print()
-            print(f'critical error: {original} as {s}')
-            # traceback.print_tb(limit=None, file=None)
-            sys.exit()
+            # print()
+            # print(f'critical error: {original} as {s}')
+            # # traceback.print_tb(limit=None, file=None)
+            # sys.exit()
             return -1 # no number in file
+
+    # extract number from combo file
+    def extract_number_from_combo(self, s):
+        
+        split_str = s.split('-combo')[0].split('-')[-1]
+        return int(split_str)
 
     # extract name from rss feed if known
     def extract_rss_feed_name(self, url):
@@ -388,6 +406,12 @@ class Utility:
         #     print('  ', c.chapter, c.language, c.title)
 
         return chapters
+
+    # get all urls in a collection from file
+    def get_collection(self, source):
+        with open(str(source), 'r') as f:
+            urls = [url.strip() for url in f.readlines()]
+        return urls
 
     # get latest chapter number on disk
     def get_latest_chapter_num_on_disk(self, dir, title=''):
@@ -539,7 +563,9 @@ class Utility:
             os.makedirs(tmp_dir)
 
         # for every chapter
-        for chapter in chapters:
+        # go from oldest to newest
+        # list(reversed(chapters)) or chapters[::-1]
+        for chapter in chapters[::-1]:
 
             # setup cbz file name for download
             tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}" # chapter number not volume
@@ -608,7 +634,7 @@ class Utility:
 
         # convert entire dir to pdf (where pdfs do not exist)
         if did_work: 
-            self.convert_to_pdf(tmp_dir, manga.author)
+            self.convert_dir_to_pdf(tmp_dir, manga.author)
 
         return tmp_dir, manga.title, did_work, manga.author
 
@@ -702,6 +728,23 @@ class Utility:
 
         return tmp_dir, feed.feed.title, did_work, author
 
+    # process collection
+    def process_collection(self, source, sync_destination):
+
+        # allow a single string or array of strings
+        if isinstance(source, str):
+            source = [source]
+
+        for s in source:
+            # URL parameter is provided
+            # print(f"Downloading from {s}")
+            known, tmp_dir, title = self.parse_feed(s, False)
+
+            # sync to device
+            if(known and os.access(sync_destination, os.W_OK)):
+                print('ok')
+                self.sync(tmp_dir, sync_destination, title, False)
+
     # print summary
     def print_summary(self):
         print()
@@ -761,7 +804,7 @@ class Utility:
         # Return the list of unique chapters, sorted by 'chapter' attribute
         return [v for k, v in sorted(unique_chapters.items(), reverse=True, key=self.extract_number)]
     
-
+    # sync to location (ereader)
     def sync(self, tmp_dir, sync_destination, title, combine):
 
         # chapter destination
@@ -815,52 +858,50 @@ class Utility:
                     except:
                         combo_output = f'{file_name}(combo)'
 
-            force_sync = False
-            if len(os.listdir(sync_dest)) == 1 and not any(file.endswith('combo.pdf') for file in os.listdir(sync_dest)):
-                force_sync = True
-
-            # if more than combo file exists in destination, update individual chapters too
-            if len(os.listdir(sync_dest)) == 0 or len(os.listdir(sync_dest)) > 1 or force_sync:
-
-                # find latest chapter on device
-                latest_chapter_num = -1
-                try:
-                    latest_chapter = sorted(os.listdir(sync_dest), key=self.extract_number)[-1]     
+            # find latest chapter on device
+            latest_chapter_num = -1
+            try:
+                latest_chapter = sorted(os.listdir(sync_dest), key=self.extract_number)[-1]  
+                # allow incrementing beyond a combo file during sync  
+                if 'combo' in latest_chapter:
+                    latest_chapter_num = self.extract_number_from_combo(latest_chapter)
+                else:
                     latest_chapter_num = self.extract_number(latest_chapter)
-                except:
-                    # no chapters exists, that's fine
-                    # print('  No chapters on device'.rjust(self.pad_value), end='')
-                    device_output = 'nothing!'
 
-                # print latest on device
-                if latest_chapter_num != 0:
-                    device_output = latest_chapter_num
+            except:
+                # no chapters exists, that's fine
+                # print('  No chapters on device'.rjust(self.pad_value), end='')
+                device_output = 'nothing!'
 
-                # check every file on device against cache, pdf only
-                for filename in sorted(glob.glob(tmp_dir + '/*.pdf'), key=self.extract_number):
+            # print latest on device
+            if latest_chapter_num != 0:
+                device_output = latest_chapter_num
 
-                    if 'pdf' in filename:
+            # check every file on device against cache, pdf only
+            for filename in sorted(glob.glob(tmp_dir + '/*.pdf'), key=self.extract_number):
 
-                        # get chapter number from file
-                        current_chapter_num = self.extract_number(filename)
+                if 'pdf' in filename:
 
-                        # if cached chapter is newer than device chapter, sync to device
-                        if latest_chapter_num < current_chapter_num:
+                    # get chapter number from file
+                    current_chapter_num = self.extract_number(filename)
 
-                            did_work = True
+                    # if cached chapter is newer than device chapter, sync to device
+                    if latest_chapter_num < current_chapter_num:
 
-                            sync_dest_file = os.path.join(sync_dest, os.path.basename(filename))
+                        did_work = True
 
-                            # create the directory using the safe path
-                            sync_dest_file = sync_dest_file.replace('"','')
+                        sync_dest_file = os.path.join(sync_dest, os.path.basename(filename))
 
-                            self.synced.append(os.path.basename(filename))
+                        # create the directory using the safe path
+                        sync_dest_file = sync_dest_file.replace('"','')
 
-                            if os.access(sync_destination, os.W_OK):
-                                if not os.path.exists(sync_dest_file):
-                                    os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
-                                    shutil.copy(filename, sync_dest_file)
-                                # print(f'    ✓ {filename}')
+                        self.synced.append(os.path.basename(filename))
+
+                        if os.access(sync_destination, os.W_OK):
+                            if not os.path.exists(sync_dest_file):
+                                os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
+                                shutil.copy(filename, sync_dest_file)
+                            # print(f'    ✓ {filename}')
             # else:
             #     print(f'  ✓ device: n/a'.rjust(self.pad_value), end='')
 
@@ -868,17 +909,17 @@ class Utility:
             result_output = None
             if device_output is not None:
                 # singular issues and combo
-                result_output = f'   {char} device: {device_output}'
+                result_output = f'    {char} device: {device_output}'
                 if combo_output is not None:
                     result_output += f' and {combo_output}'
             else:
                 # combo only
                 if combo_output is not None:
-                    result_output = f'  {char} device: {combo_output}'
+                    result_output = f'   {char} device: {combo_output}'
 
 
             if result_output is None:
-                print(colorama.Fore.RED + '   x device'+ colorama.Style.RESET_ALL, end='')
+                print(colorama.Fore.RED + '    x device'+ colorama.Style.RESET_ALL, end='')
             else:
                 if did_work:
                     print(colorama.Fore.RED + result_output.ljust(self.pad_value) + colorama.Style.RESET_ALL, end='')

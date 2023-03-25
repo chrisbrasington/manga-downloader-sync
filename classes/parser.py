@@ -236,8 +236,8 @@ class Utility:
 
         print(f'\n  ✓ {file_name}.pdf')
 
-    # convert individual file from cbz to pdf
-    def convert_to_pdf(self, dir, author):
+    # convert directory from cbz to pdf
+    def convert_dir_to_pdf(self, dir, author=''):
 
         # if combo requested, use {title}.cbz
         combo_file = f'{dir}.cbz'
@@ -248,56 +248,59 @@ class Utility:
                 # print(file)
                 # skip over existing pdfs
                 if 'pdf' not in file:
+                    self.convert_file_to_pdf(os.path.join(dir, file), author)
+
+    # convert individual file from cbz to pdf  
+    def convert_file_to_pdf(self, file, author=''):
+
+        # get cbz and pdf name
+        file_path = file
+        pdf_path = file_path.replace('cbz','pdf')
+
+        # if pdf not existing, convert
+        if not os.path.exists(pdf_path):
+
+            # extract cbz/zip
+            with zipfile.ZipFile(file_path, 'r') as cbz_file:    
+                cbz_file.extractall('convert')
             
-                    # get cbz and pdf name
-                    file_path = os.path.join(dir, file)
-                    pdf_path = file_path.replace('cbz','pdf')
+            num_pages = len(os.listdir('convert'))
 
-                    # if pdf not existing, convert
-                    if not os.path.exists(pdf_path):
+            images = []
+            directories = [d for d in os.listdir('convert') if os.path.isdir(os.path.join('convert', d))]
+            directories = sorted(directories, key=self.extract_number)
 
+            # some chapters include subdirectories, allow a depth of 1
+            if len(directories) > 0:
+                for image in directories:
+                    if(os.path.isdir(os.path.join('convert', image))):
+                        sub_dir = os.path.join('convert', image)
+                        for image in os.listdir(sub_dir):
+                            images.append(Image.open(os.path.join(sub_dir, image)))                               
+            # most chapters have images at root
+            else:
+                images_dr = os.listdir('convert')
+                images_dr = sorted(images_dr, key=self.extract_number)
 
-                        # extract cbz/zip
-                        with zipfile.ZipFile(file_path, 'r') as cbz_file:    
-                            cbz_file.extractall('convert')
-                        
-                        num_pages = len(os.listdir('convert'))
+                for image in images_dr:
+                    images.append(Image.open(os.path.join('convert', image)))
 
-                        images = []
-                        directories = [d for d in os.listdir('convert') if os.path.isdir(os.path.join('convert', d))]
-                        directories = sorted(directories, key=self.extract_number)
+            converted_images = []
 
-                        # some chapters include subdirectories, allow a depth of 1
-                        if len(directories) > 0:
-                            for image in directories:
-                                if(os.path.isdir(os.path.join('convert', image))):
-                                    sub_dir = os.path.join('convert', image)
-                                    for image in os.listdir(sub_dir):
-                                        images.append(Image.open(os.path.join(sub_dir, image)))                               
-                        # most chapters have images at root
-                        else:
-                            images_dr = os.listdir('convert')
-                            images_dr = sorted(images_dr, key=self.extract_number)
+            # Iterate through the list of images and convert each one to grayscale
+            for image in images:
+                converted_images.append(image.convert("L"))
 
-                            for image in images_dr:
-                                images.append(Image.open(os.path.join('convert', image)))
+            # Save the images as a PDF
+            converted_images[0].save(pdf_path, "PDF" ,resolution=100.0, save_all=True, append_images=converted_images[1:])
 
-                        converted_images = []
+            # remove temp image extraction folder
+            shutil.rmtree('convert')
 
-                        # Iterate through the list of images and convert each one to grayscale
-                        for image in images:
-                            converted_images.append(image.convert("L"))
-
-                        # Save the images as a PDF
-                        converted_images[0].save(pdf_path, "PDF" ,resolution=100.0, save_all=True, append_images=converted_images[1:])
-
-                        # remove temp image extraction folder
-                        shutil.rmtree('convert')
-
-                        # set author metadata of pdf
-                        trailer = PdfReader(pdf_path)    
-                        trailer.Info.Author = author
-                        PdfWriter(pdf_path, trailer=trailer).write()
+            # set author metadata of pdf
+            trailer = PdfReader(pdf_path)    
+            trailer.Info.Author = author
+            PdfWriter(pdf_path, trailer=trailer).write()                
 
     # create cbz - rename zip to cbz
     def create_cbz(self, tmp_chapter):
@@ -314,7 +317,8 @@ class Utility:
 
     # extract number from chapter metadata or filename
     def extract_number(self, s):
-       
+        
+        original = s
         # print(s)
         # Chapter class is known and can sort by float value
         if type(s) == Chapter:
@@ -357,10 +361,10 @@ class Utility:
             return value
            
         except:
-            print()
-            print(f'critical error: {original} as {s}')
-            # traceback.print_tb(limit=None, file=None)
-            sys.exit()
+            # print()
+            # print(f'critical error: {original} as {s}')
+            # # traceback.print_tb(limit=None, file=None)
+            # sys.exit()
             return -1 # no number in file
 
     # extract number from combo file
@@ -630,7 +634,7 @@ class Utility:
 
         # convert entire dir to pdf (where pdfs do not exist)
         if did_work: 
-            self.convert_to_pdf(tmp_dir, manga.author)
+            self.convert_dir_to_pdf(tmp_dir, manga.author)
 
         return tmp_dir, manga.title, did_work, manga.author
 

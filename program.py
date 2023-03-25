@@ -19,6 +19,18 @@ def main(args):
 
         # process url
         util.process_collection(args.url, sync_destination)
+    
+    # if cbz file to convert to pdf
+    if args.file is not None:
+
+        if args.file.endswith("cbz"):
+            print(f"Converting to pdf: {args.file}")
+            util.convert_file_to_pdf(args.file)
+        else:
+            print("Converting directory to pdf")
+            util.convert_dir_to_pdf(args.file)
+            print(f'Done: {args.file}')
+
     else:
     
         # if no param run or ongoing
@@ -43,6 +55,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--ongoing', help='Use ongoing sources.txt', required=False, nargs='?')
     parser.add_argument('-c', '--completed', help='Use completed.txt', required=False, nargs='?')
     parser.add_argument('-d', '--haitus', help='Use dead haitus.txt', required=False, nargs='?')
+    parser.add_argument('-f', '--file', help='Convert an existing cbz file to pdf', required=False)
     args = parser.parse_args()
 
     # this is a bit dumb but I can't tell the difference between
@@ -58,5 +71,6 @@ if __name__ == '__main__':
         args.ongoing = SourceFile.COMPLETED.value
     if '-d' in sys.argv or '--haitus' in sys.argv:
         args.ongoing = SourceFile.HIATUS.value
+    # -f requires a value
 
     main(args)

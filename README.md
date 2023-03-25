@@ -20,6 +20,7 @@ Downloads images (manga) from the web into cbz files, converts to pdf,  and sync
     -o [ONGOING], --ongoing [ONGOING]: Use ongoing sources.txt
     -c [COMPLETED], --completed [COMPLETED]: Use completed.txt
     -d [HAITUS], --haitus [HAITUS]: Use dead haitus.txt
+    -f [FILE], --file [FILE]: Convert individual file or directory to PDF
 
 All arguments are optional. If no arguments are provided, the program will use the default ongoing source file (sources.txt).
 
@@ -28,6 +29,8 @@ If the -u argument is provided, the program will download the manga from the giv
 If the -a argument is provided with a url, the program will add the url to the sources file.
 
 If any of the -o, -c, or -d arguments are provided, the program will use the corresponding source file instead of the default ongoing file.
+
+If the -f argument is provided with a file or directory, the program convert to PDF.
 
 ## Examples
 
@@ -46,6 +49,14 @@ Use the completed source file:
 Use the dead haitus source file:
 
 `python program.py -d`
+
+Convert file to PDF:
+
+`python program.py -f path_to_file.cbz`
+
+Convert directory to PDF:
+
+`python program.py -f path_to_files`
 
 ## chapter number matching
 

@@ -369,7 +369,7 @@ class Utility:
             # Commit the changes to the database and close the connection
             conn.commit()
             conn.close()
-            print(f'\n    ✓ kobo collection: {count} items')
+            print(f'    ✓ kobo collection: {count} items')
 
     # extract rss name from danke feed
     def extract_danke_moe(self, url):
@@ -805,7 +805,7 @@ class Utility:
 
             # sync to device
             if(known and os.access(sync_destination, os.W_OK)):
-                print('ok')
+                # print('ok')
                 self.sync(tmp_dir, sync_destination, title, False)
 
                 self.create_kobo_collection(sync_destination, title) 
@@ -975,17 +975,17 @@ class Utility:
             result_output = None
             if device_output is not None:
                 # singular issues and combo
-                result_output = f'    {char} device: {device_output}'
+                result_output = f'   {char} device: {device_output}'
                 if combo_output is not None:
                     result_output += f' and {combo_output}'
             else:
                 # combo only
                 if combo_output is not None:
-                    result_output = f'   {char} device: {combo_output}'
+                    result_output = f'  {char} device: {combo_output}'
 
 
             if result_output is None:
-                print(colorama.Fore.RED + '    x device'+ colorama.Style.RESET_ALL, end='')
+                print(colorama.Fore.RED + '   x device'+ colorama.Style.RESET_ALL, end='')
             else:
                 if did_work:
                     print(colorama.Fore.RED + result_output.ljust(self.pad_value) + colorama.Style.RESET_ALL, end='')

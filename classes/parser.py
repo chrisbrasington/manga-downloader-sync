@@ -7,6 +7,7 @@ from operator import attrgetter
 import colorama, json
 import builtins, traceback
 from memedetect import is_comic_book
+import sqlite3, datetime, uuid
 
 class Manga:
     def __init__(self, data):
@@ -307,6 +308,63 @@ class Utility:
         shutil.make_archive(tmp_chapter, 'zip', tmp_chapter)
         shutil.move(f'{tmp_chapter}.zip', f'{tmp_chapter}.cbz')
         shutil.rmtree(tmp_chapter)
+
+    # create kobo collection
+    def create_kobo_collection(self, source_dir, sync_dir):
+
+        # print('\n\nCreating kobo collection')
+
+        # Define the target directory and collection name
+        target_dir = 'file:///mnt/onboard/manga/' + os.path.basename(source_dir)
+        collection_name = os.path.basename(source_dir)
+
+        # Connect to the SQLite database and make a backup
+        db = os.path.join(os.path.dirname(sync_dir), ".kobo", 'KoboReader.sqlite')
+
+        if os.path.exists(db):
+            conn = sqlite3.connect(db)
+            backup_dir = "backup/kobo"
+            os.makedirs(backup_dir, exist_ok=True)
+            backup_filename = f'{backup_dir}/KoboReader_backup_' + datetime.datetime.now().strftime('%Y%m%d_%H%M%S') + '.sqlite'
+            shutil.copy(db, backup_filename)
+
+            # Check if the shelf already exists
+            cursor = conn.cursor()
+            cursor.execute('SELECT Id FROM Shelf WHERE InternalName = ?', (collection_name,))
+            row = cursor.fetchone()
+
+            if row is not None:
+                # Shelf already exists, do nothing
+                # print(f'Shelf {collection_name} already exists.')
+                shelf_id = row[0]
+            else:
+                # Insert a new row into the Shelf table for the collection
+                now = datetime.datetime.utcnow()
+                formatted_time = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+                shelf_values = (formatted_time, collection_name, collection_name, formatted_time, collection_name, None, 'false', 'true', None, '', '')
+                cursor.execute('INSERT INTO Shelf (CreationDate, Id, InternalName, LastModified, Name, Type, _IsDeleted, _IsVisible, _IsSynced, _SyncTime, LastAccessed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', shelf_values)
+                shelf_id = cursor.lastrowid
+                # print(f'Shelf {collection_name} created.')
+
+            # Iterate over the PDF files in the source directory and insert a new row into the ShelfContent table for each file
+            for filename in os.listdir(source_dir):
+                if filename.endswith('.pdf'):
+                    content_id = os.path.join(target_dir, filename)
+
+                    # Check if the content already exists
+                    cursor.execute('SELECT ContentId FROM ShelfContent WHERE ContentId = ?', (content_id,))
+                    row = cursor.fetchone()
+
+                    if row is None:
+                        # Insert a new row into the ShelfContent table for the file
+                        content_values = (collection_name, content_id, formatted_time, 'false', 'false')
+                        cursor.execute('INSERT INTO ShelfContent (ShelfName, ContentId, DateModified, _IsDeleted, _IsSynced) VALUES (?, ?, ?, ?, ?)', content_values)
+                        # print(f'Content {content_id} added to shelf.')
+
+            # Commit the changes to the database and close the connection
+            conn.commit()
+            conn.close()
+
 
     # extract rss name from danke feed
     def extract_danke_moe(self, url):
@@ -744,6 +802,8 @@ class Utility:
             if(known and os.access(sync_destination, os.W_OK)):
                 print('ok')
                 self.sync(tmp_dir, sync_destination, title, False)
+
+                self.create_kobo_collection(tmp_dir, sync_destination) 
 
     # print summary
     def print_summary(self):

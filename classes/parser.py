@@ -310,13 +310,15 @@ class Utility:
         shutil.rmtree(tmp_chapter)
 
     # create kobo collection
-    def create_kobo_collection(self, source_dir, sync_dir):
+    def create_kobo_collection(self, sync_dir, title):
 
+        sync_dir = sync_dir.replace('"', '')
+        title = title.replace('"', '')
         # print('\n\nCreating kobo collection')
 
         # Define the target directory and collection name
-        target_dir = 'file:///mnt/onboard/manga/' + os.path.basename(source_dir)
-        collection_name = os.path.basename(source_dir)
+        target_dir = 'file:///mnt/onboard/manga/' + os.path.basename(title.rstrip('.'))
+        collection_name = os.path.basename(target_dir)
 
         # Connect to the SQLite database and make a backup
         db = os.path.join(os.path.dirname(sync_dir), ".kobo", 'KoboReader.sqlite')
@@ -333,24 +335,27 @@ class Utility:
             cursor.execute('SELECT Id FROM Shelf WHERE InternalName = ?', (collection_name,))
             row = cursor.fetchone()
 
+            now = datetime.datetime.utcnow()
+            formatted_time = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+
             if row is not None:
                 # Shelf already exists, do nothing
                 # print(f'Shelf {collection_name} already exists.')
                 shelf_id = row[0]
             else:
                 # Insert a new row into the Shelf table for the collection
-                now = datetime.datetime.utcnow()
-                formatted_time = now.strftime('%Y-%m-%dT%H:%M:%SZ')
-                shelf_values = (formatted_time, collection_name, collection_name, formatted_time, collection_name, None, 'false', 'true', None, '', '')
+                shelf_values = (formatted_time, collection_name, collection_name, formatted_time, collection_name, 'UserTag', 'false', 'true', None, '', '')
                 cursor.execute('INSERT INTO Shelf (CreationDate, Id, InternalName, LastModified, Name, Type, _IsDeleted, _IsVisible, _IsSynced, _SyncTime, LastAccessed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', shelf_values)
                 shelf_id = cursor.lastrowid
                 # print(f'Shelf {collection_name} created.')
 
-            # Iterate over the PDF files in the source directory and insert a new row into the ShelfContent table for each file
-            for filename in os.listdir(source_dir):
-                if filename.endswith('.pdf'):
-                    content_id = os.path.join(target_dir, filename)
+            count = 0
 
+            # Iterate over the PDF files in the source directory and insert a new row into the ShelfContent table for each file
+            for filename in os.listdir(os.path.join(sync_dir, title)):
+                if filename.endswith('.pdf'):
+                    count += 1
+                    content_id = os.path.join(target_dir, filename)
                     # Check if the content already exists
                     cursor.execute('SELECT ContentId FROM ShelfContent WHERE ContentId = ?', (content_id,))
                     row = cursor.fetchone()
@@ -364,7 +369,7 @@ class Utility:
             # Commit the changes to the database and close the connection
             conn.commit()
             conn.close()
-
+            print(f'\n    ✓ kobo collection: {count} items')
 
     # extract rss name from danke feed
     def extract_danke_moe(self, url):
@@ -803,7 +808,7 @@ class Utility:
                 print('ok')
                 self.sync(tmp_dir, sync_destination, title, False)
 
-                self.create_kobo_collection(tmp_dir, sync_destination) 
+                self.create_kobo_collection(sync_destination, title) 
 
     # print summary
     def print_summary(self):
@@ -962,6 +967,7 @@ class Utility:
                                 os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
                                 shutil.copy(filename, sync_dest_file)
                             # print(f'    ✓ {filename}')
+                            # print(f'    ✓ {sync_dest_file}')
             # else:
             #     print(f'  ✓ device: n/a'.rjust(self.pad_value), end='')
 

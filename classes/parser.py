@@ -369,7 +369,7 @@ class Utility:
             # Commit the changes to the database and close the connection
             conn.commit()
             conn.close()
-            print(f'    ✓ kobo collection: {count} items')
+            print(f'    ✓ kobo collection: {count} items', end='')
 
     # extract rss name from danke feed
     def extract_danke_moe(self, url):

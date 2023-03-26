@@ -79,8 +79,15 @@ tested with `kobo libra 2` and will work with any device that supports pdf or cb
 
 <img src=".img/sample2.jpg" style="width:100%">
 
-
 ## features
+
+### auto-collections
+
+cbz/pdf doesn't seem to support a series metadata tag, I do create a user collection of the manga.
+
+<img src=".img/collection1.png" style="width:50%">
+
+<img src=".img/collection2.png" style="width:50%">
 
 ### summary of download/sync
 

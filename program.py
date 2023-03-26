@@ -34,7 +34,7 @@ def main(args):
     else:
     
         # if no param run or ongoing
-        if len(sys.argv) > 1 or args.ongoing:
+        if len(sys.argv) == 1 or args.ongoing:
             util.process_collection(util.get_collection(args.ongoing), sync_destination)
 
         # if completed run

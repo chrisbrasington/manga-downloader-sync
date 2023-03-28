@@ -7,7 +7,8 @@ from operator import attrgetter
 import colorama, json
 import builtins, traceback
 from memedetect import is_comic_book
-import sqlite3, datetime, uuid
+import sqlite3, datetime, uuid, json
+from classes.cache import Cache
 
 class Manga:
     def __init__(self, data):
@@ -534,6 +535,9 @@ class Utility:
         # combine result into single pdf if requested
         if(combine) and (did_work or not len(glob.glob(f'tmp/{name}/{name}*combo.pdf')) > 0):
             self.combine(result, author)
+
+        # cache = Cache()
+        # cache.store_manga_data(name, manga.id, source)
         
         return success, result, name
 
@@ -628,76 +632,79 @@ class Utility:
         # for every chapter
         # go from oldest to newest
         # list(reversed(chapters)) or chapters[::-1]
-        for chapter in chapters[::-1]:
+        # for chapter in chapters[::-1]:
 
-            # setup cbz file name for download
-            tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}" # chapter number not volume
-            zip_name = f"{tmp_chapter}.cbz"
+        #     # setup cbz file name for download
+        #     tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}" # chapter number not volume
+        #     zip_name = f"{tmp_chapter}.cbz"
 
-            chapter_num = float(chapter.chapter)
+        #     chapter_num = float(chapter.chapter)
 
-            # change force_all_download to true if you want old chapters to download 
-            #   when new chapters exist on disk
-            # otherwise, the app will find the largest chapter number on disk and only
-            #   download chapters greater than that
-            # force_all_download as True risks duplication from different feeds
-            #   as it checks file_name directly not chapter number
-            force_all_download = False
+        #     # change force_all_download to true if you want old chapters to download 
+        #     #   when new chapters exist on disk
+        #     # otherwise, the app will find the largest chapter number on disk and only
+        #     #   download chapters greater than that
+        #     # force_all_download as True risks duplication from different feeds
+        #     #   as it checks file_name directly not chapter number
+        #     force_all_download = False
 
-            # download if remote chapter is newer than cached in number
-            # because feed may change for same content, do not strictly match the file/feed information
-            if chapter_num > latest_chapter_num_on_disk or force_all_download:
+        #     # download if remote chapter is newer than cached in number
+        #     # because feed may change for same content, do not strictly match the file/feed information
+        #     if chapter_num > latest_chapter_num_on_disk or force_all_download:
                 
-                if os.path.exists(f'{tmp_chapter}.cbz'):
-                    # print('  ✓ exists:', chapter.chapter, f'({chapter.language})', chapter.title, end='')
-                    continue
+        #         if os.path.exists(f'{tmp_chapter}.cbz'):
+        #             # print('  ✓ exists:', chapter.chapter, f'({chapter.language})', chapter.title, end='')
+        #             continue
 
-                self.summary.append(f"{chapter_num} - {manga.title}")
+        #         self.summary.append(f"{chapter_num} - {manga.title}")
 
-                if not download_print_once:
-                    start = latest_chapter_num_on_disk
-                    end = chapters[0].chapter
+        #         if not download_print_once:
+        #             start = latest_chapter_num_on_disk
+        #             end = chapters[0].chapter
 
-                    if latest_chapter_num_on_disk <= 0:
-                        start = chapters[-1].chapter
+        #             if latest_chapter_num_on_disk <= 0:
+        #                 start = chapters[-1].chapter
 
-                    print(colorama.Fore.RED + f'    downloading: {start}-{end}'.ljust(self.pad_value) + colorama.Style.RESET_ALL)
-                    download_print_once = True
+        #             print(colorama.Fore.RED + f'    downloading: {start}-{end}'.ljust(self.pad_value) + colorama.Style.RESET_ALL)
+        #             download_print_once = True
 
                 
-                if not os.path.exists(tmp_chapter):
-                    os.makedirs(tmp_chapter)
+        #         if not os.path.exists(tmp_chapter):
+        #             os.makedirs(tmp_chapter)
 
-                print(chapter_num)
-                path = ''
-                i = 0
-                for url in tqdm(chapter.images):
-                    i += 1
-                    response = requests.get(url)
-                    _, file_extension = os.path.splitext(url)
-                    # to keep cbz sorted, works well to pad the page number 1 as 001
-                    # keeps 001 002 003 004 005 006 007 008 009 010 011 etc. well sorted 
-                    path = f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}"
-                    open(path, "wb").write(response.content)
-                    pass
+        #         print(chapter_num)
+        #         path = ''
+        #         i = 0
+        #         for url in tqdm(chapter.images):
+        #             i += 1
+        #             response = requests.get(url)
+        #             _, file_extension = os.path.splitext(url)
+        #             # to keep cbz sorted, works well to pad the page number 1 as 001
+        #             # keeps 001 002 003 004 005 006 007 008 009 010 011 etc. well sorted 
+        #             path = f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}"
+        #             open(path, "wb").write(response.content)
+        #             pass
 
-                # is_manga, percent = is_comic_book(path)
+        #         # is_manga, percent = is_comic_book(path)
 
-                # if not is_manga:
-                #     print('MEME DETECTED!!!')
-                #     # os.remove(path)              
-                # else:
-                #     print('keeping all images')  
+        #         # if not is_manga:
+        #         #     print('MEME DETECTED!!!')
+        #         #     # os.remove(path)              
+        #         # else:
+        #         #     print('keeping all images')  
 
-                if chapter_num == int(chapter_num):
-                    chapter_num = int(chapter_num)
+        #         if chapter_num == int(chapter_num):
+        #             chapter_num = int(chapter_num)
 
-                self.create_cbz(tmp_chapter)
-                did_work = True
+        #         self.create_cbz(tmp_chapter)
+        #         did_work = True
 
         # convert entire dir to pdf (where pdfs do not exist)
         if did_work: 
             self.convert_dir_to_pdf(tmp_dir, manga.author)
+
+        cache = Cache()
+        cache.store_manga_data(manga.title, manga.id, source)
 
         return tmp_dir, manga.title, did_work, manga.author
 
@@ -798,7 +805,17 @@ class Utility:
         if isinstance(source, str):
             source = [source]
 
+        cache = Cache()
+
+        catalog = []
+
         for s in source:
+
+            manga = cache.manga_exists(s)
+            if manga.exists:
+                # print(f"Manga with ID {manga.id} exists with title '{manga.title}'")
+                catalog.append(manga)
+
             # URL parameter is provided
             # print(f"Downloading from {s}")
             known, tmp_dir, title = self.parse_feed(s, False)
@@ -809,6 +826,10 @@ class Utility:
                 self.sync(tmp_dir, sync_destination, title, False)
 
                 self.create_kobo_collection(sync_destination, title) 
+
+        for manga in catalog:
+            print(f"Manga with ID {manga.id} exists with title '{manga.title}")
+            
 
     # print summary
     def print_summary(self):
@@ -868,7 +889,7 @@ class Utility:
 
         # Return the list of unique chapters, sorted by 'chapter' attribute
         return [v for k, v in sorted(unique_chapters.items(), reverse=True, key=self.extract_number)]
-    
+
     # sync to location (ereader)
     def sync(self, tmp_dir, sync_destination, title, combine):
 

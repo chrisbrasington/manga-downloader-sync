@@ -5,3 +5,4 @@ pdfrw
 feedparser
 requests
 pillow
+textual

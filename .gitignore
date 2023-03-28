@@ -9,3 +9,4 @@ backup
 convert
 sample
 temp.txt
+*.db

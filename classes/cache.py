@@ -9,7 +9,9 @@ class MangaData:
 
 class Cache:
     def manga_exists(self, url):
-    # Connect to SQLite database
+        self.create_db()
+    
+        # Connect to SQLite database
         conn = sqlite3.connect('cache.db')
         c = conn.cursor()
         
@@ -44,15 +46,7 @@ class Cache:
         conn.close()
 
     def store_manga_data(self, manga_title, manga_id, manga_url):
-        # Check if database file exists, create it and table if not
-        if not os.path.exists('cache.db'):
-            conn = sqlite3.connect('cache.db')
-            c = conn.cursor()
-            c.execute('''CREATE TABLE manga
-                        (title text, id text, url text, PRIMARY KEY (id))''')
-            conn.commit()
-            conn.close()
-            print("\n Cache Database and table created successfully")
+        self.create_db()
 
         # Connect to SQLite database
         conn = sqlite3.connect('cache.db')
@@ -73,3 +67,14 @@ class Cache:
         conn.commit()
         conn.close()
         # print("Data stored successfully")
+
+    def create_db(self):
+        # Check if database file exists, create it and table if not
+        if not os.path.exists('cache.db'):
+            conn = sqlite3.connect('cache.db')
+            c = conn.cursor()
+            c.execute('''CREATE TABLE manga
+                        (title text, id text, url text, PRIMARY KEY (id))''')
+            conn.commit()
+            conn.close()
+            print("\n Cache Database and table created successfully")

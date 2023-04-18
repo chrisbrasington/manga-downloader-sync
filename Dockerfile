@@ -5,6 +5,7 @@ WORKDIR /app
 COPY program.py .
 COPY classes/*.py classes/
 COPY requirements.txt .
+COPY *.txt .
 
 RUN pip install -r requirements.txt
 

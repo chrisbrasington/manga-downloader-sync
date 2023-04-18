@@ -831,12 +831,8 @@ class Utility:
 
                 self.create_kobo_collection(sync_destination, title) 
 
-            print('\nearly exit')
-            break
-
         #for manga in catalog:
-        #    print(f"Manga with ID {manga.id} exists with title '{manga.title}")
-            
+        #    print(f"Manga with ID {manga.id} exists with title '{manga.title}")         
 
     # print summary
     def print_summary(self):

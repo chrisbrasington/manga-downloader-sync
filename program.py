@@ -2,12 +2,17 @@
 import argparse, os, sys
 from classes.parser import Utility 
 from classes.source_files import SourceFile
+import datetime
 
 # change sync destination 
 device = '/run/media/chris/KOBOeReader'
 sync_destination = f'{device}/manga'
 
 def main(args):
+
+    current_time = datetime.datetime.now().strftime("%m/%d/%Y %I:%M:%S %p")
+    print('Current time: ', current_time, end='')
+
     # parsing utility
     util = Utility()
 

@@ -10,14 +10,13 @@ Downloads images (manga) from the web into cbz files, converts to pdf,  and sync
 - [danke.moe](https://danke.moe/)
 
 ## Usage
-`python program.py [-h] [-u URL] [-a [ADD]] [-o [ONGOING]] [-c [COMPLETED]] [-d [HAITUS]]`
+`python program.py [-h] [-u URL] [-a [ADD]] [-c [COMPLETED]] [-d [HAITUS]]`
 
 ## Arguments
 
     -h, --help: Show help message and exit
     -u URL, --url URL: Url to read from
     -a [ADD], --add [ADD]: Add url to sources.txt
-    -o [ONGOING], --ongoing [ONGOING]: Use ongoing sources.txt
     -c [COMPLETED], --completed [COMPLETED]: Use completed.txt
     -d [HAITUS], --haitus [HAITUS]: Use dead haitus.txt
     -f [FILE], --file [FILE]: Convert individual file or directory to PDF

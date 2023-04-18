@@ -509,7 +509,7 @@ class Utility:
         return result # float
 
     # parse feed, rss or mangadex
-    def parse_feed(self, source, combine):
+    def parse_feed(self, source, combine, sync_only):
 
         # if danke, translate to rss
         if('danke.moe' in source and 'rss' not in source):
@@ -523,10 +523,10 @@ class Utility:
 
         # supported known types
         if('mangadex' in source):
-            result, name, did_work, author = self.parse_mangadex(source)
+            result, name, did_work, author = self.parse_mangadex(source, sync_only)
             success = True
         elif('rss' in source):
-            result, name, did_work, author = self.parse_rss_feed(source)
+            result, name, did_work, author = self.parse_rss_feed(source, sync_only)
             success = True
         else: 
             print(f'\nunsupported feed: {source}', end='')
@@ -542,7 +542,7 @@ class Utility:
         return success, result, name
 
     # parse mangadex with MangaDex.py - do not log in
-    def parse_mangadex(self, source):
+    def parse_mangadex(self, source, sync_only):
         did_work = False
         guid = None
 
@@ -605,103 +605,107 @@ class Utility:
             # this is ok, may not exist on disk yet
             latest_chapter_num_on_disk = -1
 
-        # get chapters
-        chapters = self.get_chapters(manga)
+        if not sync_only:
 
-        # sort chapters
-        chapters = sorted(chapters, key=self.extract_number, reverse=True)
+            # get chapters
+            chapters = self.get_chapters(manga)
 
-        latest_chapter_remote = chapters[0]
+            # sort chapters
+            chapters = sorted(chapters, key=self.extract_number, reverse=True)
 
-        # print cache info
-        if latest_chapter_num_on_disk == -1:
-            print('  x - no cache'.ljust(self.pad_value), end='')
-            # for chapter in chapters:
-            #     print(' ', chapter)
-        else:
-            print(f'    ✓ cache: {latest_chapter_num_on_disk}'.ljust(self.pad_value), end='')
+            latest_chapter_remote = chapters[0]
 
-        # remote
-        print(f'  ✓ remote: {latest_chapter_remote.chapter}'.ljust(self.pad_value), end='')
+            print(latest_chapter_remote)
 
-        download_print_once = False
+            # print cache info
+            if latest_chapter_num_on_disk == -1:
+                print('  x - no cache'.ljust(self.pad_value), end='')
+                # for chapter in chapters:
+                #     print(' ', chapter)
+            else:
+                print(f'    ✓ cache: {latest_chapter_num_on_disk}'.ljust(self.pad_value), end='')
 
-        if not os.path.exists(tmp_dir):
-            os.makedirs(tmp_dir)
+            # remote
+            print(f'  ✓ remote: {latest_chapter_remote.chapter}'.ljust(self.pad_value), end='')
 
-        # for every chapter
-        # go from oldest to newest
-        # list(reversed(chapters)) or chapters[::-1]
-        for chapter in chapters[::-1]:
+            download_print_once = False
 
-            # setup cbz file name for download
-            tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}" # chapter number not volume
-            zip_name = f"{tmp_chapter}.cbz"
+            if not os.path.exists(tmp_dir):
+                os.makedirs(tmp_dir)
 
-            chapter_num = float(chapter.chapter)
+            # for every chapter
+            # go from oldest to newest
+            # list(reversed(chapters)) or chapters[::-1]
+            for chapter in chapters[::-1]:
 
-            # change force_all_download to true if you want old chapters to download 
-            #   when new chapters exist on disk
-            # otherwise, the app will find the largest chapter number on disk and only
-            #   download chapters greater than that
-            # force_all_download as True risks duplication from different feeds
-            #   as it checks file_name directly not chapter number
-            force_all_download = False
+                # setup cbz file name for download
+                tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}" # chapter number not volume
+                zip_name = f"{tmp_chapter}.cbz"
 
-            # download if remote chapter is newer than cached in number
-            # because feed may change for same content, do not strictly match the file/feed information
-            if chapter_num > latest_chapter_num_on_disk or force_all_download:
-                
-                if os.path.exists(f'{tmp_chapter}.cbz'):
-                    # print('  ✓ exists:', chapter.chapter, f'({chapter.language})', chapter.title, end='')
-                    continue
+                chapter_num = float(chapter.chapter)
 
-                self.summary.append(f"{chapter_num} - {manga.title}")
+                # change force_all_download to true if you want old chapters to download 
+                #   when new chapters exist on disk
+                # otherwise, the app will find the largest chapter number on disk and only
+                #   download chapters greater than that
+                # force_all_download as True risks duplication from different feeds
+                #   as it checks file_name directly not chapter number
+                force_all_download = False
 
-                if not download_print_once:
-                    start = latest_chapter_num_on_disk
-                    end = chapters[0].chapter
+                # download if remote chapter is newer than cached in number
+                # because feed may change for same content, do not strictly match the file/feed information
+                if chapter_num > latest_chapter_num_on_disk or force_all_download:
+                    
+                    if os.path.exists(f'{tmp_chapter}.cbz'):
+                        # print('  ✓ exists:', chapter.chapter, f'({chapter.language})', chapter.title, end='')
+                        continue
 
-                    if latest_chapter_num_on_disk <= 0:
-                        start = chapters[-1].chapter
+                    self.summary.append(f"{chapter_num} - {manga.title}")
 
-                    print(colorama.Fore.RED + f'    downloading: {start}-{end}'.ljust(self.pad_value) + colorama.Style.RESET_ALL)
-                    download_print_once = True
+                    if not download_print_once:
+                        start = latest_chapter_num_on_disk
+                        end = chapters[0].chapter
 
-                
-                if not os.path.exists(tmp_chapter):
-                    os.makedirs(tmp_chapter)
+                        if latest_chapter_num_on_disk <= 0:
+                            start = chapters[-1].chapter
 
-                print(chapter_num)
-                path = ''
-                i = 0
-                for url in tqdm(chapter.images):
-                    i += 1
-                    response = requests.get(url)
-                    _, file_extension = os.path.splitext(url)
-                    # to keep cbz sorted, works well to pad the page number 1 as 001
-                    # keeps 001 002 003 004 005 006 007 008 009 010 011 etc. well sorted 
-                    path = f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}"
-                    open(path, "wb").write(response.content)
-                    pass
+                        print(colorama.Fore.RED + f'    downloading: {start}-{end}'.ljust(self.pad_value) + colorama.Style.RESET_ALL)
+                        download_print_once = True
 
-                # is_manga, percent = is_comic_book(path)
+                    
+                    if not os.path.exists(tmp_chapter):
+                        os.makedirs(tmp_chapter)
 
-                # if not is_manga:
-                #     print('MEME DETECTED!!!')
-                #     # os.remove(path)              
-                # else:
-                #     print('keeping all images')  
+                    print(chapter_num)
+                    path = ''
+                    i = 0
+                    for url in tqdm(chapter.images):
+                        i += 1
+                        response = requests.get(url)
+                        _, file_extension = os.path.splitext(url)
+                        # to keep cbz sorted, works well to pad the page number 1 as 001
+                        # keeps 001 002 003 004 005 006 007 008 009 010 011 etc. well sorted 
+                        path = f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}"
+                        open(path, "wb").write(response.content)
+                        pass
 
-                if chapter_num == int(chapter_num):
-                    chapter_num = int(chapter_num)
+                    # is_manga, percent = is_comic_book(path)
 
-                self.create_cbz(tmp_chapter)
-                did_work = True
+                    # if not is_manga:
+                    #     print('MEME DETECTED!!!')
+                    #     # os.remove(path)              
+                    # else:
+                    #     print('keeping all images')  
 
-        # convert entire dir to pdf (where pdfs do not exist)
-        if did_work: 
-            self.convert_dir_to_pdf(tmp_dir, manga.author)
+                    if chapter_num == int(chapter_num):
+                        chapter_num = int(chapter_num)
+
+                    self.create_cbz(tmp_chapter)
+                    did_work = True
+
+            # convert entire dir to pdf (where pdfs do not exist)
+            if did_work: 
+                self.convert_dir_to_pdf(tmp_dir, manga.author)
 
         cache = Cache()
         cache.store_manga_data(manga.title, manga.id, source)
@@ -709,7 +713,7 @@ class Utility:
         return tmp_dir, manga.title, did_work, manga.author
 
     # parse rss feed
-    def parse_rss_feed(self, source):
+    def parse_rss_feed(self, source, sync_only):
         # Parse the RSS feed
         feed = feedparser.parse(source)
 
@@ -799,7 +803,7 @@ class Utility:
         return tmp_dir, feed.feed.title, did_work, author
 
     # process collection
-    def process_collection(self, source, sync_destination):
+    def process_collection(self, source, sync_destination, sync_only):
 
         # allow a single string or array of strings
         if isinstance(source, str):
@@ -818,7 +822,7 @@ class Utility:
 
             # URL parameter is provided
             # print(f"Downloading from {s}")
-            known, tmp_dir, title = self.parse_feed(s, False)
+            known, tmp_dir, title = self.parse_feed(s, False, sync_only)
 
             # sync to device
             if(known and os.access(sync_destination, os.W_OK)):
@@ -826,6 +830,9 @@ class Utility:
                 self.sync(tmp_dir, sync_destination, title, False)
 
                 self.create_kobo_collection(sync_destination, title) 
+
+            print('\nearly exit')
+            break
 
         #for manga in catalog:
         #    print(f"Manga with ID {manga.id} exists with title '{manga.title}")

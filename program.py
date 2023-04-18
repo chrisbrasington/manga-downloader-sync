@@ -60,16 +60,26 @@ def main(args):
 
     else:
 
+        sync_only = args.sync is not None
+
+        if sync_only:
+            print('Syncing only')
+
+            if not os.path.exists(sync_destination):
+                print(f'Could not find sync destination: {sync_destination}')
+                print('Exiting')
+                return
+
         # if completed run
         if args.completed is not None:
-            util.process_collection(util.get_collection(args.completed), sync_destination)
+            util.process_collection(util.get_collection(args.completed), sync_destination, sync_only)
         
         # if hiatus run
         elif args.hiatus is not None:
-            util.process_collection(util.get_collection(args.hiatus), sync_destination)
+            util.process_collection(util.get_collection(args.hiatus), sync_destination, sync_only)
         # if normal run
         else:
-            util.process_collection(util.get_collection(SourceFile.SOURCES.value), sync_destination)
+            util.process_collection(util.get_collection(SourceFile.SOURCES.value), sync_destination, sync_only)
 
     # print summary 
     util.print_summary()
@@ -81,6 +91,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--completed', help='Use completed.txt', required=False, nargs='?')
     parser.add_argument('-d', '--hiatus', help='Use dead hiatus.txt', required=False, nargs='?')
     parser.add_argument('-f', '--file', help='Convert an existing cbz file to pdf', required=False)
+    parser.add_argument('-s', '--sync', help='Sync only', nargs='?', required=False, const=True)
     args = parser.parse_args()
 
     # print(args)

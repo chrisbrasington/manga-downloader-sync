@@ -84,6 +84,9 @@ def main(args):
     # print summary 
     util.print_summary()
 
+    current_time = datetime.datetime.now().strftime("%m/%d/%Y %I:%M:%S %p")
+    print('Done: ', current_time)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Manga-Kobo downloader and sync', add_help=True)
     parser.add_argument('-u', '--url', help='Url to read from', required=False, nargs='?')

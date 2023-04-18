@@ -1,8 +1,9 @@
 # pip install -r .\requirements.txt
-PyPDF2
-tqdm
-pdfrw
+argparse
+datetime
 feedparser
+Pillow
+pdfrw
 requests
-pillow
-textual
+tqdm
+colorama

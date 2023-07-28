@@ -11,6 +11,7 @@ COPY cache.db ./
 
 RUN pip install -r requirements.txt
 
+# every 1 hour
 CMD while true; do python program.py; sleep 3600; done
 
 # docker build -t manga-downloader .

@@ -615,7 +615,7 @@ class Utility:
 
             latest_chapter_remote = chapters[0]
 
-            print(latest_chapter_remote)
+            # print(latest_chapter_remote)
 
             # print cache info
             if latest_chapter_num_on_disk == -1:
@@ -676,7 +676,7 @@ class Utility:
                     if not os.path.exists(tmp_chapter):
                         os.makedirs(tmp_chapter)
 
-                    print(chapter_num)
+                    # print(chapter_num)
                     path = ''
                     i = 0
                     for url in tqdm(chapter.images):

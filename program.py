@@ -44,7 +44,7 @@ def main(args):
     # if url provided
     if args.url is not None:
         # process url
-        util.process_collection(args.url, sync_destination)
+        util.process_collection(args.url, sync_destination, False)
         return
     
     # if cbz file to convert to pdf

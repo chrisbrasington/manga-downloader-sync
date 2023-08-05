@@ -23,4 +23,5 @@ echo 'running with restart always'
 docker run -e TZ=America/Denver --name manga-downloader -v /home/chris/code/manga-kobo/tmp:/app/tmp --restart always -d manga-downloader:latest
 
 # view logs
-echo 'you may view with:: docker logs -f manga-downloader'
+echo 'watching logs'
+docker logs -f manga-downloader

@@ -15,5 +15,5 @@ echo 'running with restart always, mounted download folder and mounted config fo
 docker run -e TZ=America/Denver --name manga-downloader -v /home/chris/code/manga-kobo/tmp:/app/tmp -v /home/chris/code/manga-kobo/config:/app/config --restart always -d manga-downloader:latest
 
 # view logs
-echo 'watching logs'
-docker logs -f manga-downloader
+echo 'watching logs with...'
+echo 'docker logs -f manga-downloader'

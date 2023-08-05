@@ -1,6 +1,6 @@
 import enum
 
 class SourceFile(enum.Enum):
-    SOURCES = "sources.txt"
-    COMPLETED = "completed.txt"
-    HIATUS = "hiatus.txt"
+    SOURCES = "./config/sources.txt"
+    COMPLETED = "./config/completed.txt"
+    HIATUS = "./config/hiatus.txt"

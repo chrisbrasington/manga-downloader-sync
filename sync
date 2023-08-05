@@ -1,17 +1,23 @@
-if [ -d "/run/media/chris/KOBOeReader" ]; then
+#!/bin/bash
+
+# Define the sync destination and source destination paths
+syncDestination="/run/media/chris/KOBOeReader"
+sourceDestination="chris@valhalla:/home/chris/code/manga-kobo"
+
+if [ -d "$syncDestination" ]; then
     echo "KOBOeReader is mounted"
-    
+
     # Mount the remote directory 'tmp'
-    if sshfs chris@valhalla:/home/chris/code/manga-kobo/tmp tmp; then
-        echo "Mounted valhalla"
-        
+    if sshfs "$sourceDestination/tmp" tmp; then
+        echo "Mounted valhalla tmp"
+
         # Mount the remote directory 'config'
-        if sshfs chris@valhalla:/home/chris/code/manga-kobo/config config; then
+        if sshfs "$sourceDestination/config" config; then
             echo "Mounted valhalla config"
-            
+
             # Run the program with the necessary options
             python program.py -s
-            
+
             # Unmount the 'config' and 'tmp' directories
             echo "Unmounting valhalla config"
             umount config

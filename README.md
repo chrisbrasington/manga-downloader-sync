@@ -4,6 +4,27 @@ Downloads images (manga) from the web into cbz files, converts to pdf,  and sync
 
 <u>Only syncs newer chapters.</u> If older chapters are deleted from the device, only chapters after the latest chapter on device will be added. If no chapters exist on device, all chapters will be synced to device
 
+# Table of Contents
+
+- [manga-downloader-sync](#manga-downloader-sync)
+  - [site support](#site-support)
+  - [Usage](#usage)
+    - [Arguments](#arguments)
+  - [Examples](#examples)
+  - [chapter number matching](#chapter-number-matching)
+    - [sources](#sources)
+  - [device support](#device-support)
+  - [features](#features)
+    - [auto-collections](#auto-collections)
+  - [summary of download/sync](#summary-of-downloadsync)
+  - [author](#author)
+  - [run](#run)
+  - [sample sources](#sample-sources)
+  - [language](#language)
+  - [output](#output)
+  - [server/client usage](#serverclient-usage)
+
+
 ## site support
 
 - [mangadex](https://mangadex.org/)
@@ -132,3 +153,26 @@ The Overworked Office Lady's Café Crush - danke.moe
 Content missing from device, synced to device
 The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day - 85.pdf
 ```
+
+## docker server + client-sync usage
+
+For non-server usage:
+
+You can use `./config` directly which is default behavior of running the program. It assumes you are running the application locally without a server.
+
+For server usage:
+
+1. On the server, add the necessary sources for manga content. This will populate the `./config` folder (sources.txt) by running the program.
+2. Use the `./deploy` script to build a Docker image with the provided Dockerfile and run a container named `manga-downloader`. This container will have two folders mounted: `tmp` for downloads and `config` for configuration. The `config` folder can be edited outside the container.
+
+For client usage (syncing to e-reader):
+
+Modify the `sync` script with the following variables:
+
+```bash
+syncDestination="/run/media/chris/KOBOeReader" # Replace this with the path to your e-reader destination
+sourceDestination="chris@valhalla:/home/chris/code/manga-kobo" # Replace this with the path to your server's manga-kobo directory
+```
+
+Running the sync command will attempt to mount the server's download and config folders locally. It won't download content as it assumes you have an auto-downloader already running. The command will move content from the server to your e-reader destination (syncDestination). After usage, these folders will be unmounted. For smooth operation, it's recommended to set up passwordless SSH to avoid prompts.
+

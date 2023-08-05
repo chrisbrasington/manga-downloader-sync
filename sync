@@ -1,14 +1,33 @@
 if [ -d "/run/media/chris/KOBOeReader" ]; then
     echo "KOBOeReader is mounted"
+    
+    # Mount the remote directory 'tmp'
     if sshfs chris@valhalla:/home/chris/code/manga-kobo/tmp tmp; then
         echo "Mounted valhalla"
-        python program.py -s
-        echo "Unmounting valhalla"
-        umount tmp
+        
+        # Mount the remote directory 'config'
+        if sshfs chris@valhalla:/home/chris/code/manga-kobo/config config; then
+            echo "Mounted valhalla config"
+            
+            # Run the program with the necessary options
+            python program.py -s
+            
+            # Unmount the 'config' and 'tmp' directories
+            echo "Unmounting valhalla config"
+            umount config
+            echo "Unmounting valhalla tmp"
+            umount tmp
+        else
+            echo "Failed to mount valhalla config"
+            # Unmount the 'tmp' directory in case it was successfully mounted
+            echo "Unmounting valhalla tmp"
+            umount tmp
+        fi
     else
-        echo "Failed to mount remote directory"
+        echo "Failed to mount valhalla tmp"
     fi
 else
     echo "KOBOeReader is not mounted"
 fi
+
 echo "Done"

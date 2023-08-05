@@ -2,7 +2,7 @@ import enum, os
 
 def is_running_in_docker():
     # Check if the DOCKER_CONTAINER environment variable is set
-    return "DOCKER_CONTAINER" in os.environ
+    return os.environ['PWD'] == '/app'
 
 class SourceFile(enum.Enum):
 

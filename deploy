@@ -3,7 +3,7 @@ echo 'stopping docker manga-downloader'
 docker stop manga-downloader
 
 # rm docker
-echo 'manga-downloader'
+echo 'removing manga-downloader'
 docker rm manga-downloader
 
 # rebuild docker file

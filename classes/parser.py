@@ -676,7 +676,7 @@ class Utility:
                     if not os.path.exists(tmp_chapter):
                         os.makedirs(tmp_chapter)
 
-                    # print(chapter_num)
+                    print(chapter_num)
                     path = ''
                     i = 0
                     for url in tqdm(chapter.images):

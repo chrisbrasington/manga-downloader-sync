@@ -5,7 +5,7 @@ from classes.source_files import SourceFile
 import datetime
 
 # change sync destination 
-device = '/run/media/chris/KOBOeReader'
+device = '/media/chris/KOBOeReader'
 sync_destination = f'{device}/manga'
 
 def main(args):

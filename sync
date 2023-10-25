@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the sync destination and source destination paths
-syncDestination="/run/media/chris/KOBOeReader"
+syncDestination="/media/chris/KOBOeReader"
 sourceDestination="chris@valhalla:/home/chris/code/manga-kobo"
 
 if [ -d "$syncDestination" ]; then

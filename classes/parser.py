@@ -29,7 +29,8 @@ class Manga:
                 # first value in dictionary of title
                 key = next(iter(data["attributes"]["title"]))
 
-        self.title = data["attributes"]["title"][key]
+        # make title path safe early
+        self.title = data["attributes"]["title"][key].replace('?','_')
 
         # if self.status == 'completed':
         #     print()

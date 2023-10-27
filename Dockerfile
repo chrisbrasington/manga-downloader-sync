@@ -1,7 +1,10 @@
+# Use the official Python 3.9 image as the base image
 FROM python:3.9-slim-buster
 
+# Set the working directory to /app
 WORKDIR /app
 
+# Copy the program files and requirements.txt file into the container
 COPY program.py .
 COPY *.py ./
 COPY classes/*.py classes/
@@ -9,22 +12,25 @@ COPY requirements.txt .
 COPY *.txt ./
 COPY cache.db ./
 
+# Install the required packages specified in requirements.txt
 RUN pip install -r requirements.txt
 
-# every 1 hour
+# Set the command to run the program every 1 hour
 CMD while true; do python program.py; sleep 3600; done
 
-# rebuild docker file
+# Commands for building, running and managing the container:
+
+# To build the Docker image, run the following command in the same directory as this Dockerfile:
 # docker build -t manga-downloader .
 
-# mount download folder outside docker
+# To mount the download folder outside the container, run the following command:
 # docker run --name manga-downloader -v /home/chris/code/manga-kobo/tmp:/app/tmp manga-downloader:latest
 
-# mount config folder outside docker
+# To mount the config folder outside the container, run the following command:
 # docker run --name manga-downloader -v /home/chris/code/manga-kobo/config:/app/config manga-downloader:latest
 
-# run with an always restart
+# To run the container with an always restart policy, run the following command:
 # docker run -e TZ=America/Denver --name manga-downloader -v /home/chris/code/manga-kobo/tmp:/app/tmp --restart always -d manga-downloader:latest
 
-# view logs
+# To view the logs of the container, run the following command:
 # docker logs -f manga-downloader

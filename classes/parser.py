@@ -464,7 +464,11 @@ class Utility:
             }
         )
         data = response.json()['data']
+
+        # print(data)
+
         chapters = [Chapter(d, manga) for d in data]
+
         chapters = self.remove_duplicate_chapters(chapters)
 
         # for c in chapters:
@@ -611,6 +615,10 @@ class Utility:
             # get chapters
             chapters = self.get_chapters(manga)
 
+            if len(chapters) == 0:
+                print('No chapters, might be external to mangadex only')
+                return tmp_dir, manga.title, False, manga.author
+            
             # sort chapters
             chapters = sorted(chapters, key=self.extract_number, reverse=True)
 

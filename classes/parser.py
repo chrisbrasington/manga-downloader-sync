@@ -372,6 +372,9 @@ class Utility:
             conn.commit()
             conn.close()
             print(f'    ✓ kobo collection: {count} items', end='')
+        else:
+            print('    x - kobo collection: no device found', end='\n')
+            print(db)
 
     # extract rss name from danke feed
     def extract_danke_moe(self, url):

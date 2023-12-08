@@ -4,6 +4,8 @@ from classes.parser import Utility
 from classes.parser import Manga
 
 def create_markdown(manga, folder, url):
+
+    url = url.split(',')[0]
     # if not existing, create markdown folder
     # create markdown file of manga.title
     markdown_folder = "markdown"
@@ -27,11 +29,16 @@ def create_markdown(manga, folder, url):
         for key, value in dict.items():
             if key == 'relationships':
                 continue
+            if key == 'desc':
+                value = (value+"").replace('\n',' ')
+                value = value.replace("'", "''")
+                value = f"'{value}'"
+                print(value)
             file.write(f"{key}: {value}\n")
         file.write(f'author: {manga.author}\n')
         file.write(f'coverUrl: {cover}\n')
         file.write(f'thumbnail: {thumbnail}\n')
-        file.write(f'url: {url}')
+        file.write(f'url: {url}\n')
         file.write('---\n')
         # Write additional information about the manga as needed
 

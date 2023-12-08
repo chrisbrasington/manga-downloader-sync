@@ -74,6 +74,9 @@ class Manga:
         )
         return response.json()['data']['attributes']['name']
 
+    def to_dict(self):
+        return self.__dict__
+
     def to_json(self):
         return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
 
@@ -88,6 +91,14 @@ class Manga:
                 key = next(iter(self.title))
 
         return f'{self.title}'
+    
+    def get_cover(self):
+        if self.id:
+            response = requests.get(
+                f'https://api.mangadex.org/cover?manga%5B%5D={self.id}'
+            )
+            filename = response.json()['data'][0]['attributes']['fileName']
+            return f'https://mangadex.org/covers/{self.id}/{filename}'
 
 # Define a Chapter class
 class Chapter:

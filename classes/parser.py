@@ -401,7 +401,24 @@ class Utility:
         # print(s)
         # Chapter class is known and can sort by float value
         if type(s) == Chapter:
-            return float(s.chapter)
+            try:
+                return float(s.chapter)
+            except:
+                fixed = s.chapter
+                # this is the worst fucking code I've ever written
+                # but f `cosmic censhorship` using char in a chapter float num
+                if s.chapter.endswith('a'):
+                        fixed = s.chapter.replace('a','.1')
+                elif s.chapter.endswith('b'):
+                        fixed = s.chapter.replace('b','.2')
+                elif s.chapter.endswith('c'):
+                        fixed = s.chapter.replace('c','.3')
+                elif s.chapter.endswith('d'):
+                        fixed = s.chapter.replace('d','.4')
+                elif s.chapter.endswith('e'):
+                        fixed = s.chapter.replace('e','.5')
+                s.chapter = fixed
+                return float(fixed)
 
         # get largest chapter out of a combo file
         if 'combo' in s:

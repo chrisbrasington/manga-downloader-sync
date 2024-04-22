@@ -79,10 +79,10 @@ def main(args):
             util.process_collection(util.get_collection(args.hiatus), sync_destination, sync_only)
         # if normal run
         else:
-            if os.path.exists(SourceFile.SOURCES.value):
-                util.process_collection(util.get_collection(SourceFile.SOURCES.value), sync_destination, sync_only)
+            if os.path.exists(SourceFile.SYNC.value):
+                util.process_collection(util.get_collection(SourceFile.SYNC.value), sync_destination, sync_only)
             else:
-                print(f'{SourceFile.SOURCES.value} does not exist')
+                print(f'{SourceFile.SYNC.value} does not exist')
                 print('abort')
                 return
 

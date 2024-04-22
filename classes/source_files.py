@@ -10,7 +10,9 @@ class SourceFile(enum.Enum):
         SOURCES = "/app/config/sources.txt"
         COMPLETED = "/app/config/completed.txt"
         HIATUS = "/app/config/hiatus.txt"
+        SYNC = "/app/config/sync.txt"
     else:
         SOURCES = "./config/sources.txt"
         COMPLETED = "./config/completed.txt"
         HIATUS = "./config/hiatus.txt"
+        SYNC = "./config/sync.txt"

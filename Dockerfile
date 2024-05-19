@@ -15,8 +15,18 @@ COPY cache.db ./
 # Install the required packages specified in requirements.txt
 RUN pip install -r requirements.txt
 
-# Set the command to run the program every 1 hour
-CMD while true; do python program.py; sleep 3600; done
+# Set the command to run the program every 12 hours (3600 1 hour)
+# CMD while true; do python program.py; sleep 43200; done
+#CMD while true; do
+#    python program.py
+#    now=$(date +%s)
+#    next_run=$(date -d "08:00 next day" +%s)
+#    sleep_time=$((next_run - now))
+#    sleep_hours=$((sleep_time / 3600))
+#    echo "Sleeping for $sleep_hours hours"
+#    sleep $sleep_time
+#done
+CMD ["sh", "-c", "while true; do python program.py; now=$(date +%s); next_run=$(date -d '08:00 next day' +%s); sleep_time=$((next_run - now)); sleep_hours=$((sleep_time / 3600)); echo \"Sleeping for $sleep_hours hours\"; sleep $sleep_time; done"]
 
 # Commands for building, running and managing the container:
 

@@ -325,6 +325,11 @@ class Utility:
     # create kobo collection
     def create_kobo_collection(self, sync_dir, title):
 
+        sync_dir = sync_dir.replace('"','')
+        sync_dir = sync_dir.replace(':','')
+        title = title.replace('"','')
+        title = title.replace(':','')
+
         # Define the target directory and collection name
         target_dir = 'file:///mnt/onboard/manga/' + os.path.basename(title.rstrip('.'))
         

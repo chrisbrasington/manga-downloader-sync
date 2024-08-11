@@ -1035,9 +1035,9 @@ class Utility:
 
                         if os.access(sync_destination, os.W_OK):
                             if not os.path.exists(sync_dest_file):
+                                print(f'    ✓ {filename}')
                                 os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
                                 shutil.copy(filename, sync_dest_file)
-                            print(f'    ✓ {filename}')
                             print(f'    ✓ {sync_dest_file}')
             # else:
             #     print(f'  ✓ device: n/a'.rjust(self.pad_value), end='')

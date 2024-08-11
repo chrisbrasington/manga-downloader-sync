@@ -1029,6 +1029,7 @@ class Utility:
 
                         # create the directory using the safe path
                         sync_dest_file = sync_dest_file.replace('"','')
+                        sync_dest_file = sync_dest_file.replace(':','')
 
                         self.synced.append(os.path.basename(filename))
 

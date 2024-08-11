@@ -325,12 +325,12 @@ class Utility:
     # create kobo collection
     def create_kobo_collection(self, sync_dir, title):
 
-        sync_dir = sync_dir.replace('"', '')
-        title = title.replace('"', '')
-        # print('\n\nCreating kobo collection')
-
         # Define the target directory and collection name
         target_dir = 'file:///mnt/onboard/manga/' + os.path.basename(title.rstrip('.'))
+        
+        target_dir = target_dir.replace('"', '')
+        target_dir = target_dir.replace(':', '')
+        
         collection_name = os.path.basename(target_dir)
 
         # Connect to the SQLite database and make a backup
@@ -367,6 +367,10 @@ class Utility:
             # Iterate over the PDF files in the source directory and insert a new row into the ShelfContent table for each file
             for filename in os.listdir(os.path.join(sync_dir, title)):
                 if filename.endswith('.pdf'):
+
+                    filename = filename.replace('"','')
+                    filename = filename.replace(':','')
+
                     count += 1
                     content_id = os.path.join(target_dir, filename)
                     # Check if the content already exists
@@ -866,6 +870,7 @@ class Utility:
 
             # sync to device
             if(known and os.access(sync_destination, os.W_OK)):
+
                 # print('ok')
                 self.sync(tmp_dir, sync_destination, title, False)
 
@@ -941,6 +946,7 @@ class Utility:
 
         # create the directory using the safe path
         sync_dest = sync_dest.replace('"','')
+        sync_dest = sync_dest.replace(':', '')
 
         # if device exists
         if os.access(sync_destination, os.W_OK):

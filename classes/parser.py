@@ -854,12 +854,11 @@ class Utility:
     # process collection
     def process_collection(self, source, sync_destination, sync_only):
 
-        # allow a single string or array of strings
+        # Allow source to be either a single string or an array of strings
         if isinstance(source, str):
             source = [source]
 
         cache = Cache()
-
         catalog = []
 
         for s in source:
@@ -867,22 +866,34 @@ class Utility:
             manga = cache.manga_exists(s)
             if manga.exists:
                 # print(f"Manga with ID {manga.id} exists with title '{manga.title}'")
+                # If manga exists in the cache, add it to the catalog
                 catalog.append(manga)
 
             # URL parameter is provided
             # print(f"Downloading from {s}")
             known, tmp_dir, title = self.parse_feed(s, False, sync_only)
 
-            # sync to device
-            if(known and os.access(sync_destination, os.W_OK)):
+            # Check if the "_reading" folder with the title exists
+            reading_folder = os.path.join(sync_destination + "_reading", title)
+            
+            if os.path.exists(reading_folder):
+                # If the "_reading/title" folder exists, use it as the sync destination
+                final_sync_destination = reading_folder
+                print(f"  Using {reading_folder} as the sync destination")
+            else:
+                # Otherwise, use the original sync_destination
+                final_sync_destination = sync_destination
 
-                # print('ok')
-                self.sync(tmp_dir, sync_destination, title, False)
+            # Sync to device if the manga is known and the final destination is writable
+            if known and os.access(final_sync_destination, os.W_OK):
+                self.sync(tmp_dir, final_sync_destination, title, False)
 
-                self.create_kobo_collection(sync_destination, title) 
+                # Create a Kobo collection using the final sync destination
+                self.create_kobo_collection(final_sync_destination, title)
 
-        #for manga in catalog:
-        #    print(f"Manga with ID {manga.id} exists with title '{manga.title}")         
+        # Optionally process catalog entries
+        # for manga in catalog:
+        #    print(f"Manga with ID {manga.id} exists with title '{manga.title}'")
 
     # print summary
     def print_summary(self):

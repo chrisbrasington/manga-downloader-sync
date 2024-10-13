@@ -877,8 +877,8 @@ class Utility:
             reading_folder = os.path.join(sync_destination + "_reading", title)
             
             if os.path.exists(reading_folder):
-                # If the "_reading/title" folder exists, use it as the sync destination
-                final_sync_destination = reading_folder
+                # If the "_reading/title" folder exists, use _reading/ as the sync destination
+                final_sync_destination = os.path.join(sync_destination + "_reading")
                 print(f"  Using {reading_folder} as the sync destination")
             else:
                 # Otherwise, use the original sync_destination

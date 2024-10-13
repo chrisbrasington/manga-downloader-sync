@@ -880,6 +880,8 @@ class Utility:
             for folder in os.listdir(sync_destination + "_reading"):
                 if title in folder:
                     reading_folder = os.path.join(sync_destination + "_reading", folder)
+                    title = folder
+                    print(f"  Using {title} as the modified title")
                     break
             
             if os.path.exists(reading_folder):

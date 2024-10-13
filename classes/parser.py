@@ -898,9 +898,6 @@ class Utility:
                 # Otherwise, use the original sync_destination
                 final_sync_destination = sync_destination
 
-            print(final_sync_destination)
-            print('??')
-
             # Sync to device if the manga is known and the final destination is writable
             if known and os.access(final_sync_destination, os.W_OK):
                 self.sync(tmp_dir, final_sync_destination, title, False)

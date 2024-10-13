@@ -873,6 +873,9 @@ class Utility:
             # print(f"Downloading from {s}")
             known, tmp_dir, title = self.parse_feed(s, False, sync_only)
 
+            # remove : from title
+            title = title.replace(':','')
+
             # Check if the "_reading" folder with the title exists
             reading_folder = os.path.join(sync_destination + "_reading", title)
 

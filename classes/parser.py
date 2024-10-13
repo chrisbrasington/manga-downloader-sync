@@ -875,14 +875,27 @@ class Utility:
 
             # Check if the "_reading" folder with the title exists
             reading_folder = os.path.join(sync_destination + "_reading", title)
+
+            # check each folder in _reading for the first folder that contains the title
+            for folder in os.listdir(sync_destination + "_reading"):
+                if title in folder:
+                    reading_folder = os.path.join(sync_destination + "_reading", folder)
+                    break
             
             if os.path.exists(reading_folder):
                 # If the "_reading/title" folder exists, use _reading/ as the sync destination
                 final_sync_destination = os.path.join(sync_destination + "_reading")
                 print(f"  Using {reading_folder} as the sync destination")
             else:
+                # check each folder in sync_destination for the first folder that contains the title
+                for folder in os.listdir(sync_destination):
+                    if title in folder:
+                        sync_destination = os.path.join(sync_destination, folder)
+                        break
+                    
                 # Otherwise, use the original sync_destination
                 final_sync_destination = sync_destination
+
 
             # Sync to device if the manga is known and the final destination is writable
             if known and os.access(final_sync_destination, os.W_OK):

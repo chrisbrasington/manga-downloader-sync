@@ -890,14 +890,16 @@ class Utility:
                 print(f"  Using {reading_folder} as the sync destination")
             else:
                 # check each folder in sync_destination for the first folder that contains the title
-                for folder in os.listdir(sync_destination):
-                    if title in folder:
-                        sync_destination = os.path.join(sync_destination, folder)
-                        break
+                # for folder in os.listdir(sync_destination):
+                #     if title in folder:
+                #         sync_destination = os.path.join(sync_destination, folder)
+                #         break
                     
                 # Otherwise, use the original sync_destination
                 final_sync_destination = sync_destination
 
+            print(final_sync_destination)
+            print('??')
 
             # Sync to device if the manga is known and the final destination is writable
             if known and os.access(final_sync_destination, os.W_OK):

@@ -3,7 +3,9 @@ import curses
 import os
 import sys
 import argparse
+import textwrap
 from classes.parser import Utility  # Assuming Utility is imported from parser
+
 
 # Configuration for easy modification
 ITEMS_PER_PAGE = 5
@@ -91,7 +93,17 @@ def display_menu(stdscr, sync, current_page, current_index, show_details=True):
             try:
                 manga = utility.get_manga(url)
                 stdscr.addstr(f"   Title: {manga.title}\n")
-                stdscr.addstr(f"   Description: {manga.desc}\n")
+                
+                # Only display description if it's not empty
+                if manga.desc.strip():
+                    stdscr.addstr("   Description: \n")
+                    # Wrap the description to fit within the terminal width
+                    wrapped_desc = textwrap.fill(manga.desc.strip(), width=max_x - 5)
+                    # Indent each wrapped line
+                    for line in wrapped_desc.split("\n"):
+                        stdscr.addstr(f"     {line}\n")
+                # else:
+                    # stdscr.addstr("   Description: [No description available]\n")
             except Exception as e:
                 stdscr.addstr(f"   Error fetching details: {str(e)}\n")
 

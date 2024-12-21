@@ -677,7 +677,7 @@ class Utility:
             latest_chapter_num_on_disk = -1
 
         # print status
-        print(f'    status: {manga.status}')
+        print(f'     status: {manga.status}')
 
         if not sync_only:
 

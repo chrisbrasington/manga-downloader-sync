@@ -87,6 +87,8 @@ def main(args):
             else:
                 print('Downloading from sources.txt')
 
+            # print(source)
+
             if os.path.exists(source):
                 util.process_collection(util.get_collection(source), sync_destination, sync_only)
             else:

@@ -535,6 +535,10 @@ class Utility:
     def get_collection(self, source):
         with open(str(source), 'r') as f:
             urls = [url.strip() for url in f.readlines()]
+
+        # remove empty strings
+        urls = list(filter(None, urls))
+
         return urls
 
     # get latest chapter number on disk
@@ -828,6 +832,8 @@ class Utility:
                 author = re.search(r'https://twitter\.com/(\w+)', entry.description).group(1)
             except:
                 author = ''
+
+            print(f'    {entry.title}'.ljust(self.pad_value), end='')
 
             # see if feed is known
             result = self.extract_rss_feed_name(entry.link)

@@ -905,8 +905,9 @@ class Utility:
             if known and os.access(final_sync_destination, os.W_OK):
                 self.sync(tmp_dir, final_sync_destination, title, False)
 
+                # faster to not create a kobo collection - us KOReader instead
                 # Create a Kobo collection using the final sync destination
-                self.create_kobo_collection(final_sync_destination, title)
+                # self.create_kobo_collection(final_sync_destination, title)
 
         # Optionally process catalog entries
         # for manga in catalog:

@@ -85,7 +85,12 @@ def display_menu(stdscr, sync, current_page, current_index, show_details=True):
         url = sync[idx]
         highlight = curses.A_REVERSE if idx == start_index + current_index else curses.A_NORMAL
         sort_number = idx + 1  # Sort number is 1-based
-        stdscr.addstr(f"{sort_number}. {url}\n", highlight)
+
+        # Wrap the URL to avoid exceeding terminal width
+        wrapped_url = textwrap.fill(url, width=max_x - 5)  # Adjust the width for margin
+
+        # Display the URL with the sort number
+        stdscr.addstr(f"{sort_number}. {wrapped_url}\n", highlight)
 
         if show_details:
             # Create an instance of Utility class to fetch manga details
@@ -102,12 +107,13 @@ def display_menu(stdscr, sync, current_page, current_index, show_details=True):
                     # Indent each wrapped line
                     for line in wrapped_desc.split("\n"):
                         stdscr.addstr(f"     {line}\n")
-                # else:
-                    # stdscr.addstr("   Description: [No description available]\n")
+                else:
+                    stdscr.addstr("   Description: [No description available]\n")
             except Exception as e:
                 stdscr.addstr(f"   Error fetching details: {str(e)}\n")
 
     stdscr.refresh()
+
 
 def main(stdscr, simple_mode=False):
     curses.curs_set(0)
@@ -171,9 +177,18 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    print(args)
+
     # if simple is present 
     if args.simple:
-        ITEMS_PER_PAGE = 100
+        print("Simple mode enabled")
+        # change ITEMS_PER_PAGE globally
+        ITEMS_PER_PAGE = 70
+
+        # make sure not over length of window by checking height of window
+        if ITEMS_PER_PAGE > os.get_terminal_size().lines - 7:
+            ITEMS_PER_PAGE = os.get_terminal_size().lines - 7
+        
 
     if not os.path.exists("config"):
         os.makedirs("config")

@@ -897,7 +897,7 @@ class Utility:
             # lines are url comma separated to a bool 1 or 0 for sync
             # if sync only, skip lines with sync false (0)
             if sync_only:
-                if ', 0' in s:
+                if '0' in s.split(',')[-1]:
                     continue
 
             manga = cache.manga_exists(s)

@@ -57,11 +57,8 @@ def main(stdscr):
     curses.curs_set(0)
 
     sources_file = "config/sources.txt"
-    sync_file = "config/sync.txt"
 
     sources = read_file(sources_file)
-    sync = set(read_file(sync_file))
-
     manga_details = {}
     current_page = 0  # Keep track of the current page
     current_index = 0  # Keep track of the index of the current item being viewed
@@ -85,8 +82,8 @@ def main(stdscr):
             end_index = min((current_page + 1) * ITEMS_PER_PAGE, len(sources))
 
             for idx in range(start_index, end_index):
-                url = sources[idx]
-                mark = "[x]" if url in sync else "[ ]"
+                url, sync_status = sources[idx].split(',')
+                mark = "[x]" if "1" in sync_status else f"[ ]"
                 highlight = curses.A_REVERSE if idx == start_index + current_index else curses.A_NORMAL
                 title, desc, manga = manga_details.get(url, ("Loading...", "", None))
                 
@@ -116,7 +113,7 @@ def main(stdscr):
             start_index = next_page * ITEMS_PER_PAGE
             end_index = min((next_page + 1) * ITEMS_PER_PAGE, len(sources))
             for idx in range(start_index, end_index):
-                url = sources[idx]
+                url, _ = sources[idx].split(',')
                 if url not in manga_details:
                     load_manga_details(url)
 
@@ -128,7 +125,7 @@ def main(stdscr):
         end_index = min((current_page + 1) * ITEMS_PER_PAGE, len(sources))
 
         for idx in range(start_index, end_index):
-            url = sources[idx]
+            url, _ = sources[idx].split(',')
             load_manga_details(url)
 
         # Preload manga details for the next page in the background
@@ -151,26 +148,24 @@ def main(stdscr):
 
         try:
             if key == ord(' '):
-                url = sources[current_page * ITEMS_PER_PAGE + current_index]
-                if url in sync:
-                    sync.remove(url)
-                else:
-                    sync.add(url)
-                write_file(sync_file, list(sync))
-            elif key == ord('d'):
-                url = sources.pop(current_page * ITEMS_PER_PAGE + current_index)  # Remove current item
-                sync.discard(url)
-                manga_details.pop(url, None)
+                # Toggle the sync state when spacebar is pressed
+                current_item = sources[current_page * ITEMS_PER_PAGE + current_index]
+                url, sync_status = current_item.split(',')
+                new_sync_status = "0" if sync_status == "1" else "1"
+                sources[current_page * ITEMS_PER_PAGE + current_index] = f"{url},{new_sync_status}"
                 write_file(sources_file, sources)
-                write_file(sync_file, list(sync))
+            elif key == ord('d'):
+                current_item = sources.pop(current_page * ITEMS_PER_PAGE + current_index)  # Remove current item
+                manga_details.pop(current_item.split(',')[0], None)
+                write_file(sources_file, sources)
                 current_index = min(current_index, len(sources) - 1)
             elif key == ord('a'):
                 curses.echo()
                 stdscr.addstr(len(sources) + 3, 0, "Enter new URL: ")
                 new_url = stdscr.getstr().decode("utf-8").strip()
                 curses.noecho()
-                if new_url and new_url not in sources:
-                    sources.append(new_url)
+                if new_url and new_url not in [item.split(',')[0] for item in sources]:
+                    sources.append(f"{new_url},0")  # Add new URL with a default sync state of 0
                     manga_details[new_url] = get_manga_details(new_url)
                     write_file(sources_file, sources)
             elif key == ord('q'):

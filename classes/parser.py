@@ -1029,7 +1029,6 @@ class Utility:
 
                 # Skip chapters already on the device
                 if current_chapter_num > latest_chapter_num:
-                    did_work = True
                     sync_dest_file = os.path.join(sync_dest, os.path.basename(filename)).replace('"', '').replace(':', '')
 
                     if os.access(sync_destination, os.W_OK) and not os.path.exists(sync_dest_file):
@@ -1037,6 +1036,7 @@ class Utility:
                         shutil.copy(filename, sync_dest_file)
                         print(f'    ✓ Synced {filename}')
                         self.synced.append(os.path.basename(filename))
+                        did_work = True
 
             # Display results
             char = '✓' if not did_work else 'x'

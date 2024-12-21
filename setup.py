@@ -4,6 +4,9 @@ import os
 import re
 from classes.parser import Utility
 
+# Configuration at the top for easy modification
+ITEMS_PER_PAGE = 5
+
 def read_file(filepath):
     if os.path.exists(filepath):
         with open(filepath, 'r') as f:
@@ -58,25 +61,34 @@ def main(stdscr):
     sources = read_file(sources_file)
     sync = set(read_file(sync_file))
 
-    manga_details = {url: get_manga_details(url) for url in sources}
-
-    current_index = 0
+    manga_details = {}
+    current_page = 0  # Keep track of the current page
+    current_index = 0  # Keep track of the index of the current item being viewed
+    max_y, max_x = stdscr.getmaxyx()  # Get the screen size (height and width)
+    visible_lines = max_y - 6  # Number of lines we can display minus the header
 
     def display_menu():
-        stdscr.clear()
-        max_y, max_x = stdscr.getmaxyx()  # Get the screen size (height and width)
-        num_visible = max_y - 5  # Allow for the header and spacing
-        start_index = max(0, current_index - num_visible // 2)  # Center the selection if possible
-
+        nonlocal current_page, current_index
         try:
+            stdscr.clear()
+
+            # Display the page information
+            total_pages = (len(sources) // ITEMS_PER_PAGE) + (1 if len(sources) % ITEMS_PER_PAGE > 0 else 0)
+            stdscr.addstr(f"Page [{current_page + 1} of {total_pages}]\n\n")
+
             stdscr.addstr("Use SPACE to toggle sync, D to delete, A to add a new URL.\n")
             stdscr.addstr("Press Q to quit.\n\n")
 
-            for idx in range(start_index, min(start_index + num_visible, len(sources))):
+            # Display "Loading..." until manga details are fetched
+            start_index = current_page * ITEMS_PER_PAGE
+            end_index = min((current_page + 1) * ITEMS_PER_PAGE, len(sources))
+
+            for idx in range(start_index, end_index):
                 url = sources[idx]
                 mark = "[x]" if url in sync else "[ ]"
-                highlight = curses.A_REVERSE if idx == current_index else curses.A_NORMAL
-                title, desc, manga = manga_details.get(url, ("Unknown Title", "", None))
+                highlight = curses.A_REVERSE if idx == start_index + current_index else curses.A_NORMAL
+                title, desc, manga = manga_details.get(url, ("Loading...", "", None))
+                
                 stdscr.addstr(f"{mark} {url}\n", highlight)
                 stdscr.addstr(f"   Title: {title}\n", highlight)
 
@@ -87,45 +99,71 @@ def main(stdscr):
                     wrapped_desc = wrap_text(desc, max_x - 6, "     ")
                     for line in wrapped_desc:
                         stdscr.addstr(f"{line}\n", highlight)
-                stdscr.addstr("\n")
-        except curses.error:
-            pass  # Continue if there are issues with the screen size or rendering
 
-        stdscr.refresh()
+            stdscr.refresh()
+        except curses.error:
+            pass  # If there's an error with the curses library (e.g., printing too many lines), just continue
+
+    def load_manga_details(url):
+        if url not in manga_details:
+            manga_details[url] = get_manga_details(url)
 
     while True:
         display_menu()
+
+        # Start loading manga details if they haven't been loaded yet
+        start_index = current_page * ITEMS_PER_PAGE
+        end_index = min((current_page + 1) * ITEMS_PER_PAGE, len(sources))
+
+        for idx in range(start_index, end_index):
+            url = sources[idx]
+            load_manga_details(url)
+
         key = stdscr.getch()
 
-        if key == curses.KEY_UP and current_index > 0:
-            current_index -= 1
-        elif key == curses.KEY_DOWN and current_index < len(sources) - 1:
+        if key == curses.KEY_DOWN and current_index < ITEMS_PER_PAGE - 1:
             current_index += 1
-        elif key == ord(' '):
-            url = sources[current_index]
-            if url in sync:
-                sync.remove(url)
-            else:
-                sync.add(url)
-            write_file(sync_file, list(sync))
-        elif key == ord('d'):
-            url = sources.pop(current_index)
-            sync.discard(url)
-            manga_details.pop(url, None)
-            write_file(sources_file, sources)
-            write_file(sync_file, list(sync))
-            current_index = min(current_index, len(sources) - 1)
-        elif key == ord('a'):
-            curses.echo()
-            stdscr.addstr(len(sources) + 3, 0, "Enter new URL: ")
-            new_url = stdscr.getstr().decode("utf-8").strip()
-            curses.noecho()
-            if new_url and new_url not in sources:
-                sources.append(new_url)
-                manga_details[new_url] = get_manga_details(new_url)
+        elif key == curses.KEY_DOWN and current_index == ITEMS_PER_PAGE - 1:
+            if (current_page + 1) * ITEMS_PER_PAGE < len(sources):
+                current_page += 1
+            current_index = 0  # Reset index to top when moving to the next page
+
+        elif key == curses.KEY_UP and current_index > 0:
+            current_index -= 1
+        elif key == curses.KEY_UP and current_index == 0 and current_page > 0:
+            current_page -= 1
+            current_index = ITEMS_PER_PAGE - 1  # Set index to the last item of the previous page
+
+        try:
+            if key == ord(' '):
+                url = sources[current_page * ITEMS_PER_PAGE + current_index]
+                if url in sync:
+                    sync.remove(url)
+                else:
+                    sync.add(url)
+                write_file(sync_file, list(sync))
+            elif key == ord('d'):
+                url = sources.pop(current_page * ITEMS_PER_PAGE + current_index)  # Remove current item
+                sync.discard(url)
+                manga_details.pop(url, None)
                 write_file(sources_file, sources)
-        elif key == ord('q'):
-            break
+                write_file(sync_file, list(sync))
+                current_index = min(current_index, len(sources) - 1)
+            elif key == ord('a'):
+                curses.echo()
+                stdscr.addstr(len(sources) + 3, 0, "Enter new URL: ")
+                new_url = stdscr.getstr().decode("utf-8").strip()
+                curses.noecho()
+                if new_url and new_url not in sources:
+                    sources.append(new_url)
+                    manga_details[new_url] = get_manga_details(new_url)
+                    write_file(sources_file, sources)
+            elif key == ord('q'):
+                break
+        except Exception as e:
+            stdscr.addstr(f"\nError: {str(e)}")
+            stdscr.refresh()
+            curses.napms(2000)  # Wait for 2 seconds to display error before continuing
 
 if __name__ == "__main__":
     if not os.path.exists("config"):

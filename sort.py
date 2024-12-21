@@ -171,6 +171,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # if simple is present 
+    if args.simple:
+        ITEMS_PER_PAGE = 100
+
     if not os.path.exists("config"):
         os.makedirs("config")
     

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import curses
 import os
 from classes.parser import Utility
@@ -16,7 +17,15 @@ def get_manga_details(url):
     try:
         utility = Utility()
         manga = utility.get_manga(url)
-        return manga.title, manga.desc
+        # return manga, manga.desc
+
+        english_title = manga.get_english_title()
+        resulting_title = manga.title
+
+        if english_title is not manga.title:
+            resulting_title = f'{english_title} ({manga.title})'
+
+        return resulting_title, manga.desc, manga
     except Exception as e:
         return "Unknown Title", "Failed to fetch details"
 
@@ -53,13 +62,19 @@ def main(stdscr):
         for idx, url in enumerate(sources):
             mark = "[x]" if url in sync else "[ ]"
             highlight = curses.A_REVERSE if idx == current_index else curses.A_NORMAL
-            title, desc = manga_details.get(url, ("Unknown Title", ""))
+            title, desc, manga = manga_details.get(url, ("Unknown Title", ""))
             stdscr.addstr(f"{mark} {url}\n", highlight)
-            stdscr.addstr(f"   Title: {title}\n", highlight)
+            stdscr.addstr(f"   {title}\n", highlight)
+
+            # status
+            stdscr.addstr(f"     Status: {manga.status}\n", highlight)
+
             if desc:
-                wrapped_desc = wrap_text(desc, curses.COLS - 4, "   ")
+                stdscr.addstr("\n")
+                wrapped_desc = wrap_text(desc, curses.COLS - 4, "     ")
                 for line in wrapped_desc:
                     stdscr.addstr(f"{line}\n", highlight)
+            stdscr.addstr("\n")
         stdscr.refresh()
 
     while True:

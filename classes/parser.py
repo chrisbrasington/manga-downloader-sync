@@ -20,6 +20,7 @@ class Manga:
         self.tags = []
         self.status = data["attributes"]["status"]
         self.demographic = data['attributes']['publicationDemographic']
+        self.data = data
 
         key = 'en'
         if not 'en' in data["attributes"]["title"]:
@@ -67,6 +68,20 @@ class Manga:
         if not self._artist_id:
             return 'unknown'
         return self.get_author(self._artist_id)
+    
+    def get_status_completed(self):
+        return self.status == 'completed'
+
+    def get_english_title(self):
+        altTitles = self.data['attributes']['altTitles']
+        first_en = next((item['en'] for item in altTitles if 'en' in item), None)
+        # print(altTitles)
+        # print(first_en)
+        # print(self.data)
+
+        if first_en is not None:
+            return first_en
+        return self.title
 
     def get_author(self, id):
         response = requests.get(
@@ -576,6 +591,9 @@ class Utility:
         data = response.json()['data']
 
         manga = Manga(data)
+
+        # print(manga.get_english_title())
+
         return manga
 
     # parse feed, rss or mangadex
@@ -653,6 +671,9 @@ class Utility:
         except Exception as e:
             # this is ok, may not exist on disk yet
             latest_chapter_num_on_disk = -1
+
+        # print status
+        print(f'    status: {manga.status}')
 
         if not sync_only:
 

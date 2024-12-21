@@ -16,5 +16,5 @@ docker run -e TZ=America/Denver --name manga -v /home/chris/code/manga-kobo/tmp:
 
 # view logs
 echo 'watching logs with...'
-echo 'docker logs -f manga-downloader'
+echo 'docker logs -f manga'
 docker logs manga

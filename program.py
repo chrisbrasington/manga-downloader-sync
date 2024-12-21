@@ -81,14 +81,6 @@ def main(args):
         else:
             source = SourceFile.SOURCES.value
 
-            # if sync_only:
-            #     source = SourceFile.SYNC.value
-            #     print('Syncing from sync.txt')
-            # else:
-            #     print('Downloading from sources.txt')
-
-            # print(source)
-
             if os.path.exists(source):
                 util.process_collection(util.get_collection(source), sync_destination, sync_only)
             else:

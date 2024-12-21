@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import curses
 import os
+import sys
+import argparse
 
 # Configuration for easy modification
 ITEMS_PER_PAGE = 5
@@ -60,7 +62,7 @@ def sort_files():
 
     return sources, final_sync
 
-def display_menu(stdscr, sync, current_page, current_index):
+def display_menu(stdscr, sync, current_page, current_index, show_details=True):
     """Displays the menu with the sync list, including sort numbers and pagination."""
     max_y, max_x = stdscr.getmaxyx()
     visible_lines = max_y - 6  # Number of lines we can display, leaving room for other UI elements
@@ -82,9 +84,13 @@ def display_menu(stdscr, sync, current_page, current_index):
         sort_number = idx + 1  # Sort number is 1-based
         stdscr.addstr(f"{sort_number}. {url}\n", highlight)
 
+        if show_details:
+            # For this example, we can just append some dummy manga details or keep this section customizable
+            stdscr.addstr(f"   (Details: Some manga info)\n")  # Replace with actual manga details if necessary
+
     stdscr.refresh()
 
-def main(stdscr):
+def main(stdscr, simple_mode=False):
     curses.curs_set(0)
 
     # Re-order sync.txt at the start to match sources.txt order
@@ -97,7 +103,7 @@ def main(stdscr):
     max_y, max_x = stdscr.getmaxyx()
 
     while True:
-        display_menu(stdscr, sync, current_page, current_index)
+        display_menu(stdscr, sync, current_page, current_index, show_details=not simple_mode)
 
         key = stdscr.getch()
 
@@ -141,6 +147,12 @@ def main(stdscr):
             pass  # Ignore invalid sort number inputs
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Sort and display manga URLs with optional details.")
+    parser.add_argument("-s", "--simple", action="store_true", help="Display only URLs without details")
+
+    args = parser.parse_args()
+
     if not os.path.exists("config"):
         os.makedirs("config")
-    curses.wrapper(main)
+    
+    curses.wrapper(main, simple_mode=args.simple)

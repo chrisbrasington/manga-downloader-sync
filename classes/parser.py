@@ -972,76 +972,76 @@ class Utility:
         return [v for k, v in sorted(unique_chapters.items(), reverse=True, key=self.extract_number)]
 
     # sync to location (ereader)
-def sync(self, tmp_dir, sync_destination, title, combine):
-    # Prepare the sync destination path
-    sync_dest = os.path.join(sync_destination, title).replace('"', '').replace(':', '')
+    def sync(self, tmp_dir, sync_destination, title, combine):
+        # Prepare the sync destination path
+        sync_dest = os.path.join(sync_destination, title).replace('"', '').replace(':', '')
 
-    # Ensure the destination directory exists
-    if os.access(sync_destination, os.W_OK):
-        os.makedirs(sync_dest, exist_ok=True)
+        # Ensure the destination directory exists
+        if os.access(sync_destination, os.W_OK):
+            os.makedirs(sync_dest, exist_ok=True)
 
-        combo_output = None
-        device_output = None
-        did_work = False
+            combo_output = None
+            device_output = None
+            did_work = False
 
-        # Handle combined files if `combine` is True
-        if combine:
-            combined_files = glob.glob(f'{tmp_dir}/*combo.pdf')
-            if combined_files:
-                source_path = combined_files[0]
-                file_name = os.path.basename(source_path)
-                sync_dest_file = os.path.join(sync_dest, file_name)
-                
-                if not os.path.exists(sync_dest_file):
-                    # Remove prior combined files
-                    for prior_combo in glob.glob(f'{sync_dest}/*combo.pdf'):
-                        os.remove(prior_combo)
+            # Handle combined files if `combine` is True
+            if combine:
+                combined_files = glob.glob(f'{tmp_dir}/*combo.pdf')
+                if combined_files:
+                    source_path = combined_files[0]
+                    file_name = os.path.basename(source_path)
+                    sync_dest_file = os.path.join(sync_dest, file_name)
+                    
+                    if not os.path.exists(sync_dest_file):
+                        # Remove prior combined files
+                        for prior_combo in glob.glob(f'{sync_dest}/*combo.pdf'):
+                            os.remove(prior_combo)
 
-                    print(f'Copying {file_name}, please wait...')
-                    shutil.copy(source_path, sync_dest_file)
-                    self.synced.append(file_name)
+                        print(f'Copying {file_name}, please wait...')
+                        shutil.copy(source_path, sync_dest_file)
+                        self.synced.append(file_name)
 
-                # Extract chapter range for combined file
-                match = re.search(r"-(\d+(\.\d+)?)-(\d+(\.\d+)?)-", file_name)
-                combo_output = f"{match.group(1)}-{match.group(3)}(combo)" if match else f"{file_name}(combo)"
+                    # Extract chapter range for combined file
+                    match = re.search(r"-(\d+(\.\d+)?)-(\d+(\.\d+)?)-", file_name)
+                    combo_output = f"{match.group(1)}-{match.group(3)}(combo)" if match else f"{file_name}(combo)"
 
-        # Determine the latest chapter on the device
-        latest_chapter_num = -1
-        try:
-            all_device_files = sorted(os.listdir(sync_dest), key=self.extract_number)
-            latest_chapter = all_device_files[-1] if all_device_files else None
-            if latest_chapter:
-                latest_chapter_num = self.extract_number_from_combo(latest_chapter) if "combo" in latest_chapter else self.extract_number(latest_chapter)
-        except Exception:
-            device_output = "nothing!"
+            # Determine the latest chapter on the device
+            latest_chapter_num = -1
+            try:
+                all_device_files = sorted(os.listdir(sync_dest), key=self.extract_number)
+                latest_chapter = all_device_files[-1] if all_device_files else None
+                if latest_chapter:
+                    latest_chapter_num = self.extract_number_from_combo(latest_chapter) if "combo" in latest_chapter else self.extract_number(latest_chapter)
+            except Exception:
+                device_output = "nothing!"
 
-        if latest_chapter_num != -1:
-            device_output = latest_chapter_num
+            if latest_chapter_num != -1:
+                device_output = latest_chapter_num
 
-        # Sync files from `tmp_dir` to the device
-        pdf_files = sorted(
-            glob.glob(f"{tmp_dir}/*.pdf"),
-            key=self.extract_number
-        )
+            # Sync files from `tmp_dir` to the device
+            pdf_files = sorted(
+                glob.glob(f"{tmp_dir}/*.pdf"),
+                key=self.extract_number
+            )
 
-        for filename in pdf_files:
-            current_chapter_num = self.extract_number(filename)
+            for filename in pdf_files:
+                current_chapter_num = self.extract_number(filename)
 
-            # Skip chapters already on the device
-            if current_chapter_num > latest_chapter_num:
-                did_work = True
-                sync_dest_file = os.path.join(sync_dest, os.path.basename(filename)).replace('"', '').replace(':', '')
+                # Skip chapters already on the device
+                if current_chapter_num > latest_chapter_num:
+                    did_work = True
+                    sync_dest_file = os.path.join(sync_dest, os.path.basename(filename)).replace('"', '').replace(':', '')
 
-                if os.access(sync_destination, os.W_OK) and not os.path.exists(sync_dest_file):
-                    os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
-                    shutil.copy(filename, sync_dest_file)
-                    print(f'    ✓ Synced {filename}')
-                    self.synced.append(os.path.basename(filename))
+                    if os.access(sync_destination, os.W_OK) and not os.path.exists(sync_dest_file):
+                        os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
+                        shutil.copy(filename, sync_dest_file)
+                        print(f'    ✓ Synced {filename}')
+                        self.synced.append(os.path.basename(filename))
 
-        # Display results
-        char = '✓' if not did_work else 'x'
-        result_output = f"   {char} device: {device_output}"
-        if combo_output:
-            result_output += f" and {combo_output}"
+            # Display results
+            char = '✓' if not did_work else 'x'
+            result_output = f"   {char} device: {device_output}"
+            if combo_output:
+                result_output += f" and {combo_output}"
 
-        print(result_output.ljust(self.pad_value) if did_work else colorama.Fore.RED + f"   x device" + colorama.Style.RESET_ALL)
+            print(result_output.ljust(self.pad_value) if did_work else colorama.Fore.RED + f"   x device" + colorama.Style.RESET_ALL)

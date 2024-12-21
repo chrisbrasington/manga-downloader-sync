@@ -79,10 +79,18 @@ def main(args):
             util.process_collection(util.get_collection(args.hiatus), sync_destination, sync_only)
         # if normal run
         else:
-            if os.path.exists(SourceFile.SOURCES.value):
-                util.process_collection(util.get_collection(SourceFile.SOURCES.value), sync_destination, sync_only)
+            source = SourceFile.SOURCES.value
+
+            if sync_only:
+                source = SourceFile.SYNC.value
+                print('Syncing from sync.txt')
             else:
-                print(f'{SourceFile.SOURCES.value} does not exist')
+                print('Downloading from sources.txt')
+
+            if os.path.exists(source):
+                util.process_collection(util.get_collection(source), sync_destination, sync_only)
+            else:
+                print(f'{source} does not exist')
                 print('abort')
                 return
 

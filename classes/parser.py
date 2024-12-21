@@ -876,6 +876,10 @@ class Utility:
             # remove : from title
             title = title.replace(':','')
 
+            # if not exists sync_destination
+            if not os.path.exists(sync_destination):
+                continue
+
             # Check if the "_reading" folder with the title exists
             reading_folder = os.path.join(sync_destination + "_reading", title)
 

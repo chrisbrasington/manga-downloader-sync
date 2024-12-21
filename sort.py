@@ -47,7 +47,7 @@ def reorder_sync():
     # write the final list to sync.txt
     write_file(SYNC_FILE, final_sync)
 
-def sort_files():
+def reorder_source():
     """Sorts sources.txt first, then sync.txt based on sources.txt."""
     # Read the files
     sources = read_file(SOURCES_FILE)
@@ -61,7 +61,8 @@ def sort_files():
 
     # Combine the ordered and unordered sync URLs
     final_sync = ordered_sync + unordered_sync
-    write_file(SYNC_FILE, final_sync)
+
+    write_file(SOURCES_FILE, final_sync)
 
     return sources, final_sync
 
@@ -89,9 +90,11 @@ def display_menu(stdscr, sync, current_page, current_index, show_details=True):
         # Wrap the URL to avoid exceeding terminal width
         wrapped_url = textwrap.fill(url, width=max_x - 5)  # Adjust the width for margin
 
-        # Display the URL with the sort number
-        stdscr.addstr(f"{sort_number}. {wrapped_url}\n", highlight)
+        is_synced = url in sync
 
+        # Display the URL with the sort number
+        stdscr.addstr(f"{sort_number}. {'[x]' if is_synced else '[ ]'}{wrapped_url}\n", highlight)
+        
         if show_details:
             # Create an instance of Utility class to fetch manga details
             utility = Utility()
@@ -122,7 +125,7 @@ def main(stdscr, simple_mode=False):
     reorder_sync()
 
     # Re-sort both sources.txt and sync.txt
-    sources, sync = sort_files()
+    sources, sync = reorder_source()
     current_page = 0
     current_index = 0
     max_y, max_x = stdscr.getmaxyx()

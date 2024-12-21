@@ -1047,4 +1047,4 @@ class Utility:
             if combo_output:
                 result_output += f" and {combo_output}"
 
-            print(result_output.ljust(self.pad_value) if not did_work else colorama.Fore.RED + f"   x device" + colorama.Style.RESET_ALL)
+            print(result_output.ljust(self.pad_value) if not did_work else colorama.Fore.RED + f"   x device" + colorama.Style.RESET_ALL, endl='')

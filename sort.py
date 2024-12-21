@@ -3,6 +3,7 @@ import curses
 import os
 import sys
 import argparse
+from classes.parser import Utility  # Assuming Utility is imported from parser
 
 # Configuration for easy modification
 ITEMS_PER_PAGE = 5
@@ -85,8 +86,14 @@ def display_menu(stdscr, sync, current_page, current_index, show_details=True):
         stdscr.addstr(f"{sort_number}. {url}\n", highlight)
 
         if show_details:
-            # For this example, we can just append some dummy manga details or keep this section customizable
-            stdscr.addstr(f"   (Details: Some manga info)\n")  # Replace with actual manga details if necessary
+            # Create an instance of Utility class to fetch manga details
+            utility = Utility()
+            try:
+                manga = utility.get_manga(url)
+                stdscr.addstr(f"   Title: {manga.title}\n")
+                stdscr.addstr(f"   Description: {manga.desc}\n")
+            except Exception as e:
+                stdscr.addstr(f"   Error fetching details: {str(e)}\n")
 
     stdscr.refresh()
 

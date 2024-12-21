@@ -9,7 +9,7 @@ docker image rm manga-downloader
 
 # rebuild docker file
 echo 'building docker image'
-docker build -t manga-downloader
+docker build -t manga-downloader .
 
 # run with an always restart
 echo 'running with restart always, mounted download folder and mounted config folder'

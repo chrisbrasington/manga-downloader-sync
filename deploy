@@ -5,6 +5,7 @@ docker stop manga-downloader
 # rm docker
 echo 'removing manga-downloader'
 docker rm manga-downloader
+docker image rm manga-downloader
 
 # rebuild docker file
 echo 'building docker image'

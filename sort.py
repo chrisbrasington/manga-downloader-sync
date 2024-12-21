@@ -7,7 +7,7 @@ import textwrap
 from classes.parser import Utility  # Assuming Utility is imported from parser
 
 # Configuration for easy modification
-ITEMS_PER_PAGE = 5
+ITEMS_PER_PAGE = 100
 SOURCES_FILE = "config/sources.txt"
 
 def read_file(filepath):
@@ -132,12 +132,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.simple:
-        print("Simple mode enabled")
-        ITEMS_PER_PAGE = 70
+    # if args.simple:
+    #     print("Simple mode enabled")
+    #     ITEMS_PER_PAGE = 70
 
-        if ITEMS_PER_PAGE > os.get_terminal_size().lines - 7:
-            ITEMS_PER_PAGE = os.get_terminal_size().lines - 7
+    if ITEMS_PER_PAGE > os.get_terminal_size().lines - 10:
+        ITEMS_PER_PAGE = os.get_terminal_size().lines - 10
 
     if not os.path.exists("config"):
         os.makedirs("config")

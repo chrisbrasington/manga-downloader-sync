@@ -894,6 +894,12 @@ class Utility:
 
         for s in source:
 
+            # lines are url comma separated to a bool 1 or 0 for sync
+            # if sync only, skip lines with sync false (0)
+            if sync_only:
+                if ', 0' in s:
+                    continue
+
             manga = cache.manga_exists(s)
             if manga.exists:
                 # print(f"Manga with ID {manga.id} exists with title '{manga.title}'")

@@ -81,11 +81,11 @@ def main(args):
         else:
             source = SourceFile.SOURCES.value
 
-            if sync_only:
-                source = SourceFile.SYNC.value
-                print('Syncing from sync.txt')
-            else:
-                print('Downloading from sources.txt')
+            # if sync_only:
+            #     source = SourceFile.SYNC.value
+            #     print('Syncing from sync.txt')
+            # else:
+            #     print('Downloading from sources.txt')
 
             # print(source)
 

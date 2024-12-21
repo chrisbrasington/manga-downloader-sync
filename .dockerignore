@@ -1,2 +1,4 @@
-tmp/
-config/
+tmp
+config
+*.pdf
+*.cbz

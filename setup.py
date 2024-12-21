@@ -3,6 +3,7 @@ import curses
 import os
 import re
 from classes.parser import Utility
+import threading
 
 # Configuration at the top for easy modification
 ITEMS_PER_PAGE = 5
@@ -108,16 +109,30 @@ def main(stdscr):
         if url not in manga_details:
             manga_details[url] = get_manga_details(url)
 
+    def preload_next_page():
+        # Preload manga details for the next page in the background
+        next_page = current_page + 1
+        if next_page * ITEMS_PER_PAGE < len(sources):
+            start_index = next_page * ITEMS_PER_PAGE
+            end_index = min((next_page + 1) * ITEMS_PER_PAGE, len(sources))
+            for idx in range(start_index, end_index):
+                url = sources[idx]
+                if url not in manga_details:
+                    load_manga_details(url)
+
     while True:
         display_menu()
 
-        # Start loading manga details if they haven't been loaded yet
+        # Start loading manga details for the current page
         start_index = current_page * ITEMS_PER_PAGE
         end_index = min((current_page + 1) * ITEMS_PER_PAGE, len(sources))
 
         for idx in range(start_index, end_index):
             url = sources[idx]
             load_manga_details(url)
+
+        # Preload manga details for the next page in the background
+        threading.Thread(target=preload_next_page, daemon=True).start()
 
         key = stdscr.getch()
 

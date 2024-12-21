@@ -123,8 +123,19 @@ def main(stdscr, simple_mode=False):
                     # Refresh the display immediately after saving
                     display_menu(stdscr, sources, current_page, current_index, show_details=not simple_mode)
 
+            elif key == 32:  # Spacebar to toggle sync flag
+                url, sync_flag = sources[current_page * ITEMS_PER_PAGE + current_index].split(",")
+                new_sync_flag = "0" if sync_flag.strip() == "1" else "1"
+                sources[current_page * ITEMS_PER_PAGE + current_index] = f"{url},{new_sync_flag}"
+
+                write_file(SOURCES_FILE, sources)
+
+                # Refresh the display immediately after saving
+                display_menu(stdscr, sources, current_page, current_index, show_details=not simple_mode)
+
         except ValueError:
             pass  # Ignore invalid sort number inputs
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sort and display manga URLs with optional details.")
@@ -135,6 +146,8 @@ if __name__ == "__main__":
     # if args.simple:
     #     print("Simple mode enabled")
     #     ITEMS_PER_PAGE = 70
+
+    args.simple = True
 
     if ITEMS_PER_PAGE > os.get_terminal_size().lines - 10:
         ITEMS_PER_PAGE = os.get_terminal_size().lines - 10

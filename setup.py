@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
 import curses
 import os
+from classes.parser import Utility
 
 def read_file(filepath):
     if os.path.exists(filepath):
@@ -12,6 +12,27 @@ def write_file(filepath, lines):
     with open(filepath, 'w') as f:
         f.write("\n".join(lines) + "\n")
 
+def get_manga_details(url):
+    try:
+        utility = Utility()
+        manga = utility.get_manga(url)
+        return manga.title, manga.desc
+    except Exception as e:
+        return "Unknown Title", "Failed to fetch details"
+
+def wrap_text(text, width, indent):
+    lines = []
+    while text:
+        if len(text) <= width:
+            lines.append(text)
+            break
+        split_at = text.rfind(' ', 0, width)
+        if split_at == -1:
+            split_at = width
+        lines.append(text[:split_at])
+        text = text[split_at:].strip()
+    return [(indent + line) for line in lines]
+
 def main(stdscr):
     curses.curs_set(0)
 
@@ -20,6 +41,8 @@ def main(stdscr):
 
     sources = read_file(sources_file)
     sync = set(read_file(sync_file))
+
+    manga_details = {url: get_manga_details(url) for url in sources}
 
     current_index = 0
 
@@ -30,7 +53,13 @@ def main(stdscr):
         for idx, url in enumerate(sources):
             mark = "[x]" if url in sync else "[ ]"
             highlight = curses.A_REVERSE if idx == current_index else curses.A_NORMAL
+            title, desc = manga_details.get(url, ("Unknown Title", ""))
             stdscr.addstr(f"{mark} {url}\n", highlight)
+            stdscr.addstr(f"   Title: {title}\n", highlight)
+            if desc:
+                wrapped_desc = wrap_text(desc, curses.COLS - 4, "   ")
+                for line in wrapped_desc:
+                    stdscr.addstr(f"{line}\n", highlight)
         stdscr.refresh()
 
     while True:
@@ -53,6 +82,7 @@ def main(stdscr):
             # Delete URL
             url = sources.pop(current_index)
             sync.discard(url)
+            manga_details.pop(url, None)
             write_file(sources_file, sources)
             write_file(sync_file, list(sync))
             current_index = min(current_index, len(sources) - 1)
@@ -64,6 +94,7 @@ def main(stdscr):
             curses.noecho()
             if new_url and new_url not in sources:
                 sources.append(new_url)
+                manga_details[new_url] = get_manga_details(new_url)
                 write_file(sources_file, sources)
         elif key == ord('q'):
             break

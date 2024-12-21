@@ -81,6 +81,8 @@ def main(args):
         else:
             source = SourceFile.SOURCES.value
 
+            print(f'Using source file: {source}')
+
             if os.path.exists(source):
                 util.process_collection(util.get_collection(source), sync_destination, sync_only)
             else:

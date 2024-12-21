@@ -884,13 +884,13 @@ class Utility:
                 if title in folder:
                     reading_folder = os.path.join(sync_destination + "_reading", folder)
                     title = folder
-                    print(f"  Using {title} as the modified title")
+                    # print(f"   \"{title}\" as the modified title")
                     break
             
             if os.path.exists(reading_folder):
                 # If the "_reading/title" folder exists, use _reading/ as the sync destination
                 final_sync_destination = os.path.join(sync_destination + "_reading")
-                print(f"  Using {reading_folder} as the sync destination")
+                # print(f" {reading_folder}")
             else:
                 # check each folder in sync_destination for the first folder that contains the title
                 # for folder in os.listdir(sync_destination):
@@ -903,6 +903,11 @@ class Utility:
 
             # Sync to device if the manga is known and the final destination is writable
             if known and os.access(final_sync_destination, os.W_OK):
+
+                # split on KOBOeReader/
+                subdir = f"   {final_sync_destination}/{title}".split('KOBOeReader/')[-1]
+
+                print(f"     {subdir}")
                 self.sync(tmp_dir, final_sync_destination, title, False)
 
                 # faster to not create a kobo collection - us KOReader instead
@@ -976,6 +981,8 @@ class Utility:
     def sync(self, tmp_dir, sync_destination, title, combine):
         # Prepare the sync destination path
         sync_dest = os.path.join(sync_destination, title).replace('"', '').replace(':', '')
+
+        # print(f'\nSyncing {title} to {sync_dest}')
 
         # Ensure the destination directory exists
         if os.access(sync_destination, os.W_OK):

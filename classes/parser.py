@@ -1031,7 +1031,7 @@ class Utility:
                 if current_chapter_num > latest_chapter_num:
                     sync_dest_file = os.path.join(sync_dest, os.path.basename(filename)).replace('"', '').replace(':', '')
 
-                    print(current_chapter_num, latest_chapter_num, sync_dest_file)
+                    # print(current_chapter_num, latest_chapter_num, sync_dest_file)
 
                     if os.access(sync_destination, os.W_OK) and not os.path.exists(sync_dest_file):
                         os.makedirs(os.path.dirname(sync_dest_file), exist_ok=True)
@@ -1046,4 +1046,4 @@ class Utility:
             if combo_output:
                 result_output += f" and {combo_output}"
 
-            print(result_output.ljust(self.pad_value) if did_work else colorama.Fore.RED + f"   x device" + colorama.Style.RESET_ALL)
+            print(result_output.ljust(self.pad_value) if not did_work else colorama.Fore.RED + f"   x device" + colorama.Style.RESET_ALL)

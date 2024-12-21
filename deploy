@@ -1,20 +1,19 @@
 # stop docker
-echo 'stopping docker manga'
+echo 'stopping docker manga-downloader'
 docker stop manga
 
 # rm docker
-echo 'removing manga'
+echo 'removing manga-downloader'
 docker rm manga
 
 # rebuild docker file
 echo 'building docker image'
-docker build -t manga
+docker build -t manga-downloader
 
 # run with an always restart
 echo 'running with restart always, mounted download folder and mounted config folder'
-docker run -e TZ=America/Denver --name manga -v /home/chris/code/manga-kobo/tmp:/app/tmp -v /home/chris/code/manga-kobo/config:/app/config --restart always -d manga:latest
+docker run -e TZ=America/Denver --name manga-downloader -v /home/chris/code/manga-kobo/tmp:/app/tmp -v /home/chris/code/manga-kobo/config:/app/config --restart always -d manga-downloader:latest
 
 # view logs
 echo 'watching logs with...'
-echo 'docker logs -f manga'
-# docker logs manga
+echo 'docker logs -f manga-downloader'

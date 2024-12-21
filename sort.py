@@ -8,7 +8,6 @@ from classes.parser import Utility  # Assuming Utility is imported from parser
 
 # Configuration for easy modification
 ITEMS_PER_PAGE = 5
-SYNC_FILE = "config/sync.txt"
 SOURCES_FILE = "config/sources.txt"
 
 def read_file(filepath):
@@ -28,55 +27,34 @@ def write_file(filepath, lines):
         f.seek(-1, os.SEEK_END)
         f.truncate()
 
-def reorder_sync():
-    """Reorders sync.txt to match sources.txt by removing and then re-adding entries that are common."""
-    sources = read_file(SOURCES_FILE)
-    sync = read_file(SYNC_FILE)
-
-    ordered_sync = [url for url in sources]
-    unordered_sync = [url for url in sync if url not in ordered_sync]
-    final_sync = ordered_sync + unordered_sync
-
-    write_file(SYNC_FILE, final_sync)
-
-def reorder_source():
-    """Sorts sources.txt first, then sync.txt based on sources.txt."""
-    sources = read_file(SOURCES_FILE)
-    sync = read_file(SYNC_FILE)
-
-    ordered_sync = [url for url in sources if url in sync]
-    unordered_sync = [url for url in sync if url not in sources]
-
-    final_sync = ordered_sync + unordered_sync
-
-    write_file(SOURCES_FILE, final_sync)
-    return sources, final_sync
-
-def display_menu(stdscr, sync, current_page, current_index, show_details=True):
+def display_menu(stdscr, sources, current_page, current_index, show_details=True):
     """Displays the menu with the sync list, including sort numbers and pagination."""
     max_y, max_x = stdscr.getmaxyx()
     visible_lines = max_y - 6  # Number of lines we can display, leaving room for other UI elements
 
     start_index = current_page * ITEMS_PER_PAGE
-    end_index = min((current_page + 1) * ITEMS_PER_PAGE, len(sync))
+    end_index = min((current_page + 1) * ITEMS_PER_PAGE, len(sources))
 
-    total_pages = (len(sync) // ITEMS_PER_PAGE) + (1 if len(sync) % ITEMS_PER_PAGE > 0 else 0)
+    total_pages = (len(sources) // ITEMS_PER_PAGE) + (1 if len(sources) % ITEMS_PER_PAGE > 0 else 0)
     stdscr.clear()
     stdscr.addstr(f"Page [{current_page + 1} of {total_pages}]\n\n")
     stdscr.addstr("Use arrow keys to navigate, type a number to change the sort order, and press Enter to confirm.\n")
     stdscr.addstr("Press Q to quit.\n\n")
 
     for idx in range(start_index, end_index):
-        url = sync[idx]
+        url, sync_flag = sources[idx].split(",")
         highlight = curses.A_REVERSE if idx == start_index + current_index else curses.A_NORMAL
         sort_number = idx + 1
 
+        # remove white spaces from sync flag
+        sync_flag = sync_flag.strip()
+
         wrapped_url = textwrap.fill(url, width=max_x - 5)
 
-        is_synced = url in sync
+        # Display whether the URL is synced or not
+        is_synced = "[x]" if sync_flag == "1" else "[ ]"
+        stdscr.addstr(f"{sort_number}. {is_synced} {wrapped_url}\n", highlight)
 
-        stdscr.addstr(f"{sort_number}. {'[x]' if is_synced else '[ ]'}{wrapped_url}\n", highlight)
-        
         if show_details:
             utility = Utility()
             try:
@@ -98,22 +76,21 @@ def display_menu(stdscr, sync, current_page, current_index, show_details=True):
 def main(stdscr, simple_mode=False):
     curses.curs_set(0)
 
-    reorder_sync()
-    sources, sync = reorder_source()
+    sources = read_file(SOURCES_FILE)
 
     current_page = 0
     current_index = 0
     max_y, max_x = stdscr.getmaxyx()
 
     while True:
-        display_menu(stdscr, sync, current_page, current_index, show_details=not simple_mode)
+        display_menu(stdscr, sources, current_page, current_index, show_details=not simple_mode)
 
         key = stdscr.getch()
 
         if key == curses.KEY_DOWN and current_index < ITEMS_PER_PAGE - 1:
             current_index += 1
         elif key == curses.KEY_DOWN and current_index == ITEMS_PER_PAGE - 1:
-            if (current_page + 1) * ITEMS_PER_PAGE < len(sync):
+            if (current_page + 1) * ITEMS_PER_PAGE < len(sources):
                 current_page += 1
             current_index = 0  # Reset index to top when moving to the next page
 
@@ -132,20 +109,19 @@ def main(stdscr, simple_mode=False):
                 new_sort_number = int(stdscr.getstr().decode("utf-8").strip())
                 curses.noecho()
 
-                if 1 <= new_sort_number <= len(sync):
+                if 1 <= new_sort_number <= len(sources):
                     new_sort_number -= 1  # Convert to 0-based index
-                    url = sync[current_page * ITEMS_PER_PAGE + current_index]
-                    sync.remove(url)
-                    sync.insert(new_sort_number, url)
+                    url, sync_flag = sources[current_page * ITEMS_PER_PAGE + current_index].split(",")
+                    sources.remove(f"{url},{sync_flag}")
+                    sources.insert(new_sort_number, f"{url},{sync_flag}")
 
-                    write_file(SYNC_FILE, sync)
-                    write_file(SOURCES_FILE, sync)  # Save to sources.txt as well
+                    write_file(SOURCES_FILE, sources)
 
                     current_page = 0
                     current_index = 0
 
                     # Refresh the display immediately after saving
-                    display_menu(stdscr, sync, current_page, current_index, show_details=not simple_mode)
+                    display_menu(stdscr, sources, current_page, current_index, show_details=not simple_mode)
 
         except ValueError:
             pass  # Ignore invalid sort number inputs

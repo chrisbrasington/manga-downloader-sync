@@ -552,6 +552,31 @@ class Utility:
             return int(result)  # int prints prettier
 
         return result # float
+    
+    def get_manga(self, source):
+        # extract manga GUID
+        pattern = r"/mangadex/(?P<guid>[\w-]+)/?"
+        match = re.search(pattern, source)
+        if match:
+            guid = match.group("guid")
+        else:
+            pattern = r"/title/(?P<guid>[\w-]+)/?"
+            match = re.search(pattern, source)
+            if match:
+                guid = match.group("guid")
+            else:
+                print('failure parsing mangadex guid')
+                return
+
+        # Get the single instance of the Utility class
+        utility = Utility.instance()
+        response = requests.get(
+            f'https://api.mangadex.org/manga/{guid}'
+        )
+        data = response.json()['data']
+
+        manga = Manga(data)
+        return manga
 
     # parse feed, rss or mangadex
     def parse_feed(self, source, combine, sync_only):
@@ -591,28 +616,7 @@ class Utility:
         did_work = False
         guid = None
 
-        # extract manga GUID
-        pattern = r"/mangadex/(?P<guid>[\w-]+)/?"
-        match = re.search(pattern, source)
-        if match:
-            guid = match.group("guid")
-        else:
-            pattern = r"/title/(?P<guid>[\w-]+)/?"
-            match = re.search(pattern, source)
-            if match:
-                guid = match.group("guid")
-            else:
-                print('failure parsing mangadex guid')
-                return
-
-        # Get the single instance of the Utility class
-        utility = Utility.instance()
-        response = requests.get(
-            f'https://api.mangadex.org/manga/{guid}'
-        )
-        data = response.json()['data']
-
-        manga = Manga(data)
+        manga = self.get_manga(source)
 
         # print(manga)
         # print(manga.tags)

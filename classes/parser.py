@@ -996,6 +996,15 @@ class Utility:
                     # if os.path.exists(new_target):
                     #     print(f'\n   {new_target} already exists')
 
+                    # check if manga.url exists in config/ignore_rename.txt
+                    # if it does, skip the prompt
+                    if os.path.isfile('config/ignore_rename.txt'):
+                        with open('config/ignore_rename.txt', 'r') as f:
+                            lines = f.readlines()
+                        if s+'\n' in lines:
+                            # print(f"URL '{s}' exists in file 'config/ignore_rename.txt'. Skipping prompt.")
+                            continue
+
                     # ask user to
                     print(f'\n\n   Old name detected', end='')
                     print(f'\n     {final_sync_destination}/{title_used} ->\n     {new_target}')
@@ -1012,6 +1021,27 @@ class Utility:
                     elif answer.lower() == 'q':
                         # quit running
                         sys.exit()
+                    elif answer.lower() == 'n':
+                        # add manga.url to config/ignore_rename.txt
+                        
+                        # Check if file exists, create it if it doesn't
+                        if not os.path.isfile('config/ignore_rename.txt'):
+                            with open('config/ignore_rename.txt', 'w'):
+                                pass
+                        
+                        # Check if url already exists in file
+                        with open('config/ignore_rename.txt', 'r') as f:
+                            lines = f.readlines()
+                        
+                        if s+'\n' in lines:
+                            print(f"URL '{s}' already exists in file.")
+                        else:
+                            # If url doesn't exist, add it to the top of the file and save it
+                            with open('config/ignore_rename.txt', 'w') as f:
+                                f.write(s+'\n')
+                                f.writelines(lines)
+                            
+                            print(f"Added URL '{s}' to file 'config/ignore_rename.txt'.")
 
                 # faster to not create a kobo collection - us KOReader instead
                 # Create a Kobo collection using the final sync destination

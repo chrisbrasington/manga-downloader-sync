@@ -82,6 +82,16 @@ class Manga:
         return self.title
 
     def get_english_title(self):
+
+        # first see if title en exists in data
+        if 'en' in self.data['attributes']['title']:
+            if self.data['attributes']['title']['en'] is not None:
+                english_title = self.data['attributes']['title']['en']
+
+                # if not matching japanese title, return english title
+                if english_title != self.get_japanese_title():
+                    return english_title
+
         altTitles = self.data['attributes']['altTitles']
         first_en = next((item['en'] for item in altTitles if 'en' in item), None)
 
@@ -91,7 +101,7 @@ class Manga:
     
     #  "English Title (Japanese Title)"
     def get_combined_title(self):
-        return f"{self.title} ({self.get_japanese_title()})"
+        return f"{self.get_english_title()} ({self.get_japanese_title()})"
 
     def get_author(self, id):
         response = requests.get(

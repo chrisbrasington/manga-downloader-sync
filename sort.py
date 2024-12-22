@@ -222,7 +222,7 @@ def main(stdscr):
                 # Check if the folder exists
                 if not os.path.exists(folder_path):
                     print(f"Folder '{folder_path}' does not exist.")
-                    detail_text = "\n\nNo files found."
+                    detail_text += "No files found."
                 else:
                     # Add all files from the folder
                     files = os.listdir(folder_path)
@@ -253,8 +253,9 @@ def main(stdscr):
                 if numbers:
                     numbers = sorted(numbers, key=lambda x: x)
                     detail_text += f"Files: {', '.join(map(str, numbers))}"
-
-
+                else:
+                    detail_text += "No files found."
+                    
                 show_popup(stdscr, manga.get_combined_title(), detail_text)
             except Exception as e:
                 show_popup(stdscr, "Error", str(e))

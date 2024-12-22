@@ -264,6 +264,23 @@ def main(stdscr):
         elif key == ord('q') or key == 27:
             break
 
+        # enter will prompt for a sort number, reorder the entry to that sort number and resave the file
+        elif key == 10:
+            curses.echo()
+            stdscr.addstr("Enter the sort number: ")
+            stdscr.refresh()
+            sort_number = int(stdscr.getstr().decode("utf-8"))
+            curses.noecho()
+
+            if sort_number < 1 or sort_number > len(sources):
+                continue
+
+            # Remove the current entry and insert it at the new sort number
+            url, sync_flag = sources[current_page * ITEMS_PER_PAGE + current_index].split(",")
+            del sources[current_page * ITEMS_PER_PAGE + current_index]
+            sources.insert(sort_number - 1, f"{url},{sync_flag}")
+            write_file(SOURCES_FILE, sources)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sort and display manga URLs with optional details.")
     args = parser.parse_args()

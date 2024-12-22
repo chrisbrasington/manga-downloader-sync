@@ -1003,7 +1003,7 @@ class Utility:
                             lines = f.readlines()
                         if s+'\n' in lines:
                             # print(f"URL '{s}' exists in file 'config/ignore_rename.txt'. Skipping prompt.")
-                            print(f'     (using original name)')
+                            print(f'     (using original name)', end='')
                             continue
 
                     # ask user to

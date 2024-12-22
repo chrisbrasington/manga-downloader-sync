@@ -222,37 +222,39 @@ def main(stdscr):
                 # Check if the folder exists
                 if not os.path.exists(folder_path):
                     print(f"Folder '{folder_path}' does not exist.")
-                    detail_text += "\n\nNo files found."
+                    detail_text = "\n\nNo files found."
                 else:
                     # Add all files from the folder
                     files = os.listdir(folder_path)
                     for file in files:
-                        # detail_text += f"\n{file}"
-                        # if pdf
+                        # Process only .pdf files
                         if file.endswith('.pdf'):
-                            # Extract number from the filename (split by '-')
                             try:
-                                number = file.split('-')[1].split('.')[0].strip()
-                                
-                                # Check if the number is a valid integer or float
-                                if '.' in number:
-                                    # Convert to float if it has a decimal point
-                                    number = float(number)
-                                else:
-                                    # Convert to integer if it's an integer
-                                    number = int(number)
-                                
-                                # Add the number to the list
-                                numbers.append(number)
-                            except (IndexError, ValueError):
-                                print(f"Skipping invalid file: {file}")
+                                # Extract the part of the filename that has the number (splitting by '-')
+                                # Example: "The Overworked Office Lady's Café Crush - 3.1.pdf"
+                                parts = file.split('-')
+                                if len(parts) > 1:
+                                    # Try to extract the number part and strip any spaces
+                                    number_str = parts[1].replace('.pdf', '').strip()
+
+                                    # Convert the number string to a float if it contains a decimal point, else to int
+                                    if '.' in number_str:
+                                        number = float(number_str)
+                                    else:
+                                        number = int(number_str)
+
+                                    # Add the number to the list
+                                    numbers.append(number)
+                            except (IndexError, ValueError) as e:
+                                print(f"Skipping invalid file: {file}, error: {e}")
                                 continue
 
-                # if any numbers, sort as numbers and add comma separated
+                # If any numbers, sort them as numbers (integers or floats) and add as a comma-separated string
                 if numbers:
-                    numbers = sorted(numbers, key=lambda x: (float(x) if isinstance(x, str) else x))
-                    detail_text += f"Files: {', '.join(map(str, numbers))}"  # Convert numbers to strings before joining
-                            
+                    numbers = sorted(numbers, key=lambda x: x)
+                    detail_text += f"Files: {', '.join(map(str, numbers))}"
+
+
                 show_popup(stdscr, manga.get_combined_title(), detail_text)
             except Exception as e:
                 show_popup(stdscr, "Error", str(e))

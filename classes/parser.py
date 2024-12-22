@@ -88,8 +88,12 @@ class Manga:
             if self.data['attributes']['title']['en'] is not None:
                 english_title = self.data['attributes']['title']['en']
 
-                # if not matching japanese title, return english title
-                if english_title != self.get_japanese_title():
+                # Extract the first two words of both titles
+                english_first_two_words = ' '.join(english_title.split()[:2])
+                japanese_first_two_words = ' '.join(self.get_japanese_title().split()[:2])
+
+                # If the first two words match, do not return the english_title
+                if english_first_two_words != japanese_first_two_words:
                     return english_title
 
         altTitles = self.data['attributes']['altTitles']
@@ -987,6 +991,12 @@ class Utility:
                 # print('\n\n~~~~~~~~~~')
                 # print(combo_title)
                 # print(subdir)
+
+                # print title used
+                # print('\n\n!!!!!!!!!!!!')
+                # print(f"     {title_used}")
+                # print(f"     {combo_title}")
+                # print(f"     {manga.get_japanese_title()}")
 
                 if(title_used != combo_title):
                     # ask the user if they want to move from subdir to combo_title

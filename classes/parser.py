@@ -102,6 +102,10 @@ class Manga:
     #  "English Title (Japanese Title)"
     def get_combined_title(self):
         result = f"{self.get_english_title()} ({self.get_japanese_title()})"
+
+        # make path safe
+        result = result.replace(':','')
+
         return result
 
     def get_author(self, id):

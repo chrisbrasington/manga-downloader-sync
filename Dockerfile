@@ -13,7 +13,8 @@ COPY *.txt ./
 COPY cache.db ./
 
 # Install the required packages specified in requirements.txt
-RUN pip install -r requirements.txt
+# RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Set the command to run the program every 12 hours (3600 1 hour)
 # CMD while true; do python program.py; sleep 43200; done

@@ -230,15 +230,27 @@ def main(stdscr):
                         # detail_text += f"\n{file}"
                         # if pdf
                         if file.endswith('.pdf'):
-                            # detail_text += f"\n{file}"
-                            # extract number from - #.pdf, use simple string split an trim
-                            number = file.split('-')[1].split('.')[0].strip()
-                            # add number to numbers
-                            numbers.append(number)
+                            # Extract number from the filename (split by '-')
+                            try:
+                                number = file.split('-')[1].split('.')[0].strip()
+                                
+                                # Check if the number is a valid integer or float
+                                if '.' in number:
+                                    # Convert to float if it has a decimal point
+                                    number = float(number)
+                                else:
+                                    # Convert to integer if it's an integer
+                                    number = int(number)
+                                
+                                # Add the number to the list
+                                numbers.append(number)
+                            except (IndexError, ValueError):
+                                print(f"Skipping invalid file: {file}")
+                                continue
 
                 # if any numbers, sort as numbers and add comma separated
                 if numbers:
-                    numbers = sorted(numbers, key=int)
+                    numbers = sorted(numbers)
                     detail_text += f"Files: {', '.join(numbers)}"
                             
                 show_popup(stdscr, manga.get_combined_title(), detail_text)

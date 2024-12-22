@@ -60,28 +60,46 @@ def display_menu(stdscr, sources, current_page, current_index):
 def show_popup(stdscr, title, detail_text):
     """Displays a popup window with the provided detail text."""
     max_y, max_x = stdscr.getmaxyx()
-    popup_height = max_y // 2
-    popup_width = max_x // 2
+    
+    # Increase the popup size to 75% of the screen
+    popup_height = (max_y * 3) // 4
+    popup_width = (max_x * 3) // 4
     popup_start_y = (max_y - popup_height) // 2
     popup_start_x = (max_x - popup_width) // 2
 
     popup_win = curses.newwin(popup_height, popup_width, popup_start_y, popup_start_x)
     popup_win.border()
 
-    # Ensure proper line breaks for detail_text
-    wrapped_text = textwrap.fill(detail_text, width=popup_width - 4)
-    text_lines = wrapped_text.split("\n")
+    # Split the text into paragraphs first (based on \n\n)
+    paragraphs = detail_text.split('\n\n')
+    
+    # Wrap each paragraph separately and ensure extra spacing
+    wrapped_paragraphs = []
+    for paragraph in paragraphs:
+        wrapped_paragraph = textwrap.fill(paragraph, width=popup_width - 4)
+        wrapped_paragraphs.append(wrapped_paragraph.split('\n'))
 
-    popup_win.addstr(1, 2, title[:popup_width - 4])  # Display title truncated to fit
+    # Add the title at the top of the popup
+    popup_win.addstr(1, 2, title[:popup_width - 4])  # Truncate the title if needed
 
-    for idx, line in enumerate(text_lines[:popup_height - 3]):
-        popup_win.addstr(2 + idx, 2, line[:popup_width - 4])
+    # Track the current line index in the window
+    current_line = 2  # Start just below the title
+
+    # Add each wrapped paragraph with extra space between paragraphs
+    for paragraph in wrapped_paragraphs:
+        for line in paragraph:
+            if current_line < popup_height - 2:
+                popup_win.addstr(current_line, 2, line[:popup_width - 4])
+                current_line += 1
+        # Add extra space after each paragraph
+        if current_line < popup_height - 2:
+            current_line += 1  # This will give some space between paragraphs
 
     popup_win.refresh()
 
     while True:
         key = popup_win.getch()
-        if key in (ord('i'), 27):  # Close on 'i' or ESC
+        if key in (ord('i'), ord('q'), 27):  # Close on 'i' or ESC
             break
 
     stdscr.touchwin()
@@ -126,20 +144,23 @@ def main(stdscr):
             utility = Utility()
             try:
                 manga = utility.get_manga(url)
-                detail_text = f"{manga.desc.strip()}"
+                description = f"{manga.desc.strip()}"
 
-                # remove [*](*) hyperlinks from detail_text using regex inline not utility
-                detail_text = re.sub(r'\[.*?\]\(.*?\)', '', detail_text)
-                detail_text = detail_text.replace('\n\n', '\n')
-                detail_text = detail_text.replace('___', '')
+                # remove [*](*) hyperlinks from description using regex inline not utility
+                description = re.sub(r'\[.*?\]\(.*?\)', '', description)
+                description = description.replace('\n\n', '\n')
+                description = description.replace('___', '')
 
                 # add status
-                detail_text += f"\n\nStatus: {manga.status}"
+                detail_text = f"~~~~~~~~~~\n\nStatus: {manga.status}"
 
                 genres = [tag['attributes']['name']['en'] for tag in manga.data['attributes']['tags'] if tag['attributes']['group'] == 'genre']
 
                 # add genres
                 detail_text += f"\n\nGenres: {', '.join(genres)}"
+
+                # add description
+                detail_text += f"\n\nDescription: {description}"
 
                 show_popup(stdscr, manga.title, detail_text)
             except Exception as e:

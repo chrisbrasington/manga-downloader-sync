@@ -39,7 +39,10 @@ def display_menu(stdscr, sources, current_page, current_index):
     stdscr.clear()
     stdscr.addstr(f"Page [{current_page + 1} of {total_pages}]\n\n")
     stdscr.addstr("Use arrow keys to navigate, type a number to change the sort order, and press Enter to confirm.\n")
-    stdscr.addstr("Press Q to quit, 'i' to view details.\n\n")
+    # stdscr.addstr("Press Q to quit, 'i' to view details.\n\n")
+
+    # q to quit, i for details, a for add, d for delete
+    stdscr.addstr("Press 'q' to quit, 'i' to view details, 'a' to add, 'd' to delete.\n\n")
 
     for idx in range(start_index, end_index):
         url, sync_flag = sources[idx].split(",")
@@ -146,6 +149,22 @@ def main(stdscr):
             sources[current_page * ITEMS_PER_PAGE + current_index] = f"{url},{sync_flag}"
             write_file(SOURCES_FILE, sources)
 
+        # a will display a popup and ncurses ask the user for a urld and will add new source, not synced and save file
+        elif key == ord('a'):
+            curses.echo()
+            stdscr.addstr("Enter the URL: ")
+            stdscr.refresh()
+            url = stdscr.getstr().decode("utf-8")
+            curses.noecho()
+            # add to front
+            sources.insert(0, f"{url}, 0")
+            write_file(SOURCES_FILE, sources)
+
+        # d will delete source and save file
+        elif key == ord('d'):
+            del sources[current_page * ITEMS_PER_PAGE + current_index]
+            write_file(SOURCES_FILE, sources)
+
         elif key == ord('i'):
             url, sync_flag = sources[current_page * ITEMS_PER_PAGE + current_index].split(",")
             utility = Utility()
@@ -170,7 +189,8 @@ def main(stdscr):
 
                 demographic = manga.data['attributes']['publicationDemographic']
 
-                # add genres
+                # add genresoin(themes)}"
+
                 detail_text += f"\n\nGenres: {', '.join(genres)}"
 
                 # add themes
@@ -192,7 +212,12 @@ def main(stdscr):
                 detail_text += f"\n\nSync Status: {synced}"
 
                 # detail files on disk, look in tmp/ for the japanese title as the folder
-                folder_path = os.path.join('tmp', manga.get_japanese_title())
+                folder_path = os.path.join('tmp', manga.title)
+                
+                # add folder to details
+                detail_text += f"\n\nFolder: {folder_path}\n\n"
+
+                numbers = []
 
                 # Check if the folder exists
                 if not os.path.exists(folder_path):
@@ -202,8 +227,20 @@ def main(stdscr):
                     # Add all files from the folder
                     files = os.listdir(folder_path)
                     for file in files:
-                        detail_text += f"\n{file}"
+                        # detail_text += f"\n{file}"
+                        # if pdf
+                        if file.endswith('.pdf'):
+                            # detail_text += f"\n{file}"
+                            # extract number from - #.pdf, use simple string split an trim
+                            number = file.split('-')[1].split('.')[0].strip()
+                            # add number to numbers
+                            numbers.append(number)
 
+                # if any numbers, sort as numbers and add comma separated
+                if numbers:
+                    numbers = sorted(numbers, key=int)
+                    detail_text += f"Files: {', '.join(numbers)}"
+                            
                 show_popup(stdscr, manga.get_combined_title(), detail_text)
             except Exception as e:
                 show_popup(stdscr, "Error", str(e))
@@ -219,7 +256,7 @@ if __name__ == "__main__":
     if not os.path.exists("config"):
         os.makedirs("config")
 
-    if ITEMS_PER_PAGE > os.get_terminal_size().lines - 10:
-        ITEMS_PER_PAGE = os.get_terminal_size().lines - 10
+    if ITEMS_PER_PAGE > os.get_terminal_size().lines - 13:
+        ITEMS_PER_PAGE = os.get_terminal_size().lines - 13
 
     curses.wrapper(main)

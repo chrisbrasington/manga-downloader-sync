@@ -109,6 +109,8 @@ class Manga:
 
         # make path safe
         result = result.replace(':','')
+        result = result.replace('?','')
+        result = result.replace('!', '')
 
         return result
 

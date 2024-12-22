@@ -91,7 +91,7 @@ class Manga:
     
     #  "English Title (Japanese Title)"
     def get_combined_title(self):
-        return f"{self.get_english_title()} ({self.get_japanese_title()})"
+        return f"{self.title} ({self.get_japanese_title()})"
 
     def get_author(self, id):
         response = requests.get(

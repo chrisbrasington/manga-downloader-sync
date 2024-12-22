@@ -151,6 +151,9 @@ def main(stdscr):
                 description = description.replace('\n\n', '\n')
                 description = description.replace('___', '')
 
+                # trim space and newline from end of description
+                description = description.strip()
+
                 # add status
                 detail_text = f"~~~~~~~~~~\n\nStatus: {manga.status}"
 
@@ -161,6 +164,9 @@ def main(stdscr):
 
                 # add description
                 detail_text += f"\n\nDescription: {description}"
+
+                # add url
+                detail_text += f"\n\nURL: {url}"
 
                 show_popup(stdscr, manga.title, detail_text)
             except Exception as e:

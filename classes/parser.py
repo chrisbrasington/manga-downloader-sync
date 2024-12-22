@@ -101,7 +101,8 @@ class Manga:
     
     #  "English Title (Japanese Title)"
     def get_combined_title(self):
-        return f"{self.get_english_title()} ({self.get_japanese_title()})"
+        result = f"{self.get_english_title()} ({self.get_japanese_title()})"
+        return result
 
     def get_author(self, id):
         response = requests.get(
@@ -635,10 +636,10 @@ class Utility:
 
         # supported known types
         if('mangadex' in source):
-            result, name, did_work, author = self.parse_mangadex(source, sync_only)
+            result, name, did_work, author, combo_title = self.parse_mangadex(source, sync_only)
             success = True
         elif('rss' in source):
-            result, name, did_work, author = self.parse_rss_feed(source, sync_only)
+            result, name, did_work, author, combo_title = self.parse_rss_feed(source, sync_only)
             success = True
         else: 
             print(f'\nunsupported feed: {source}', end='')
@@ -651,7 +652,7 @@ class Utility:
         # cache = Cache()
         # cache.store_manga_data(name, manga.id, source)
         
-        return success, result, name
+        return success, result, name, combo_title
 
     # parse mangadex with MangaDex.py - do not log in
     def parse_mangadex(self, source, sync_only):
@@ -808,7 +809,7 @@ class Utility:
         cache = Cache()
         cache.store_manga_data(manga.title, manga.id, source)
 
-        return tmp_dir, manga.title, did_work, manga.author
+        return tmp_dir, manga.title, did_work, manga.author, manga.get_combined_title();
 
     # parse rss feed
     def parse_rss_feed(self, source, sync_only):
@@ -900,7 +901,7 @@ class Utility:
             else:
                 print(f'  ✓ remote: {feed.entries[0].title} ?'.ljust(self.pad_value), end='')
 
-        return tmp_dir, feed.feed.title, did_work, author
+        return tmp_dir, feed.feed.title, did_work, author, feed.feed.title
 
     # process collection
     def process_collection(self, source, sync_destination, sync_only):
@@ -928,48 +929,85 @@ class Utility:
 
             # URL parameter is provided
             # print(f"Downloading from {s}")
-            known, tmp_dir, title = self.parse_feed(s, False, sync_only)
+            known, tmp_dir, title_used, combo_title = self.parse_feed(s, False, sync_only)
 
             # remove : from title
-            title = title.replace(':','')
+            title_used = title_used.replace(':','')
 
             # if not exists sync_destination
             if not os.path.exists(sync_destination):
                 continue
 
-            # Check if the "_reading" folder with the title exists
-            reading_folder = os.path.join(sync_destination + "_reading", title)
+            final_sync_destination = None
 
-            # check each folder in _reading for the first folder that contains the title
+            # look for title in first sync_destination + read and second sync_destination
+            # the title just has to be contained in the folder name
             for folder in os.listdir(sync_destination + "_reading"):
-                if title in folder:
-                    reading_folder = os.path.join(sync_destination + "_reading", folder)
-                    title = folder
+                if title_used in folder:
+                    # reading_folder = os.path.join(sync_destination + "_reading", folder)
+                    title_used = folder
                     # print(f"   \"{title}\" as the modified title")
+                    final_sync_destination = os.path.join(sync_destination + "_reading")    
                     break
-            
-            if os.path.exists(reading_folder):
-                # If the "_reading/title" folder exists, use _reading/ as the sync destination
-                final_sync_destination = os.path.join(sync_destination + "_reading")
-                # print(f" {reading_folder}")
-            else:
-                # check each folder in sync_destination for the first folder that contains the title
-                # for folder in os.listdir(sync_destination):
-                #     if title in folder:
-                #         sync_destination = os.path.join(sync_destination, folder)
-                #         break
-                    
-                # Otherwise, use the original sync_destination
-                final_sync_destination = sync_destination
+
+            if final_sync_destination is None:
+                for folder in os.listdir(sync_destination):
+                    if title_used in folder:
+                        # reading_folder = os.path.join(sync_destination + "_reading", folder)
+                        title_used = folder
+                        # print(f"   \"{title}\" as the modified title")
+                        final_sync_destination = os.path.join(sync_destination)    
+                        break
+
+            if final_sync_destination is None:
+                final_sync_destination = sync_destination 
+                title_used = combo_title
+
+                if not os.path.exists(os.path.join(sync_destination, combo_title)):
+                    os.makedirs(os.path.join(sync_destination, combo_title))
+
+            # print('!!!!!')
+            print(f"     {final_sync_destination}/{title_used}")   
+            # print(f"     {title_used}")  
+            # sys.exit()       
 
             # Sync to device if the manga is known and the final destination is writable
             if known and os.access(final_sync_destination, os.W_OK):
 
                 # split on KOBOeReader/
-                subdir = f"   {final_sync_destination}/{title}".split('KOBOeReader/')[-1]
+                subdir = f"   {final_sync_destination}".split('KOBOeReader/')[-1]
 
-                print(f"     {subdir}")
-                self.sync(tmp_dir, final_sync_destination, title, False)
+                # print(f"     {subdir}")
+                self.sync(tmp_dir, final_sync_destination, title_used, False)
+
+                # print('\n\n~~~~~~~~~~')
+                # print(combo_title)
+                # print(subdir)
+
+                if(title_used != combo_title):
+                    # ask the user if they want to move from subdir to combo_title
+                    new_target = f"{final_sync_destination}/{combo_title}"
+
+                    # check if the new target exists
+                    # if os.path.exists(new_target):
+                    #     print(f'\n   {new_target} already exists')
+
+                    # ask user to
+                    print(f'\n\n   Old name detected', end='')
+                    print(f'\n     {final_sync_destination}/{title_used} ->\n     {new_target}')
+                    print(f'   Do you want to move? ', end='')
+                    answer = input()
+                    if answer.lower() == 'y':
+                        # print moving 
+                        print('   Moving')
+                        # move the directory
+                        shutil.move(f"{final_sync_destination}/{title_used}", new_target)
+                        print('   Moved')
+                        # print new location
+                        print(f'   {new_target}')
+                    elif answer.lower() == 'q':
+                        # quit running
+                        sys.exit()
 
                 # faster to not create a kobo collection - us KOReader instead
                 # Create a Kobo collection using the final sync destination
@@ -1115,4 +1153,4 @@ class Utility:
             if combo_output:
                 result_output += f" and {combo_output}"
 
-            print(result_output.ljust(self.pad_value) if not did_work else colorama.Fore.RED + f"   x device" + colorama.Style.RESET_ALL, end='')
+            print(result_output.ljust(self.pad_value) if not did_work else colorama.Fore.RED + f"    x device" + colorama.Style.RESET_ALL, end='')

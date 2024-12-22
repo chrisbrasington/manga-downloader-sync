@@ -159,8 +159,18 @@ def main(stdscr):
 
                 genres = [tag['attributes']['name']['en'] for tag in manga.data['attributes']['tags'] if tag['attributes']['group'] == 'genre']
 
+                themes = [tag['attributes']['name']['en'] for tag in manga.data['attributes']['tags'] if tag['attributes']['group'] == 'theme']
+
+                demographic = manga.data['attributes']['publicationDemographic']
+
                 # add genres
                 detail_text += f"\n\nGenres: {', '.join(genres)}"
+
+                # add themes
+                detail_text += f"\n\nThemes: {', '.join(themes)}"
+
+                # add demographic
+                detail_text += f"\n\nDemographic: {demographic}"
 
                 # add description
                 detail_text += f"\n\nDescription: {description}"
@@ -168,7 +178,7 @@ def main(stdscr):
                 # add url
                 detail_text += f"\n\nURL: {url}"
 
-                show_popup(stdscr, manga.title, detail_text)
+                show_popup(stdscr, manga.get_combined_title(), detail_text)
             except Exception as e:
                 show_popup(stdscr, "Error", str(e))
 

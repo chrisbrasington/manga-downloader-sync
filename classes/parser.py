@@ -71,17 +71,27 @@ class Manga:
     
     def get_status_completed(self):
         return self.status == 'completed'
+    
+    # use ja-ro from altTitles
+    def get_japanese_title(self):
+        altTitles = self.data['attributes']['altTitles']
+        first_ja = next((item['ja-ro'] for item in altTitles if 'ja-ro' in item), None)
+
+        if first_ja is not None:
+            return first_ja
+        return self.title
 
     def get_english_title(self):
         altTitles = self.data['attributes']['altTitles']
         first_en = next((item['en'] for item in altTitles if 'en' in item), None)
-        # print(altTitles)
-        # print(first_en)
-        # print(self.data)
 
         if first_en is not None:
             return first_en
         return self.title
+    
+    #  "English Title (Japanese Title)"
+    def get_combined_title(self):
+        return f"{self.get_english_title()} ({self.get_japanese_title()})"
 
     def get_author(self, id):
         response = requests.get(

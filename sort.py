@@ -128,13 +128,13 @@ def main(stdscr, simple_mode=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sort and display manga URLs with optional details.")
-    parser.add_argument("-s", "--simple", action="store_true", help="Display only URLs without details")
+    # parser.add_argument("-s", "--simple", action="store_true", help="Display only URLs without details")
 
-    args = parser.parse_args()
+    # args = parser.parse_args()
 
-    if args.simple:
-        print("Simple mode enabled")
-        ITEMS_PER_PAGE = 4
+    # if args.simple:
+    #     print("Simple mode enabled")
+    #     ITEMS_PER_PAGE = 4
 
     if ITEMS_PER_PAGE > os.get_terminal_size().lines - 10:
         ITEMS_PER_PAGE = os.get_terminal_size().lines - 10
@@ -142,4 +142,4 @@ if __name__ == "__main__":
     if not os.path.exists("config"):
         os.makedirs("config")
 
-    curses.wrapper(main, simple_mode=not args.simple)
+    curses.wrapper(main, simple_mode=False)

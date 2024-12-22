@@ -251,7 +251,7 @@ def main(stdscr):
                 # if any numbers, sort as numbers and add comma separated
                 if numbers:
                     numbers = sorted(numbers)
-                    detail_text += f"Files: {', '.join(numbers)}"
+                    detail_text += f"Files: {', '.join(map(str, numbers))}"  # Convert numbers to strings before joining
                             
                 show_popup(stdscr, manga.get_combined_title(), detail_text)
             except Exception as e:

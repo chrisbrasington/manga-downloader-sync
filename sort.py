@@ -139,8 +139,15 @@ def main(stdscr):
             current_page -= 1
             current_index = 0
 
+        # spacebar will toggle the sync flag and save file
+        elif key == ord(' '):
+            url, sync_flag = sources[current_page * ITEMS_PER_PAGE + current_index].split(",")
+            sync_flag = "1" if sync_flag == "0" else "0"
+            sources[current_page * ITEMS_PER_PAGE + current_index] = f"{url},{sync_flag}"
+            write_file(SOURCES_FILE, sources)
+
         elif key == ord('i'):
-            url, _ = sources[current_page * ITEMS_PER_PAGE + current_index].split(",")
+            url, sync_flag = sources[current_page * ITEMS_PER_PAGE + current_index].split(",")
             utility = Utility()
             try:
                 manga = utility.get_manga(url)
@@ -177,6 +184,25 @@ def main(stdscr):
 
                 # add url
                 detail_text += f"\n\nURL: {url}"
+
+                # determine if synced to ereader if sync_flag contains 1
+                synced = "Yes" if sync_flag == " 1" else "No"
+
+                # add synced status
+                detail_text += f"\n\nSync Status: {synced}"
+
+                # detail files on disk, look in tmp/ for the japanese title as the folder
+                folder_path = os.path.join('tmp', manga.get_japanese_title())
+
+                # Check if the folder exists
+                if not os.path.exists(folder_path):
+                    print(f"Folder '{folder_path}' does not exist.")
+                    detail_text += "\n\nNo files found."
+                else:
+                    # Add all files from the folder
+                    files = os.listdir(folder_path)
+                    for file in files:
+                        detail_text += f"\n{file}"
 
                 show_popup(stdscr, manga.get_combined_title(), detail_text)
             except Exception as e:

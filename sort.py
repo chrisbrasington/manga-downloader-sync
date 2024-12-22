@@ -27,10 +27,9 @@ def write_file(filepath, lines):
         f.seek(-1, os.SEEK_END)
         f.truncate()
 
-def display_menu(stdscr, sources, current_page, current_index, show_details=True):
+def display_menu(stdscr, sources, current_page, current_index):
     """Displays the menu with the sync list, including sort numbers and pagination."""
     max_y, max_x = stdscr.getmaxyx()
-    visible_lines = max_y - 6  # Number of lines we can display, leaving room for other UI elements
 
     start_index = current_page * ITEMS_PER_PAGE
     end_index = min((current_page + 1) * ITEMS_PER_PAGE, len(sources))
@@ -38,7 +37,7 @@ def display_menu(stdscr, sources, current_page, current_index, show_details=True
     total_pages = (len(sources) // ITEMS_PER_PAGE) + (1 if len(sources) % ITEMS_PER_PAGE > 0 else 0)
     stdscr.clear()
     stdscr.addstr(f"Page [{current_page + 1} of {total_pages}]\n\n")
-    stdscr.addstr("Use arrow keys to navigate, type a number to change the sort order, and press Enter to confirm.\n")
+    stdscr.addstr("Use arrow keys to navigate pages, type a number to change the sort order, and press Enter to confirm.\n")
     stdscr.addstr("Press Q to quit.\n\n")
 
     for idx in range(start_index, end_index):
@@ -55,23 +54,30 @@ def display_menu(stdscr, sources, current_page, current_index, show_details=True
         is_synced = "[x]" if sync_flag == "1" else "[ ]"
         stdscr.addstr(f"{sort_number}. {is_synced} {wrapped_url}\n", highlight)
 
-        if show_details:
-            utility = Utility()
-            try:
-                manga = utility.get_manga(url)
-                stdscr.addstr(f"   Title: {manga.title}\n")
-                
-                if manga.desc.strip():
-                    stdscr.addstr("   Description: \n")
-                    wrapped_desc = textwrap.fill(manga.desc.strip(), width=max_x - 5)
-                    for line in wrapped_desc.split("\n"):
-                        stdscr.addstr(f"     {line}\n")
-                else:
-                    stdscr.addstr("   Description: [No description available]\n")
-            except Exception as e:
-                stdscr.addstr(f"   Error fetching details: {str(e)}\n")
-
     stdscr.refresh()
+
+def show_popup(stdscr, detail_text):
+    """Display a popup with detailed information."""
+    max_y, max_x = stdscr.getmaxyx()
+    popup_width = max_x - 4
+    popup_height = max_y - 4
+
+    detail_lines = textwrap.wrap(detail_text, popup_width - 2)
+    popup_win = curses.newwin(popup_height, popup_width, 2, 2)
+    popup_win.border()
+
+    for i, line in enumerate(detail_lines):
+        if i >= popup_height - 2:
+            break
+        popup_win.addstr(i + 1, 1, line)
+
+    popup_win.addstr(popup_height - 2, 1, "Press 'i' or ESC to close.")
+    popup_win.refresh()
+
+    while True:
+        key = stdscr.getch()
+        if key in (ord('i'), 27):  # Close on 'i' or ESC
+            break
 
 def main(stdscr, simple_mode=False):
     curses.curs_set(0)
@@ -80,10 +86,9 @@ def main(stdscr, simple_mode=False):
 
     current_page = 0
     current_index = 0
-    max_y, max_x = stdscr.getmaxyx()
 
     while True:
-        display_menu(stdscr, sources, current_page, current_index, show_details=not simple_mode)
+        display_menu(stdscr, sources, current_page, current_index)
 
         key = stdscr.getch()
 
@@ -100,42 +105,26 @@ def main(stdscr, simple_mode=False):
             current_page -= 1
             current_index = ITEMS_PER_PAGE - 1  # Set index to the last item of the previous page
 
-        try:
-            if key == ord('q'):
-                break
-            elif key == ord('\n'):  # Enter key to change sort number
-                stdscr.addstr(max_y - 3, 0, "Enter new sort number: ")
-                curses.echo()
-                new_sort_number = int(stdscr.getstr().decode("utf-8").strip())
-                curses.noecho()
+        elif key == curses.KEY_RIGHT and (current_page + 1) * ITEMS_PER_PAGE < len(sources):
+            current_page += 1
+            current_index = 0
+        elif key == curses.KEY_LEFT and current_page > 0:
+            current_page -= 1
+            current_index = 0
 
-                if 1 <= new_sort_number <= len(sources):
-                    new_sort_number -= 1  # Convert to 0-based index
-                    url, sync_flag = sources[current_page * ITEMS_PER_PAGE + current_index].split(",")
-                    sources.remove(f"{url},{sync_flag}")
-                    sources.insert(new_sort_number, f"{url},{sync_flag}")
+        elif key == ord('q'):
+            break
 
-                    write_file(SOURCES_FILE, sources)
+        elif key == ord('i'):
+            url, sync_flag = sources[current_page * ITEMS_PER_PAGE + current_index].split(",")
+            utility = Utility()
+            try:
+                manga = utility.get_manga(url)
+                detail_text = f"Title: {manga.title}\n\nDescription:\n{manga.desc.strip()}" if manga.desc.strip() else "[No description available]"
+            except Exception as e:
+                detail_text = f"Error fetching details: {str(e)}"
 
-                    current_page = 0
-                    current_index = 0
-
-                    # Refresh the display immediately after saving
-                    display_menu(stdscr, sources, current_page, current_index, show_details=not simple_mode)
-
-            elif key == 32:  # Spacebar to toggle sync flag
-                url, sync_flag = sources[current_page * ITEMS_PER_PAGE + current_index].split(",")
-                new_sync_flag = "0" if sync_flag.strip() == "1" else "1"
-                sources[current_page * ITEMS_PER_PAGE + current_index] = f"{url},{new_sync_flag}"
-
-                write_file(SOURCES_FILE, sources)
-
-                # Refresh the display immediately after saving
-                display_menu(stdscr, sources, current_page, current_index, show_details=not simple_mode)
-
-        except ValueError:
-            pass  # Ignore invalid sort number inputs
-
+            show_popup(stdscr, detail_text)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sort and display manga URLs with optional details.")
@@ -152,5 +141,5 @@ if __name__ == "__main__":
 
     if not os.path.exists("config"):
         os.makedirs("config")
-    
+
     curses.wrapper(main, simple_mode=not args.simple)

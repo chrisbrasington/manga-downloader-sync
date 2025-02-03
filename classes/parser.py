@@ -557,6 +557,14 @@ class Utility:
 
         chapters = self.remove_duplicate_chapters(chapters)
 
+        # remove ignored chapters
+        ignored_ids = self.load_ignored_chapters()
+        # Print chapters being ignored
+        for c in chapters:
+            if c.id in ignored_ids:
+                print(f"Ignoring chapter: {c.id} {c}")
+        chapters = [c for c in chapters if c.id not in ignored_ids]
+
         # for c in chapters:
         #     print('  ', c.chapter, c.language, c.title)
 
@@ -630,6 +638,14 @@ class Utility:
         # print(manga.get_english_title())
 
         return manga
+
+    def load_ignored_chapters(self):
+        file_path = "config/ignore.txt"
+        try:
+            with open(file_path, "r") as f:
+                return set(line.strip() for line in f if line.strip())
+        except FileNotFoundError:
+            return set()
 
     # parse feed, rss or mangadex
     def parse_feed(self, source, combine, sync_only):

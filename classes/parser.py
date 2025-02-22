@@ -9,6 +9,7 @@ import builtins, traceback
 # from memedetect import is_comic_book
 import sqlite3, datetime, uuid, json
 from classes.cache import Cache
+from collections import defaultdict
 
 class Manga:
     def __init__(self, data):
@@ -162,12 +163,23 @@ class Chapter:
         self.pages = chapter_data['attributes']['pages']
         self.version = chapter_data['attributes']['version']
         self.relationships = chapter_data['relationships']
+        self.scanlation_group = next(
+            (rel['id'] for rel in self.relationships if rel.get('type') == 'scanlation_group'),
+            None
+        )
         self._images = {}
 
         # oneshot detection
         self.chapter = 1 if chapter_data['attributes']['chapter'] is None else chapter_data['attributes']['chapter']
         if chapter_data['attributes']['chapter'] is None and self.title is None and manga is not None:
             self.title = manga.title          
+
+        # print(self.title)
+        # print(self.chapter)
+        # print(self.language)
+        # print(self.scanlation_group)
+        # print(chapter_data)
+        # print('~~~~~~~~')
 
     @property
     def images(self):
@@ -194,6 +206,9 @@ class Chapter:
 
 # utility parser class
 class Utility:
+
+    # Global set to store ignored scanlation groups
+    IGNORED_SCANLATION_GROUPS = set()
 
     pad_value = 20
 
@@ -647,6 +662,14 @@ class Utility:
         except FileNotFoundError:
             return set()
 
+    def load_ignored_scanlations(self):
+        """Loads ignored scanlation groups from config/ignore_scanlation.txt only once."""
+        if not Utility.IGNORED_SCANLATION_GROUPS:  # Load only if empty
+            ignore_file = "config/ignore_scanlation.txt"
+            if os.path.exists(ignore_file):
+                with open(ignore_file, "r", encoding="utf-8") as f:
+                    Utility.IGNORED_SCANLATION_GROUPS = {line.strip() for line in f if line.strip()}
+
     # parse feed, rss or mangadex
     def parse_feed(self, source, combine, sync_only):
 
@@ -742,6 +765,10 @@ class Utility:
 
             # print(latest_chapter_remote)
 
+            # for c in chapters:
+            #     print(c.title)
+            #     print(c.scanlation_group)
+
             # print cache info
             if latest_chapter_num_on_disk == -1:
                 print('  x - no cache'.ljust(self.pad_value), end='')
@@ -804,6 +831,11 @@ class Utility:
                     print(chapter_num)
                     path = ''
                     i = 0
+
+                    # print(chapter.url)
+                    # print('abort')
+                    # sys.exit()
+
                     for url in tqdm(chapter.images):
                         i += 1
                         response = requests.get(url)
@@ -1118,26 +1150,40 @@ class Utility:
 
     # remove duplicate chapters (sometimes mulitple scanlations for English, we're dumbly grabbing the first)
     def remove_duplicate_chapters(self, chapters):
+        """Removes duplicate chapters, preferring non-ignored scanlations when possible."""
+        # Ensure ignored scanlation groups are loaded
+        self.load_ignored_scanlations()
 
-        # external sources are not something we know how to download, so we're going to remove those first
-        external_sources = []
-
+        # Group chapters by chapter number
+        grouped_chapters = defaultdict(list)
         for c in chapters:
-            if c.external_url is not None:
-                external_sources.append(c)
+            grouped_chapters[c.chapter].append(c)
 
-        for external_chapter in external_sources:
-            if(len([c for c in chapters if c.chapter == external_chapter.chapter])):
-                chapters.remove(external_chapter)
+        final_chapters = []
 
-        # for c in chapters:
-        #     print(c, c.external_url)
+        for chapter_num, chapter_list in grouped_chapters.items():
+            # If there's only one version, use it
+            if len(chapter_list) == 1:
+                final_chapters.append(chapter_list[0])
+                continue
 
-        # Create a set of chapters based on the 'chapter' attribute
-        unique_chapters = {c.chapter: c for c in chapters}
+            # Separate ignored and non-ignored scanlations
+            non_ignored = [c for c in chapter_list if c.scanlation_group not in Utility.IGNORED_SCANLATION_GROUPS]
+            ignored = [c for c in chapter_list if c.scanlation_group in Utility.IGNORED_SCANLATION_GROUPS]
 
-        # Return the list of unique chapters, sorted by 'chapter' attribute
-        return [v for k, v in sorted(unique_chapters.items(), reverse=True, key=self.extract_number)]
+            if non_ignored:
+                # Use the first non-ignored scanlation (since any of them is better than ignored)
+                selected = non_ignored[0]
+                for ig in ignored:
+                    print(f"Ignoring scanlation group {ig.scanlation_group} for chapter {chapter_num} in favor of {selected.scanlation_group}")
+            else:
+                # No non-ignored scanlation found, keep one ignored version
+                selected = ignored[0]
+                print(f"Would ignore scanlation group {selected.scanlation_group} for chapter {chapter_num}, but no alternative found.")
+
+            final_chapters.append(selected)
+
+        return sorted(final_chapters, reverse=True, key=self.extract_number)
 
     # sync to location (ereader)
     def sync(self, tmp_dir, sync_destination, title, combine):

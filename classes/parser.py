@@ -1109,7 +1109,7 @@ class Utility:
                     # Create a Kobo collection using the final sync destination
                     # self.create_kobo_collection(final_sync_destination, title)
             except:
-                print(f'error with {s} in collection')
+                print(f'error with {s} in collection', end='')
 
         # Optionally process catalog entries
         # for manga in catalog:

@@ -973,140 +973,143 @@ class Utility:
 
         for s in source:
 
-            # lines are url comma separated to a bool 1 or 0 for sync
-            # if sync only, skip lines with sync false (0)
-            if sync_only:
-                if '0' in s.split(',')[-1]:
+            try:
+                # lines are url comma separated to a bool 1 or 0 for sync
+                # if sync only, skip lines with sync false (0)
+                if sync_only:
+                    if '0' in s.split(',')[-1]:
+                        continue
+
+                manga = cache.manga_exists(s)
+                if manga.exists:
+                    # print(f"Manga with ID {manga.id} exists with title '{manga.title}'")
+                    # If manga exists in the cache, add it to the catalog
+                    catalog.append(manga)
+
+                # URL parameter is provided
+                # print(f"Downloading from {s}")
+                known, tmp_dir, title_used, combo_title = self.parse_feed(s, False, sync_only)
+
+                # remove : from title
+                title_used = title_used.replace(':','')
+
+                # if not exists sync_destination
+                if not os.path.exists(sync_destination):
                     continue
 
-            manga = cache.manga_exists(s)
-            if manga.exists:
-                # print(f"Manga with ID {manga.id} exists with title '{manga.title}'")
-                # If manga exists in the cache, add it to the catalog
-                catalog.append(manga)
+                final_sync_destination = None
 
-            # URL parameter is provided
-            # print(f"Downloading from {s}")
-            known, tmp_dir, title_used, combo_title = self.parse_feed(s, False, sync_only)
-
-            # remove : from title
-            title_used = title_used.replace(':','')
-
-            # if not exists sync_destination
-            if not os.path.exists(sync_destination):
-                continue
-
-            final_sync_destination = None
-
-            # look for title in first sync_destination + read and second sync_destination
-            # the title just has to be contained in the folder name
-            for folder in os.listdir(sync_destination + "_reading"):
-                if title_used in folder:
-                    # reading_folder = os.path.join(sync_destination + "_reading", folder)
-                    title_used = folder
-                    # print(f"   \"{title}\" as the modified title")
-                    final_sync_destination = os.path.join(sync_destination + "_reading")    
-                    break
-
-            if final_sync_destination is None:
-                for folder in os.listdir(sync_destination):
+                # look for title in first sync_destination + read and second sync_destination
+                # the title just has to be contained in the folder name
+                for folder in os.listdir(sync_destination + "_reading"):
                     if title_used in folder:
                         # reading_folder = os.path.join(sync_destination + "_reading", folder)
                         title_used = folder
                         # print(f"   \"{title}\" as the modified title")
-                        final_sync_destination = os.path.join(sync_destination)    
+                        final_sync_destination = os.path.join(sync_destination + "_reading")    
                         break
 
-            if final_sync_destination is None:
-                final_sync_destination = sync_destination 
-                title_used = combo_title
+                if final_sync_destination is None:
+                    for folder in os.listdir(sync_destination):
+                        if title_used in folder:
+                            # reading_folder = os.path.join(sync_destination + "_reading", folder)
+                            title_used = folder
+                            # print(f"   \"{title}\" as the modified title")
+                            final_sync_destination = os.path.join(sync_destination)    
+                            break
 
-                if not os.path.exists(os.path.join(sync_destination, combo_title)):
-                    os.makedirs(os.path.join(sync_destination, combo_title))
+                if final_sync_destination is None:
+                    final_sync_destination = sync_destination 
+                    title_used = combo_title
 
-            # print('!!!!!')
-            print(f"     {final_sync_destination}/{title_used}")   
-            # print(f"     {title_used}")  
-            # sys.exit()       
+                    if not os.path.exists(os.path.join(sync_destination, combo_title)):
+                        os.makedirs(os.path.join(sync_destination, combo_title))
 
-            # Sync to device if the manga is known and the final destination is writable
-            if known and os.access(final_sync_destination, os.W_OK):
+                # print('!!!!!')
+                print(f"     {final_sync_destination}/{title_used}")   
+                # print(f"     {title_used}")  
+                # sys.exit()       
 
-                # split on KOBOeReader/
-                subdir = f"   {final_sync_destination}".split('KOBOeReader/')[-1]
+                # Sync to device if the manga is known and the final destination is writable
+                if known and os.access(final_sync_destination, os.W_OK):
 
-                # print(f"     {subdir}")
-                self.sync(tmp_dir, final_sync_destination, title_used, False)
+                    # split on KOBOeReader/
+                    subdir = f"   {final_sync_destination}".split('KOBOeReader/')[-1]
 
-                # print('\n\n~~~~~~~~~~')
-                # print(combo_title)
-                # print(subdir)
+                    # print(f"     {subdir}")
+                    self.sync(tmp_dir, final_sync_destination, title_used, False)
 
-                # print title used
-                # print('\n\n!!!!!!!!!!!!')
-                # print(f"     {title_used}")
-                # print(f"     {combo_title}")
-                # print(f"     {manga.get_japanese_title()}")
+                    # print('\n\n~~~~~~~~~~')
+                    # print(combo_title)
+                    # print(subdir)
 
-                if(title_used != combo_title):
-                    # ask the user if they want to move from subdir to combo_title
-                    new_target = f"{final_sync_destination}/{combo_title}"
+                    # print title used
+                    # print('\n\n!!!!!!!!!!!!')
+                    # print(f"     {title_used}")
+                    # print(f"     {combo_title}")
+                    # print(f"     {manga.get_japanese_title()}")
 
-                    # check if the new target exists
-                    # if os.path.exists(new_target):
-                    #     print(f'\n   {new_target} already exists')
+                    if(title_used != combo_title):
+                        # ask the user if they want to move from subdir to combo_title
+                        new_target = f"{final_sync_destination}/{combo_title}"
 
-                    # check if manga.url exists in config/ignore_rename.txt
-                    # if it does, skip the prompt
-                    if os.path.isfile('config/ignore_rename.txt'):
-                        with open('config/ignore_rename.txt', 'r') as f:
-                            lines = f.readlines()
-                        if s+'\n' in lines:
-                            # print(f"URL '{s}' exists in file 'config/ignore_rename.txt'. Skipping prompt.")
-                            print(f'     (using original name)', end='')
-                            continue
+                        # check if the new target exists
+                        # if os.path.exists(new_target):
+                        #     print(f'\n   {new_target} already exists')
 
-                    # ask user to
-                    print(f'\n\n   Old name detected', end='')
-                    print(f'\n     {final_sync_destination}/{title_used} ->\n     {new_target}')
-                    print(f'   Do you want to move? ', end='')
-                    answer = input()
-                    if answer.lower() == 'y':
-                        # print moving 
-                        print('   Moving')
-                        # move the directory
-                        shutil.move(f"{final_sync_destination}/{title_used}", new_target)
-                        print('   Moved')
-                        # print new location
-                        print(f'   {new_target}')
-                    elif answer.lower() == 'q':
-                        # quit running
-                        sys.exit()
-                    elif answer.lower() == 'n':
-                        # add manga.url to config/ignore_rename.txt
-                        
-                        # Check if file exists, create it if it doesn't
-                        if not os.path.isfile('config/ignore_rename.txt'):
-                            with open('config/ignore_rename.txt', 'w'):
-                                pass
-                        
-                        # Check if url already exists in file
-                        with open('config/ignore_rename.txt', 'r') as f:
-                            lines = f.readlines()
-                        
-                        if s+'\n' in lines:
-                            print(f"URL '{s}' already exists in file.")
-                        else:
-                            # If url doesn't exist, add it to the top of the file and save it
-                            with open('config/ignore_rename.txt', 'w') as f:
-                                f.write(s+'\n')
-                                f.writelines(lines)
+                        # check if manga.url exists in config/ignore_rename.txt
+                        # if it does, skip the prompt
+                        if os.path.isfile('config/ignore_rename.txt'):
+                            with open('config/ignore_rename.txt', 'r') as f:
+                                lines = f.readlines()
+                            if s+'\n' in lines:
+                                # print(f"URL '{s}' exists in file 'config/ignore_rename.txt'. Skipping prompt.")
+                                print(f'     (using original name)', end='')
+                                continue
+
+                        # ask user to
+                        print(f'\n\n   Old name detected', end='')
+                        print(f'\n     {final_sync_destination}/{title_used} ->\n     {new_target}')
+                        print(f'   Do you want to move? ', end='')
+                        answer = input()
+                        if answer.lower() == 'y':
+                            # print moving 
+                            print('   Moving')
+                            # move the directory
+                            shutil.move(f"{final_sync_destination}/{title_used}", new_target)
+                            print('   Moved')
+                            # print new location
+                            print(f'   {new_target}')
+                        elif answer.lower() == 'q':
+                            # quit running
+                            sys.exit()
+                        elif answer.lower() == 'n':
+                            # add manga.url to config/ignore_rename.txt
                             
-                            print(f"Added URL '{s}' to file 'config/ignore_rename.txt'.")
+                            # Check if file exists, create it if it doesn't
+                            if not os.path.isfile('config/ignore_rename.txt'):
+                                with open('config/ignore_rename.txt', 'w'):
+                                    pass
+                            
+                            # Check if url already exists in file
+                            with open('config/ignore_rename.txt', 'r') as f:
+                                lines = f.readlines()
+                            
+                            if s+'\n' in lines:
+                                print(f"URL '{s}' already exists in file.")
+                            else:
+                                # If url doesn't exist, add it to the top of the file and save it
+                                with open('config/ignore_rename.txt', 'w') as f:
+                                    f.write(s+'\n')
+                                    f.writelines(lines)
+                                
+                                print(f"Added URL '{s}' to file 'config/ignore_rename.txt'.")
 
-                # faster to not create a kobo collection - us KOReader instead
-                # Create a Kobo collection using the final sync destination
-                # self.create_kobo_collection(final_sync_destination, title)
+                    # faster to not create a kobo collection - us KOReader instead
+                    # Create a Kobo collection using the final sync destination
+                    # self.create_kobo_collection(final_sync_destination, title)
+                except ex:
+                    print(f'error with {s} in collection')
 
         # Optionally process catalog entries
         # for manga in catalog:

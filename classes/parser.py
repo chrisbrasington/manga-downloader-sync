@@ -1108,7 +1108,7 @@ class Utility:
                     # faster to not create a kobo collection - us KOReader instead
                     # Create a Kobo collection using the final sync destination
                     # self.create_kobo_collection(final_sync_destination, title)
-                except ex:
+                except:
                     print(f'error with {s} in collection')
 
         # Optionally process catalog entries

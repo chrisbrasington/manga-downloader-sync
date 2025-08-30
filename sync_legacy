@@ -1,39 +1,24 @@
 #!/bin/bash
 
-# Define the sync destination and source destination paths
+# Define the sync destination and device IP
 syncDestination="/media/chris/KOBOeReader"
-sourceDestination="chris@valhalla:/home/chris/code/manga-kobo"
+deviceIp="192.168.0.41"
 
-if [ -d "$syncDestination" ]; then
+# Mount the remote directory using sshfs
+sshfs root@$deviceIp:/mnt/onboard $syncDestination
+
+# Check if the sync destination is mounted
+if mountpoint -q $syncDestination; then
     echo "KOBOeReader is mounted"
 
-    # Mount the remote directory 'tmp'
-    if sshfs "$sourceDestination/tmp" tmp; then
-        echo "Mounted valhalla tmp"
+    # Run the program with the necessary options
+    python program.py -s
 
-        # Mount the remote directory 'config'
-        if sshfs "$sourceDestination/config" config; then
-            echo "Mounted valhalla config"
-
-            # Run the program with the necessary options
-            python program.py -s
-
-            # Unmount the 'config' and 'tmp' directories
-            echo "Unmounting valhalla config"
-            umount config
-            echo "Unmounting valhalla tmp"
-            umount tmp
-        else
-            echo "Failed to mount valhalla config"
-            # Unmount the 'tmp' directory in case it was successfully mounted
-            echo "Unmounting valhalla tmp"
-            umount tmp
-        fi
-    else
-        echo "Failed to mount valhalla tmp"
-    fi
+    # Unmount the remote directory
+    fusermount -u $syncDestination
+    echo "KOBOeReader is unmounted"
 else
-    echo "KOBOeReader is not mounted"
+    echo "Failed to mount KOBOeReader"
 fi
 
 echo "Done"

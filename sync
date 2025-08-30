@@ -1,24 +1,72 @@
 #!/bin/bash
 
-# Define the sync destination and device IP
+# Usage:
+#   ./sync.sh "localFolder"
+#   ./sync.sh "localFolder" -c    # force checksum mode
+
+# Config
 syncDestination="/media/chris/KOBOeReader"
 deviceIp="192.168.0.41"
+remoteBase1="/mnt/onboard/manga_reading"
+remoteBase2="/mnt/onboard/manga"
 
-# Mount the remote directory using sshfs
-sshfs root@$deviceIp:/mnt/onboard $syncDestination
-
-# Check if the sync destination is mounted
-if mountpoint -q $syncDestination; then
-    echo "KOBOeReader is mounted"
-
-    # Run the program with the necessary options
-    python program.py -s
-
-    # Unmount the remote directory
-    fusermount -u $syncDestination
-    echo "KOBOeReader is unmounted"
-else
-    echo "Failed to mount KOBOeReader"
+# Input validation
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <local_folder> [-c]"
+    exit 1
 fi
 
+localFolder="$1"
+if [ ! -d "$localFolder" ]; then
+    echo "Error: $localFolder does not exist"
+    exit 1
+fi
+
+# Extract search keyword
+keyword=$(basename "$localFolder")
+echo "Searching for: $keyword"
+
+# Mount Kobo
+sshfs root@$deviceIp:/mnt/onboard "$syncDestination"
+
+if mountpoint -q "$syncDestination"; then
+    echo "KOBOeReader is mounted"
+else
+    echo "Failed to mount KOBOeReader"
+    exit 1
+fi
+
+# Try to find matching folder
+remoteFolder=$(ssh root@$deviceIp "find '$remoteBase1' -type d -iname '*$keyword*' | head -n 1")
+if [ -z "$remoteFolder" ]; then
+    remoteFolder=$(ssh root@$deviceIp "find '$remoteBase2' -type d -iname '*$keyword*' | head -n 1")
+fi
+
+# If still not found, ask user, always create in /manga
+if [ -z "$remoteFolder" ]; then
+    read -p "Folder not found. Please input English folder name: " englishName
+    remoteFolder="$remoteBase2/$englishName"
+    ssh root@$deviceIp "mkdir -p \"$remoteFolder\""
+    echo "Created: $remoteFolder"
+else
+    echo "Found existing folder: $remoteFolder"
+fi
+
+# Decide rsync mode
+if [ "$2" == "-c" ]; then
+    echo "Using checksum mode (slower, exact match)"
+    rsyncOpts="-av --progress --checksum"
+else
+    echo "Using size-only mode (fast, ignores timestamp differences)"
+    rsyncOpts="-av --progress --size-only"
+fi
+
+# Sync PDFs
+echo "Syncing PDFs..."
+rsync $rsyncOpts "$localFolder"/*.pdf "$syncDestination${remoteFolder#/mnt/onboard}/"
+
+# Unmount
+fusermount -u "$syncDestination"
+echo "KOBOeReader is unmounted"
 echo "Done"
+

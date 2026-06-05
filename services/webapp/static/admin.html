@@ -455,11 +455,11 @@
             <div class="ch-count">${d.keep.chapter_count} ch · <span class="src-tag">${esc(d.keep.source_type)}</span></div>
           </td>
           <td>
-            <div><span class="drop-label">DELETE</span></div>
+            <div><span class="${d.same_folder ? 'keep-label' : 'drop-label'}">${d.same_folder ? 'MERGE' : 'DELETE'}</span></div>
             <div>${esc(d.drop.title)}</div>
             <div class="ch-count">${d.drop.chapter_count} ch · <span class="src-tag">${esc(d.drop.source_type)}</span></div>
           </td>
-          <td><button class="btn-sm btn-danger review-btn" data-idx="${idx}">Review & Delete</button></td>
+          <td><button class="btn-sm btn-danger review-btn" data-idx="${idx}">${d.same_folder ? 'Review & Merge' : 'Review & Delete'}</button></td>
         </tr>`).join('')}
       </tbody>
     </table></div>`;
@@ -482,12 +482,21 @@
     document.getElementById('modal-drop-path').textContent =
       drop.folder_exists ? drop.folder_path : drop.folder_path + '  (folder not found on disk)';
 
-    const rmCmd = drop.folder_exists
-      ? `rm -rf "${drop.folder_path}"\n# + remove DB entry: ${drop.id}`
-      : `# No folder on disk — DB entry only\n# remove DB entry: ${drop.id}`;
+    let rmCmd, deleteFolder;
+    if (d.same_folder) {
+      rmCmd = `# Both entries share the same folder — folder will NOT be deleted\n# Remove duplicate DB entry: ${drop.id}`;
+      deleteFolder = null;
+    } else if (drop.folder_exists) {
+      rmCmd = `rm -rf "${drop.folder_path}"\n# + remove DB entry: ${drop.id}`;
+      deleteFolder = drop.folder_path;
+    } else {
+      rmCmd = `# No folder on disk — DB entry only\n# remove DB entry: ${drop.id}`;
+      deleteFolder = null;
+    }
     document.getElementById('modal-cmd').textContent = rmCmd;
+    document.getElementById('modal-confirm').textContent = d.same_folder ? 'Yes, Merge' : 'Yes, Delete';
 
-    pendingResolve = { delete_id: drop.id, delete_folder: drop.folder_exists ? drop.folder_path : null };
+    pendingResolve = { delete_id: drop.id, delete_folder: deleteFolder };
     document.getElementById('modal-overlay').classList.add('open');
   }
 

@@ -554,8 +554,16 @@ def api_dedupe():
                 continue
             c1 = len(list_chapter_files(t1))
             c2 = len(list_chapter_files(t2))
-            # Keep: more chapters; tie → prefer mangadex over local
-            if c1 > c2 or (c1 == c2 and m1.get('source_type') == 'mangadex'):
+            # Keep: more chapters; tie → prefer download_enabled; tie → prefer mangadex
+            if c1 > c2:
+                keep, drop, ck, cd = m1, m2, c1, c2
+            elif c2 > c1:
+                keep, drop, ck, cd = m2, m1, c2, c1
+            elif m1.get('download_enabled') and not m2.get('download_enabled'):
+                keep, drop, ck, cd = m1, m2, c1, c2
+            elif m2.get('download_enabled') and not m1.get('download_enabled'):
+                keep, drop, ck, cd = m2, m1, c2, c1
+            elif m1.get('source_type') == 'mangadex':
                 keep, drop, ck, cd = m1, m2, c1, c2
             else:
                 keep, drop, ck, cd = m2, m1, c2, c1
@@ -563,8 +571,10 @@ def api_dedupe():
             keep_title = keep.get('title') or ''
             drop_folder = os.path.join(MANGA_STORAGE, drop_title) if drop_title else None
             keep_folder = os.path.join(MANGA_STORAGE, keep_title) if keep_title else None
+            same_folder = bool(keep_title and drop_title and keep_title == drop_title)
             duplicates.append({
                 'similarity': round(ratio * 100),
+                'same_folder': same_folder,
                 'keep': {
                     'id': keep['id'], 'title': keep_title, 'url': keep['url'],
                     'source_type': keep.get('source_type'), 'status': keep['status'],
@@ -598,7 +608,11 @@ def api_dedupe_resolve(body: DedupeResolveRequest):
         # Only allow deleting direct children of MANGA_STORAGE — no traversal
         if os.path.dirname(real_folder) != real_storage:
             raise HTTPException(status_code=400, detail='Folder not directly inside storage root')
-        if os.path.isdir(real_folder):
+        folder_title = os.path.basename(real_folder)
+        # Don't delete if another DB entry still references this folder
+        other = [m for m in db.get_all_manga()
+                 if m['id'] != body.delete_id and m.get('title') == folder_title]
+        if not other and os.path.isdir(real_folder):
             shutil.rmtree(real_folder)
             deleted_folder = True
     db.remove_manga(body.delete_id)

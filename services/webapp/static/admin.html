@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Manga Admin</title>
+  <style>
+    :root {
+      --bg: #0e0f13;
+      --panel: #15171d;
+      --border: #252730;
+      --ink: #d4d6e0;
+      --muted: #6b7080;
+      --accent: #e2b96f;
+      --green: #4caf77;
+      --yellow: #e2b96f;
+      --red: #e05c5c;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; min-height:100vh; }
+
+    header { background:var(--panel); border-bottom:1px solid var(--border); padding:14px 20px; display:flex; align-items:center; gap:16px; }
+    header h1 { font-size:18px; font-weight:600; color:var(--accent); flex:1; }
+    header a { color:var(--muted); text-decoration:none; font-size:14px; }
+    header a:hover { color:var(--ink); }
+
+    .section { max-width:900px; margin:24px auto; padding:0 20px; }
+    .section h2 { font-size:15px; font-weight:600; margin-bottom:12px; color:var(--ink); }
+
+    .add-form { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+    .form-group { display:flex; flex-direction:column; gap:4px; }
+    .form-group label { font-size:12px; color:var(--muted); }
+    .add-form input[type=url] { background:#0e0f13; border:1px solid var(--border); color:var(--ink); padding:7px 10px; border-radius:5px; font-size:13px; width:340px; }
+    .add-form select { background:#0e0f13; border:1px solid var(--border); color:var(--ink); padding:7px 10px; border-radius:5px; font-size:13px; }
+    .add-form input[type=url]:focus, .add-form select:focus { outline:none; border-color:var(--accent); }
+    .btn { padding:7px 16px; border-radius:5px; border:none; cursor:pointer; font-size:13px; font-weight:500; transition:opacity .15s; }
+    .btn:hover { opacity:.85; }
+    .btn-primary { background:var(--accent); color:#111; }
+    .btn-danger { background:var(--red); color:#fff; }
+    .btn-muted { background:var(--border); color:var(--ink); }
+
+    .manga-table { background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+    .manga-table table { width:100%; border-collapse:collapse; }
+    .manga-table th { padding:10px 14px; text-align:left; font-size:12px; color:var(--muted); border-bottom:1px solid var(--border); font-weight:500; }
+    .manga-table td { padding:10px 14px; font-size:13px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    .manga-table tr:last-child td { border-bottom:none; }
+    .manga-table tr:hover td { background:rgba(255,255,255,.02); }
+
+    .title-cell { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .url-cell { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .url-cell a { color:var(--muted); font-size:12px; text-decoration:none; }
+    .url-cell a:hover { color:var(--ink); }
+
+    select.inline-select { background:var(--bg); border:1px solid var(--border); color:var(--ink); padding:4px 8px; border-radius:4px; font-size:12px; }
+    .sync-toggle { cursor:pointer; width:16px; height:16px; accent-color:var(--accent); }
+
+    .actions { display:flex; gap:6px; align-items:center; }
+    .btn-sm { padding:4px 10px; font-size:12px; border-radius:4px; border:none; cursor:pointer; font-weight:500; transition:opacity .15s; }
+    .btn-sm:hover { opacity:.8; }
+    .btn-thumb { background:#1a2a3a; color:#6aabdf; }
+    .btn-del { background:#2a1a1a; color:var(--red); }
+
+    /* toast */
+    #toast { position:fixed; bottom:24px; right:24px; background:var(--panel); border:1px solid var(--border); color:var(--ink); padding:10px 16px; border-radius:6px; font-size:13px; display:none; z-index:999; }
+    #toast.ok { border-color:var(--green); color:var(--green); }
+    #toast.err { border-color:var(--red); color:var(--red); }
+
+    .empty { text-align:center; padding:40px; color:var(--muted); font-size:14px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚙️ Admin</h1>
+  <a href="/">← Library</a>
+</header>
+
+<div class="section">
+  <h2>Add Manga</h2>
+  <div class="add-form">
+    <div class="form-group" style="flex:1;min-width:240px">
+      <label>MangaDex or danke.moe URL</label>
+      <input type="url" id="add-url" placeholder="https://mangadex.org/title/…">
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="add-status">
+        <option value="active">Active</option>
+        <option value="completed">Completed</option>
+        <option value="hiatus">Hiatus</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Kobo Sync</label>
+      <select id="add-sync">
+        <option value="1">Yes</option>
+        <option value="0">No</option>
+      </select>
+    </div>
+    <div class="form-group" style="justify-content:flex-end">
+      <button class="btn btn-primary" id="add-btn">Add</button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 style="display:flex;align-items:center;gap:12px">All Manga <button class="btn btn-muted" id="fetch-all-btn" style="font-size:12px;padding:5px 12px">🖼 Fetch All Thumbnails</button></h2>
+  <div class="manga-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>URL</th>
+          <th>Status</th>
+          <th>Kobo</th>
+          <th>Last Ch.</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="manga-rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  let allManga = [];
+
+  async function load() {
+    try {
+      allManga = await fetch('/api/manga').then(r => r.json());
+      renderTable();
+    } catch(e) {
+      document.getElementById('manga-rows').innerHTML = '<tr><td colspan="6" class="empty">Failed to load.</td></tr>';
+    }
+  }
+
+  function renderTable() {
+    if (!allManga.length) {
+      document.getElementById('manga-rows').innerHTML = '<tr><td colspan="6" class="empty">No manga yet.</td></tr>';
+      return;
+    }
+    document.getElementById('manga-rows').innerHTML = allManga.map(m => {
+      const title = esc(m.title || m.url);
+      const shortUrl = (m.url || '').replace(/https?:\/\/(www\.)?/, '').slice(0, 50);
+      const statOpts = ['active','completed','hiatus'].map(s =>
+        `<option value="${s}"${m.status===s?' selected':''}>${s}</option>`
+      ).join('');
+      const ch = m.last_chapter_on_disk != null ? m.last_chapter_on_disk : '—';
+      return `<tr data-id="${esc(m.id)}">
+        <td class="title-cell" title="${esc(m.title)}">${title}</td>
+        <td class="url-cell"><a href="${esc(m.url)}" target="_blank">${esc(shortUrl)}</a></td>
+        <td><select class="inline-select status-sel">${statOpts}</select></td>
+        <td><input type="checkbox" class="sync-toggle sync-chk" ${m.kobo_sync ? 'checked' : ''}></td>
+        <td>${ch}</td>
+        <td class="actions">
+          <button class="btn-sm btn-thumb thumb-btn">🖼 Thumb</button>
+          <button class="btn-sm btn-del del-btn">✕</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    document.querySelectorAll('.status-sel').forEach(sel => {
+      sel.addEventListener('change', async e => {
+        const id = e.target.closest('tr').dataset.id;
+        await patchManga(id, { status: e.target.value });
+      });
+    });
+
+    document.querySelectorAll('.sync-chk').forEach(chk => {
+      chk.addEventListener('change', async e => {
+        const id = e.target.closest('tr').dataset.id;
+        await patchManga(id, { kobo_sync: e.target.checked ? 1 : 0 });
+      });
+    });
+
+    document.querySelectorAll('.thumb-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        const id = e.target.closest('tr').dataset.id;
+        const resp = await fetch(`/api/manga/${id}/fetch-thumbnail`, { method: 'POST' });
+        if (resp.ok) toast('Thumbnail queued', 'ok');
+        else toast('Failed', 'err');
+      });
+    });
+
+    document.querySelectorAll('.del-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        const row = e.target.closest('tr');
+        const id = row.dataset.id;
+        const title = row.querySelector('.title-cell').textContent;
+        if (!confirm(`Remove "${title}" from database? (Files are not deleted.)`)) return;
+        const resp = await fetch(`/api/manga/${id}`, { method: 'DELETE' });
+        if (resp.ok) { toast('Removed', 'ok'); load(); }
+        else toast('Failed', 'err');
+      });
+    });
+  }
+
+  async function patchManga(id, body) {
+    const resp = await fetch(`/api/manga/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (resp.ok) toast('Saved', 'ok');
+    else toast('Failed to save', 'err');
+  }
+
+  document.getElementById('add-btn').addEventListener('click', async () => {
+    const url = document.getElementById('add-url').value.trim();
+    if (!url) { toast('Enter a URL', 'err'); return; }
+    const body = {
+      url,
+      status: document.getElementById('add-status').value,
+      kobo_sync: parseInt(document.getElementById('add-sync').value)
+    };
+    const resp = await fetch('/api/manga', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (resp.ok) {
+      document.getElementById('add-url').value = '';
+      toast('Added', 'ok');
+      load();
+    } else if (resp.status === 409) {
+      toast('URL already exists', 'err');
+    } else {
+      toast('Failed to add', 'err');
+    }
+  });
+
+  let toastTimer;
+  function toast(msg, type) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = type;
+    el.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.style.display = 'none'; }, 2500);
+  }
+
+  function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  document.getElementById('fetch-all-btn').addEventListener('click', async () => {
+    const resp = await fetch('/api/thumbnails/fetch-all', { method: 'POST' });
+    if (resp.ok) {
+      const data = await resp.json();
+      toast(`Queued ${data.queued} thumbnail${data.queued !== 1 ? 's' : ''}`, 'ok');
+    } else {
+      toast('Failed', 'err');
+    }
+  });
+
+  load();
+</script>
+</body>
+</html>

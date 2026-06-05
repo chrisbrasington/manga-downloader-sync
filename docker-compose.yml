@@ -6,12 +6,39 @@ services:
     restart: always
     environment:
       TZ: America/Denver
+      MANGA_DB: /app/manga.db
+      MANGA_STORAGE: /app/tmp
     volumes:
-      - ./config:/app/config
+      - ./manga.db:/app/manga.db
       - ./tmp:/app/tmp
-      - ./cache.db:/app/cache.db
+      - ./thumbnails:/app/thumbnails
     labels:
       homepage.group: Bots
       homepage.name: Manga Downloader
       homepage.icon: mdi-book-open-page-variant
       homepage.description: Manga worker
+
+  webapp:
+    build:
+      context: .
+      dockerfile: services/webapp/Dockerfile
+    image: valhalla:5000/manga-webapp:latest
+    container_name: manga-webapp
+    restart: always
+    environment:
+      TZ: America/Denver
+      MANGA_DB: /app/manga.db
+      MANGA_STORAGE: /app/tmp
+      THUMBNAILS_DIR: /app/thumbnails
+      WEBAPP_PORT: "8080"
+    ports:
+      - "8681:8080"
+    volumes:
+      - ./manga.db:/app/manga.db
+      - ./tmp:/app/tmp
+      - ./thumbnails:/app/thumbnails
+    labels:
+      homepage.group: Media
+      homepage.name: Manga Library
+      homepage.icon: mdi-book-open-page-variant
+      homepage.description: Browse and read manga

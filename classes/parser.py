@@ -8,7 +8,7 @@ import colorama, json
 import builtins, traceback
 # from memedetect import is_comic_book
 import sqlite3, datetime, uuid, json
-from classes.cache import Cache
+from classes.database import Database
 from collections import defaultdict
 
 class Manga:
@@ -217,6 +217,7 @@ class Utility:
         global print
         self.summary = []
         self.synced = []
+        self.db = Database()
 
         colorama.init()
 
@@ -585,16 +586,6 @@ class Utility:
 
         return chapters
 
-    # get all urls in a collection from file
-    def get_collection(self, source):
-        with open(str(source), 'r') as f:
-            urls = [url.strip() for url in f.readlines()]
-
-        # remove empty strings
-        urls = list(filter(None, urls))
-
-        return urls
-
     # get latest chapter number on disk
     def get_latest_chapter_num_on_disk(self, dir, title=''):
 
@@ -655,20 +646,11 @@ class Utility:
         return manga
 
     def load_ignored_chapters(self):
-        file_path = "config/ignore.txt"
-        try:
-            with open(file_path, "r") as f:
-                return set(line.strip() for line in f if line.strip())
-        except FileNotFoundError:
-            return set()
+        return self.db.get_ignored_chapters()
 
     def load_ignored_scanlations(self):
-        """Loads ignored scanlation groups from config/ignore_scanlation.txt only once."""
-        if not Utility.IGNORED_SCANLATION_GROUPS:  # Load only if empty
-            ignore_file = "config/ignore_scanlation.txt"
-            if os.path.exists(ignore_file):
-                with open(ignore_file, "r", encoding="utf-8") as f:
-                    Utility.IGNORED_SCANLATION_GROUPS = {line.strip() for line in f if line.strip()}
+        if not Utility.IGNORED_SCANLATION_GROUPS:
+            Utility.IGNORED_SCANLATION_GROUPS = self.db.get_ignored_scanlations()
 
     # parse feed, rss or mangadex
     def parse_feed(self, source, combine, sync_only):
@@ -864,8 +846,24 @@ class Utility:
             if did_work: 
                 self.convert_dir_to_pdf(tmp_dir, manga.author)
 
-        cache = Cache()
-        cache.store_manga_data(manga.title, manga.id, source)
+        try:
+            last_ch = self.get_latest_chapter_num_on_disk(tmp_dir, manga.title)
+        except Exception:
+            last_ch = None
+        self.db.update_manga_metadata(
+            manga.id, source,
+            title=manga.title,
+            author=manga.author,
+            description=manga.desc,
+            demographic=manga.demographic,
+            tags=manga.tags,
+            last_downloaded_at=datetime.datetime.now().isoformat(),
+            last_chapter_on_disk=last_ch,
+        )
+
+        if manga.status == 'completed':
+            self.db.set_manga_status(manga.id, 'completed')
+            print(colorama.Fore.YELLOW + f'     series complete on MangaDex — marked completed, will not re-check' + colorama.Style.RESET_ALL)
 
         return tmp_dir, manga.title, did_work, manga.author, manga.get_combined_title();
 
@@ -964,31 +962,26 @@ class Utility:
     # process collection
     def process_collection(self, source, sync_destination, sync_only):
 
-        # Allow source to be either a single string or an array of strings
-        if isinstance(source, str):
+        # Allow source to be a single string, a dict, or a list of either
+        if isinstance(source, (str, dict)):
             source = [source]
-
-        cache = Cache()
-        catalog = []
 
         for s in source:
 
+            # Extract URL and sync flag from dict (DB row) or legacy string
+            if isinstance(s, dict):
+                url = s['url']
+                kobo_sync = s.get('kobo_sync', 1)
+            else:
+                parts = s.rsplit(',', 1)
+                url = parts[0]
+                kobo_sync = int(parts[1]) if len(parts) > 1 and parts[1] in ('0', '1') else 1
+
             try:
-                # lines are url comma separated to a bool 1 or 0 for sync
-                # if sync only, skip lines with sync false (0)
-                if sync_only:
-                    if '0' in s.split(',')[-1]:
-                        continue
+                if sync_only and kobo_sync == 0:
+                    continue
 
-                manga = cache.manga_exists(s)
-                if manga.exists:
-                    # print(f"Manga with ID {manga.id} exists with title '{manga.title}'")
-                    # If manga exists in the cache, add it to the catalog
-                    catalog.append(manga)
-
-                # URL parameter is provided
-                # print(f"Downloading from {s}")
-                known, tmp_dir, title_used, combo_title = self.parse_feed(s, False, sync_only)
+                known, tmp_dir, title_used, combo_title = self.parse_feed(url, False, sync_only)
 
                 # remove : from title
                 title_used = title_used.replace(':','')
@@ -1003,113 +996,57 @@ class Utility:
                 # the title just has to be contained in the folder name
                 for folder in os.listdir(sync_destination + "_reading"):
                     if title_used in folder:
-                        # reading_folder = os.path.join(sync_destination + "_reading", folder)
                         title_used = folder
-                        # print(f"   \"{title}\" as the modified title")
-                        final_sync_destination = os.path.join(sync_destination + "_reading")    
+                        final_sync_destination = os.path.join(sync_destination + "_reading")
                         break
 
                 if final_sync_destination is None:
                     for folder in os.listdir(sync_destination):
                         if title_used in folder:
-                            # reading_folder = os.path.join(sync_destination + "_reading", folder)
                             title_used = folder
-                            # print(f"   \"{title}\" as the modified title")
-                            final_sync_destination = os.path.join(sync_destination)    
+                            final_sync_destination = os.path.join(sync_destination)
                             break
 
                 if final_sync_destination is None:
-                    final_sync_destination = sync_destination 
+                    final_sync_destination = sync_destination
                     title_used = combo_title
 
                     if not os.path.exists(os.path.join(sync_destination, combo_title)):
                         os.makedirs(os.path.join(sync_destination, combo_title))
 
-                # print('!!!!!')
-                print(f"     {final_sync_destination}/{title_used}")   
-                # print(f"     {title_used}")  
-                # sys.exit()       
+                print(f"     {final_sync_destination}/{title_used}")
 
                 # Sync to device if the manga is known and the final destination is writable
                 if known and os.access(final_sync_destination, os.W_OK):
 
-                    # split on KOBOeReader/
-                    subdir = f"   {final_sync_destination}".split('KOBOeReader/')[-1]
-
-                    # print(f"     {subdir}")
                     self.sync(tmp_dir, final_sync_destination, title_used, False)
 
-                    # print('\n\n~~~~~~~~~~')
-                    # print(combo_title)
-                    # print(subdir)
-
-                    # print title used
-                    # print('\n\n!!!!!!!!!!!!')
-                    # print(f"     {title_used}")
-                    # print(f"     {combo_title}")
-                    # print(f"     {manga.get_japanese_title()}")
-
-                    if(title_used != combo_title):
-                        # ask the user if they want to move from subdir to combo_title
+                    if title_used != combo_title:
                         new_target = f"{final_sync_destination}/{combo_title}"
 
-                        # check if the new target exists
-                        # if os.path.exists(new_target):
-                        #     print(f'\n   {new_target} already exists')
+                        if self.db.is_rename_ignored(url):
+                            print(f'     (using original name)', end='')
+                            continue
 
-                        # check if manga.url exists in config/ignore_rename.txt
-                        # if it does, skip the prompt
-                        if os.path.isfile('config/ignore_rename.txt'):
-                            with open('config/ignore_rename.txt', 'r') as f:
-                                lines = f.readlines()
-                            if s+'\n' in lines:
-                                # print(f"URL '{s}' exists in file 'config/ignore_rename.txt'. Skipping prompt.")
-                                print(f'     (using original name)', end='')
-                                continue
-
-                        # ask user to
                         print(f'\n\n   Old name detected', end='')
                         print(f'\n     {final_sync_destination}/{title_used} ->\n     {new_target}')
                         print(f'   Do you want to move? ', end='')
                         answer = input()
                         if answer.lower() == 'y':
-                            # print moving 
                             print('   Moving')
-                            # move the directory
                             shutil.move(f"{final_sync_destination}/{title_used}", new_target)
                             print('   Moved')
-                            # print new location
                             print(f'   {new_target}')
                         elif answer.lower() == 'q':
-                            # quit running
                             sys.exit()
                         elif answer.lower() == 'n':
-                            # add manga.url to config/ignore_rename.txt
-                            
-                            # Check if file exists, create it if it doesn't
-                            if not os.path.isfile('config/ignore_rename.txt'):
-                                with open('config/ignore_rename.txt', 'w'):
-                                    pass
-                            
-                            # Check if url already exists in file
-                            with open('config/ignore_rename.txt', 'r') as f:
-                                lines = f.readlines()
-                            
-                            if s+'\n' in lines:
-                                print(f"URL '{s}' already exists in file.")
-                            else:
-                                # If url doesn't exist, add it to the top of the file and save it
-                                with open('config/ignore_rename.txt', 'w') as f:
-                                    f.write(s+'\n')
-                                    f.writelines(lines)
-                                
-                                print(f"Added URL '{s}' to file 'config/ignore_rename.txt'.")
+                            self.db.add_rename_ignore(url)
+                            print(f"Added URL '{url}' to ignore_rename.")
 
                     # faster to not create a kobo collection - us KOReader instead
-                    # Create a Kobo collection using the final sync destination
                     # self.create_kobo_collection(final_sync_destination, title)
             except:
-                print(f'error with {s} in collection', end='')
+                print(f'error with {url} in collection', end='')
 
         # Optionally process catalog entries
         # for manga in catalog:

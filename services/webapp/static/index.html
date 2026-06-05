@@ -71,6 +71,35 @@
 
     .empty { text-align:center; padding:60px 20px; color:var(--muted); font-size:14px; }
 
+    /* panel footer / delete */
+    .panel-footer { padding:12px 20px; border-top:1px solid var(--border); }
+    .panel-footer-row { display:flex; gap:8px; margin-bottom:0; }
+    .btn-panel-action { background:none; border:1px solid var(--border); color:var(--muted); padding:5px 12px; border-radius:4px; font-size:12px; cursor:pointer; transition:border-color .15s,color .15s; }
+    .btn-panel-action:hover { border-color:var(--ink); color:var(--ink); }
+    .btn-delete-open { background:none; border:1px solid var(--border); color:var(--muted); padding:5px 12px; border-radius:4px; font-size:12px; cursor:pointer; transition:border-color .15s,color .15s; }
+    .btn-delete-open:hover { border-color:var(--red); color:var(--red); }
+    .delete-confirm { margin-top:10px; }
+    .delete-cmd { background:#0e0f13; border:1px solid var(--border); border-radius:4px; padding:8px 12px; font-family:monospace; font-size:11px; color:#f87171; white-space:pre; margin-bottom:10px; }
+    .delete-actions { display:flex; gap:8px; }
+    .btn-panel { border:none; padding:6px 14px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:500; }
+    .btn-panel-cancel { background:var(--border); color:var(--ink); }
+    .btn-panel-danger { background:var(--red); color:#fff; }
+
+    /* cover picker overlay */
+    .covers-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.88); z-index:200; flex-direction:column; }
+    .covers-overlay.open { display:flex; }
+    .covers-header { background:var(--panel); border-bottom:1px solid var(--border); padding:14px 20px; display:flex; align-items:center; gap:12px; flex-shrink:0; }
+    .covers-header h3 { flex:1; font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .covers-close { background:none; border:none; color:var(--muted); font-size:20px; cursor:pointer; line-height:1; }
+    .covers-close:hover { color:var(--ink); }
+    .covers-body { overflow-y:auto; flex:1; padding:16px; }
+    .covers-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:12px; }
+    .cover-card { cursor:pointer; border-radius:6px; overflow:hidden; border:2px solid transparent; transition:border-color .15s,transform .15s; background:var(--panel); }
+    .cover-card:hover { border-color:var(--accent); transform:translateY(-2px); }
+    .cover-card img { width:100%; aspect-ratio:2/3; object-fit:cover; display:block; }
+    .cover-card .cover-meta { font-size:10px; color:var(--muted); padding:4px 6px; text-align:center; }
+    .covers-empty { color:var(--muted); font-size:13px; text-align:center; padding:40px; }
+
     /* panel url bar */
     .panel-url-bar { padding:10px 20px; border-bottom:1px solid var(--border); font-size:13px; }
     .panel-url-bar a { color:var(--accent); text-decoration:none; word-break:break-all; }
@@ -97,10 +126,22 @@
   <button class="filter-btn" data-filter="completed">Completed</button>
   <button class="filter-btn" data-filter="hiatus">Hiatus</button>
   <button class="filter-btn" data-filter="archived">Archived</button>
+  <button class="filter-btn" data-filter="read">✓ Read</button>
+  <button class="filter-btn" data-filter="hidden">👁 Hidden</button>
 </div>
 <div class="stats" id="stats"></div>
 
 <div class="grid" id="grid"></div>
+
+<div class="covers-overlay" id="covers-overlay">
+  <div class="covers-header">
+    <h3 id="covers-title"></h3>
+    <button class="covers-close" id="covers-close">✕</button>
+  </div>
+  <div class="covers-body">
+    <div class="covers-grid" id="covers-grid"></div>
+  </div>
+</div>
 
 <div class="panel-overlay" id="overlay">
   <div class="panel">
@@ -110,6 +151,7 @@
     </div>
     <div class="panel-url-bar" id="panel-url-bar"></div>
     <div class="chapter-list" id="chapter-list"></div>
+    <div class="panel-footer" id="panel-footer"></div>
   </div>
 </div>
 
@@ -127,9 +169,12 @@
   }
 
   function render() {
-    const manga = currentFilter === 'all' ? allManga
-      : currentFilter === 'favorites' ? allManga.filter(m => m.favorited)
-      : allManga.filter(m => m.status === currentFilter);
+    const visible = m => !m.hidden && !m.read;
+    const manga = currentFilter === 'hidden' ? allManga.filter(m => m.hidden)
+      : currentFilter === 'read' ? allManga.filter(m => m.read)
+      : currentFilter === 'all' ? allManga.filter(visible)
+      : currentFilter === 'favorites' ? allManga.filter(m => m.favorited && visible(m))
+      : allManga.filter(m => m.status === currentFilter && visible(m));
     const active = allManga.filter(m => m.status === 'active').length;
     const archived = allManga.filter(m => m.status === 'archived').length;
     document.getElementById('stats').textContent = `${allManga.length} series · ${active} active · ${archived} archived`;
@@ -187,6 +232,7 @@
   async function openPanel(id, title) {
     document.getElementById('panel-title').textContent = title;
     document.getElementById('panel-url-bar').innerHTML = '';
+    document.getElementById('panel-footer').innerHTML = '';
     document.getElementById('chapter-list').innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px">Loading…</div>';
     document.getElementById('overlay').classList.add('open');
 
@@ -196,16 +242,19 @@
       // URL bar
       const urlBar = document.getElementById('panel-url-bar');
       const mangaUrl = data.url || '';
-      if (mangaUrl && !mangaUrl.startsWith('local:')) {
-        urlBar.innerHTML = `<a href="${esc(mangaUrl)}" target="_blank">${esc(mangaUrl)}</a>`;
-      } else {
+      const hasRealUrl = mangaUrl && !mangaUrl.startsWith('local:');
+
+      function showUrlEdit(current) {
         urlBar.innerHTML = `<div class="url-input-row">
-          <input type="url" id="url-input" placeholder="Paste MangaDex URL…">
+          <input type="url" id="url-input" placeholder="Paste MangaDex URL…" value="${esc(current)}">
           <button class="btn-url btn-url-save" id="url-save">Save</button>
-          <button class="btn-url btn-url-ddg" id="url-ddg">🔍 DDG</button>
+          <button class="btn-url btn-url-ddg" id="url-find">🔍 Find</button>
         </div>`;
-        document.getElementById('url-save').addEventListener('click', async () => {
-          const newUrl = document.getElementById('url-input').value.trim();
+        const input = document.getElementById('url-input');
+        input.focus();
+        if (current) input.select();
+        async function saveUrl() {
+          const newUrl = input.value.trim();
           if (!newUrl) return;
           const r = await fetch(`/api/manga/${encodeURIComponent(id)}`, {
             method: 'PATCH',
@@ -213,15 +262,135 @@
             body: JSON.stringify({url: newUrl})
           });
           if (r.ok) {
-            urlBar.innerHTML = `<a href="${esc(newUrl)}" target="_blank">${esc(newUrl)}</a>`;
+            showUrlLink(newUrl);
             const m = allManga.find(x => x.id === id);
             if (m) { m.url = newUrl; m.source_type = newUrl.includes('mangadex.org') ? 'mangadex' : 'local'; }
           }
-        });
-        document.getElementById('url-ddg').addEventListener('click', () => {
-          window.open(`https://duckduckgo.com/?q=${encodeURIComponent((data.title || title) + ' mangadex')}`, '_blank');
+        }
+        document.getElementById('url-save').addEventListener('click', saveUrl);
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') saveUrl(); });
+        document.getElementById('url-find').addEventListener('click', async () => {
+          const btn = document.getElementById('url-find');
+          btn.textContent = '…';
+          btn.disabled = true;
+          try {
+            const r = await fetch(`/api/search?title=${encodeURIComponent(data.title || title)}`);
+            if (r.ok) {
+              const found = await r.json();
+              document.getElementById('url-input').value = found.url;
+            } else {
+              btn.textContent = 'Not found';
+              setTimeout(() => { btn.textContent = '🔍 Find'; btn.disabled = false; }, 2000);
+              return;
+            }
+          } catch(e) {
+            btn.textContent = 'Error';
+            setTimeout(() => { btn.textContent = '🔍 Find'; btn.disabled = false; }, 2000);
+            return;
+          }
+          btn.textContent = '🔍 Find';
+          btn.disabled = false;
         });
       }
+
+      function showUrlLink(url) {
+        urlBar.innerHTML = `<div class="url-input-row">
+          <a href="${esc(url)}" target="_blank" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(url)}</a>
+          <button class="btn-url btn-url-ddg" id="url-edit">Edit</button>
+        </div>`;
+        document.getElementById('url-edit').addEventListener('click', () => showUrlEdit(url));
+      }
+
+      if (hasRealUrl) {
+        showUrlLink(mangaUrl);
+      } else {
+        showUrlEdit(mangaUrl.startsWith('local:') ? '' : mangaUrl);
+      }
+
+      // Panel footer: hide + delete
+      const footer = document.getElementById('panel-footer');
+      const folderPath = data.folder_path || '';
+      const folderExists = data.folder_exists || false;
+      const isHidden = data.hidden || false;
+      const isRead = data.read || false;
+      const deleteCmd = folderExists
+        ? `rm -rf "${folderPath}"\n# + remove DB entry`
+        : `# No folder on disk\n# Remove DB entry only`;
+      const isMangadex = data.source_type === 'mangadex' && !mangaUrl.startsWith('local:');
+      footer.innerHTML = `
+        <div class="panel-footer-row">
+          <button class="btn-panel-action" id="hide-btn">${isHidden ? '👁 Unhide' : '👁 Hide'}</button>
+          <button class="btn-panel-action" id="read-btn">${isRead ? '✓ Unread' : '✓ Read'}</button>
+          ${isMangadex ? `<button class="btn-panel-action" id="cover-btn">🖼 Cover</button>` : ''}
+          <button class="btn-delete-open" id="delete-open">🗑 Delete…</button>
+        </div>
+        <div class="delete-confirm" id="delete-confirm" style="display:none;margin-top:10px">
+          <div class="delete-cmd">${esc(deleteCmd)}</div>
+          <div class="delete-actions">
+            <button class="btn-panel btn-panel-cancel" id="delete-cancel">Cancel</button>
+            <button class="btn-panel btn-panel-danger" id="delete-yes">Yes, Delete</button>
+          </div>
+        </div>`;
+
+      if (isMangadex) {
+        document.getElementById('cover-btn').addEventListener('click', () => openCovers(id, data.title || title));
+      }
+
+      document.getElementById('read-btn').addEventListener('click', async () => {
+        const newVal = isRead ? 0 : 1;
+        const r = await fetch(`/api/manga/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({read: newVal})
+        });
+        if (r.ok) {
+          const m = allManga.find(x => x.id === id);
+          if (m) m.read = Boolean(newVal);
+          closePanel();
+          render();
+        }
+      });
+
+      document.getElementById('hide-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('hide-btn');
+        const newVal = isHidden ? 0 : 1;
+        const r = await fetch(`/api/manga/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({hidden: newVal})
+        });
+        if (r.ok) {
+          const m = allManga.find(x => x.id === id);
+          if (m) m.hidden = Boolean(newVal);
+          btn.textContent = newVal ? '👁 Unhide' : '👁 Hide';
+          closePanel();
+          render();
+        }
+      });
+
+      document.getElementById('delete-open').addEventListener('click', () => {
+        document.getElementById('delete-confirm').style.display = 'block';
+        document.getElementById('delete-open').style.display = 'none';
+      });
+      document.getElementById('delete-cancel').addEventListener('click', () => {
+        document.getElementById('delete-confirm').style.display = 'none';
+        document.getElementById('delete-open').style.display = '';
+      });
+      document.getElementById('delete-yes').addEventListener('click', async () => {
+        const btn = document.getElementById('delete-yes');
+        btn.disabled = true;
+        btn.textContent = 'Deleting…';
+        const url = `/api/manga/${encodeURIComponent(id)}${folderExists ? '?delete_folder=true' : ''}`;
+        const r = await fetch(url, { method: 'DELETE' });
+        if (r.ok) {
+          closePanel();
+          allManga = allManga.filter(m => m.id !== id);
+          render();
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Yes, Delete';
+        }
+      });
 
       // Chapter list
       const chapters = data.chapters || [];
@@ -264,6 +433,67 @@
   function esc(s) {
     if (s == null) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // --- cover picker ---
+
+  document.getElementById('covers-close').addEventListener('click', () => {
+    document.getElementById('covers-overlay').classList.remove('open');
+  });
+
+  async function openCovers(mangaId, mangaTitle) {
+    const grid = document.getElementById('covers-grid');
+    document.getElementById('covers-title').textContent = mangaTitle;
+    grid.innerHTML = '<div class="covers-empty">Loading covers…</div>';
+    document.getElementById('covers-overlay').classList.add('open');
+
+    let covers;
+    try {
+      const r = await fetch(`/api/manga/${encodeURIComponent(mangaId)}/covers`);
+      covers = await r.json();
+    } catch(e) {
+      grid.innerHTML = '<div class="covers-empty">Failed to load covers.</div>';
+      return;
+    }
+    if (!covers.length) {
+      grid.innerHTML = '<div class="covers-empty">No covers found on MangaDex.</div>';
+      return;
+    }
+
+    grid.innerHTML = covers.map((c, i) => {
+      const label = c.volume ? `Vol. ${esc(c.volume)}` : (c.locale ? esc(c.locale) : '—');
+      return `<div class="cover-card" data-idx="${i}">
+        <img src="${esc(c.thumb_url)}" loading="lazy" alt="${label}">
+        <div class="cover-meta">${label}</div>
+      </div>`;
+    }).join('');
+
+    grid.querySelectorAll('.cover-card').forEach(card => {
+      card.addEventListener('click', async () => {
+        const c = covers[+card.dataset.idx];
+        card.style.borderColor = 'var(--accent)';
+        card.style.opacity = '.5';
+        try {
+          const r = await fetch(`/api/manga/${encodeURIComponent(mangaId)}/cover`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cover_url: c.cover_url, thumb_url: c.thumb_url})
+          });
+          if (r.ok) {
+            const m = allManga.find(x => x.id === mangaId);
+            if (m) { m.has_thumbnail = true; m.cover_url = c.cover_url; }
+            document.getElementById('covers-overlay').classList.remove('open');
+            render();
+          } else {
+            card.style.borderColor = 'var(--red)';
+            card.style.opacity = '1';
+          }
+        } catch(e) {
+          card.style.borderColor = 'var(--red)';
+          card.style.opacity = '1';
+        }
+      });
+    });
   }
 
   load();

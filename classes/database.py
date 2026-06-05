@@ -51,6 +51,8 @@ class Database:
         # Add columns introduced after initial schema creation
         for stmt in [
             "ALTER TABLE manga ADD COLUMN favorited INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE manga ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE manga ADD COLUMN read INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
                 conn.execute(stmt)
@@ -123,7 +125,7 @@ class Database:
         allowed = {
             'title', 'cover_url', 'description', 'author', 'demographic', 'tags',
             'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type',
-            'favorited'
+            'favorited', 'hidden', 'read'
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
 
@@ -207,6 +209,27 @@ class Database:
         conn.close()
 
     # --- helpers ---
+
+    @staticmethod
+    def _normalize_title(s):
+        """Normalize a title for duplicate detection: lowercase, unify subtitle separators, strip punctuation."""
+        s = (s or '').lower().strip()
+        s = re.sub(r'\s*[-:–—]\s*', ' ', s)
+        s = re.sub(r'[^\w\s]', ' ', s)
+        s = re.sub(r'\s+', ' ', s).strip()
+        return s
+
+    def find_by_normalized_title(self, title):
+        """Return all DB entries whose normalized title matches the given title."""
+        norm = self._normalize_title(title)
+        if not norm:
+            return []
+        conn = self._connect()
+        c = conn.cursor()
+        c.execute("SELECT * FROM manga")
+        rows = [self._row_to_dict(c, r) for r in c.fetchall()]
+        conn.close()
+        return [r for r in rows if self._normalize_title(r.get('title') or '') == norm]
 
     @staticmethod
     def _extract_id(url):

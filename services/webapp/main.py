@@ -64,10 +64,12 @@ def manga_to_payload(row):
             tags = json.loads(tags)
         except Exception:
             tags = []
+    title = row.get('title')
+    folder = os.path.join(MANGA_STORAGE, title) if title else None
     return {
         'id': row['id'],
         'url': row['url'],
-        'title': row.get('title') or row['url'],
+        'title': title or row['url'],
         'status': row['status'],
         'kobo_sync': row['kobo_sync'],
         'source_type': row['source_type'],
@@ -80,6 +82,10 @@ def manga_to_payload(row):
         'last_downloaded_at': row.get('last_downloaded_at'),
         'last_chapter_on_disk': row.get('last_chapter_on_disk'),
         'favorited': bool(row.get('favorited', 0)),
+        'hidden': bool(row.get('hidden', 0)),
+        'read': bool(row.get('read', 0)),
+        'folder_path': folder,
+        'folder_exists': bool(folder and os.path.isdir(folder)),
     }
 
 
@@ -181,6 +187,8 @@ class UpdateMangaRequest(BaseModel):
     kobo_sync: int | None = None
     favorited: int | None = None
     url: str | None = None
+    hidden: int | None = None
+    read: int | None = None
 
 
 @app.post('/api/manga', status_code=201)
@@ -208,6 +216,10 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.set_kobo_sync(manga_id, body.kobo_sync)
     if body.favorited is not None:
         db.update_manga_metadata(manga_id, manga['url'], favorited=body.favorited)
+    if body.hidden is not None:
+        db.update_manga_metadata(manga_id, manga['url'], hidden=body.hidden)
+    if body.read is not None:
+        db.update_manga_metadata(manga_id, manga['url'], read=body.read)
     if body.url is not None:
         if 'mangadex.org' in body.url:
             new_source = 'mangadex'
@@ -223,12 +235,20 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
 
 
 @app.delete('/api/manga/{manga_id}')
-def api_remove_manga(manga_id: str):
+def api_remove_manga(manga_id: str, delete_folder: bool = False):
     db = get_db()
-    if not db.get_manga_by_id(manga_id):
+    manga = db.get_manga_by_id(manga_id)
+    if not manga:
         raise HTTPException(status_code=404, detail='Not found')
+    deleted_folder = False
+    if delete_folder and manga.get('title'):
+        real_storage = os.path.realpath(MANGA_STORAGE)
+        real_folder = os.path.realpath(os.path.join(MANGA_STORAGE, manga['title']))
+        if os.path.dirname(real_folder) == real_storage and os.path.isdir(real_folder):
+            shutil.rmtree(real_folder)
+            deleted_folder = True
     db.remove_manga(manga_id)
-    return {'ok': True}
+    return {'ok': True, 'deleted_folder': deleted_folder}
 
 
 @app.post('/api/manga/{manga_id}/fetch-thumbnail')
@@ -238,6 +258,71 @@ def api_fetch_thumbnail(manga_id: str, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=404, detail='Not found')
     background_tasks.add_task(fetch_and_save_thumbnail, manga_id)
     return {'ok': True, 'queued': True}
+
+
+@app.get('/api/manga/{manga_id}/covers')
+def api_manga_covers(manga_id: str):
+    db = get_db()
+    manga = db.get_manga_by_id(manga_id)
+    if not manga:
+        raise HTTPException(status_code=404, detail='Not found')
+    url = manga.get('url', '')
+    if url.startswith('local:') or manga.get('source_type') != 'mangadex':
+        return []
+    md_uuid = Database._extract_id(url)
+    if not md_uuid:
+        return []
+    try:
+        resp = http_requests.get(
+            f'https://api.mangadex.org/cover?limit=100&manga%5B%5D={md_uuid}&order%5BcreatedAt%5D=asc',
+            headers={'accept': 'application/json'},
+            timeout=10
+        )
+        data = resp.json().get('data', [])
+
+        def volume_key(c):
+            try:
+                return float(c['attributes'].get('volume') or 'inf')
+            except ValueError:
+                return float('inf')
+
+        data.sort(key=volume_key)
+
+        covers = []
+        for item in data:
+            fname = item['attributes']['fileName']
+            rel_manga_id = item['relationships'][0]['id']
+            covers.append({
+                'id': item['id'],
+                'volume': item['attributes'].get('volume'),
+                'locale': item['attributes'].get('locale', ''),
+                'thumb_url': f'https://mangadex.org/covers/{rel_manga_id}/{fname}.256.jpg',
+                'cover_url': f'https://mangadex.org/covers/{rel_manga_id}/{fname}',
+            })
+        return covers
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+class SelectCoverRequest(BaseModel):
+    cover_url: str
+    thumb_url: str
+
+
+@app.post('/api/manga/{manga_id}/cover')
+def api_select_cover(manga_id: str, body: SelectCoverRequest):
+    db = get_db()
+    manga = db.get_manga_by_id(manga_id)
+    if not manga:
+        raise HTTPException(status_code=404, detail='Not found')
+    resp = http_requests.get(body.thumb_url, timeout=15)
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail='Failed to download cover image')
+    os.makedirs(THUMBNAILS_DIR, exist_ok=True)
+    with open(thumbnail_path(manga_id), 'wb') as f:
+        f.write(resp.content)
+    db.update_manga_metadata(manga_id, manga['url'], cover_url=body.cover_url)
+    return {'ok': True}
 
 
 @app.post('/api/thumbnails/fetch-all')
@@ -280,7 +365,7 @@ def _run_scan():
     try:
         db = Database(MANGA_DB)
         known = db.get_all_manga()
-        known_titles = {(m.get('title') or '').lower() for m in known}
+        known_norm_titles = {Database._normalize_title(m.get('title') or ''): m['id'] for m in known}
         known_ids = {m['id'] for m in known}
 
         if not os.path.isdir(MANGA_STORAGE):
@@ -290,18 +375,24 @@ def _run_scan():
         folders = sorted(
             f for f in os.listdir(MANGA_STORAGE)
             if os.path.isdir(os.path.join(MANGA_STORAGE, f))
-            and f.lower() not in known_titles
+            and Database._normalize_title(f) not in known_norm_titles
         )
         print(f'Scan: {len(folders)} untracked folders to process')
 
         for folder in folders:
             try:
+                # Secondary title check in case known_norm_titles was updated mid-scan
+                norm_folder = Database._normalize_title(folder)
+                if norm_folder in known_norm_titles:
+                    print(f'Scan: skipping "{folder}" — matches existing entry by normalized title')
+                    continue
+
                 manga_id, url = _mangadex_search(folder)
                 time.sleep(0.35)
 
                 if manga_id and manga_id in known_ids:
                     db.update_manga_metadata(manga_id, url, title=folder)
-                    known_titles.add(folder.lower())
+                    known_norm_titles[norm_folder] = manga_id
                     continue
 
                 if not manga_id:
@@ -313,7 +404,7 @@ def _run_scan():
                     title=folder, status='archived', kobo_sync=0,
                     source_type='mangadex' if not url.startswith('local:') else 'local',
                 )
-                known_titles.add(folder.lower())
+                known_norm_titles[norm_folder] = manga_id
                 known_ids.add(manga_id)
                 added += 1
 
@@ -336,6 +427,14 @@ def _run_scan():
             print(f'Scan: thumbnail error for {manga_id}: {e}')
 
 
+@app.get('/api/search')
+def api_search(title: str):
+    manga_id, url = _mangadex_search(title)
+    if not manga_id:
+        raise HTTPException(status_code=404, detail='Not found on MangaDex')
+    return {'id': manga_id, 'url': url}
+
+
 @app.post('/api/scan')
 def api_scan(background_tasks: BackgroundTasks):
     global _scan_running
@@ -352,9 +451,13 @@ def api_scan_status():
 
 # --- dedupe ---
 
+def _normalize_title(s):
+    return Database._normalize_title(s)
+
+
 def _title_similarity(a, b):
-    a = (a or '').lower().strip()
-    b = (b or '').lower().strip()
+    a = _normalize_title(a)
+    b = _normalize_title(b)
     if not a or not b:
         return 0.0
     return difflib.SequenceMatcher(None, a, b).ratio()

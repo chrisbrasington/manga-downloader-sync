@@ -861,6 +861,10 @@ class Utility:
             last_chapter_on_disk=last_ch,
         )
 
+        dupes = [e for e in self.db.find_by_normalized_title(manga.title) if e['id'] != manga.id]
+        for d in dupes:
+            print(colorama.Fore.YELLOW + f'     ⚠ duplicate entry: "{d["title"]}" (id: {d["id"]}, status: {d["status"]}) — run dedupe in admin' + colorama.Style.RESET_ALL)
+
         if manga.status == 'completed':
             self.db.set_manga_status(manga.id, 'completed')
             print(colorama.Fore.YELLOW + f'     series complete on MangaDex — marked completed, will not re-check' + colorama.Style.RESET_ALL)

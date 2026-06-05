@@ -1,7 +1,7 @@
-import difflib, glob, http.client, json, os, re, shutil, socket, struct, sys, time, threading, zipfile
+import asyncio, difflib, glob, http.client, json, os, re, shutil, socket, struct, sys, time, threading, zipfile
 import requests as http_requests
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -674,6 +674,60 @@ def api_downloader_logs(tail: int = 300):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get('/api/downloader/logs/stream')
+async def api_downloader_logs_stream():
+    if not os.path.exists(DOCKER_SOCKET):
+        raise HTTPException(status_code=503, detail='Docker socket not available')
+
+    async def generate():
+        loop = asyncio.get_running_loop()
+        conn = None
+        try:
+            conn = _UnixConn()
+            conn.timeout = 60
+            conn.request('GET',
+                f'/containers/{DOWNLOADER_CONTAINER}/logs?stdout=1&stderr=1&follow=1&tail=100&timestamps=1',
+                headers={'Host': 'localhost'})
+            r = conn.getresponse()
+            if r.status != 200:
+                yield f'data: [error: HTTP {r.status}]\n\n'
+                return
+            frame_buf = b''
+            while True:
+                chunk = await loop.run_in_executor(None, r.read, 4096)
+                if not chunk:
+                    break
+                frame_buf += chunk
+                while len(frame_buf) >= 8:
+                    size = struct.unpack('>I', frame_buf[4:8])[0]
+                    if len(frame_buf) < 8 + size:
+                        break
+                    text = frame_buf[8:8 + size].decode('utf-8', errors='replace')
+                    frame_buf = frame_buf[8 + size:]
+                    for line in text.splitlines():
+                        if line.strip():
+                            yield f'data: {line}\n\n'
+        except GeneratorExit:
+            pass
+        except Exception as e:
+            try:
+                yield f'data: [stream error: {e}]\n\n'
+            except Exception:
+                pass
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    return StreamingResponse(
+        generate(),
+        media_type='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
 
 
 # --- file routes ---

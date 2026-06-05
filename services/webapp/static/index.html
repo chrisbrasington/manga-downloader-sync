@@ -244,7 +244,7 @@
         const numMatch = m.last_read_chapter.match(/[\s\-]+(\d+(?:\.\d+)?)/);
         const chLabel = numMatch ? `Ch.${numMatch[1]}` : 'chapter';
         const pgLabel = m.last_read_page && m.last_read_page > 1 ? ` · p.${m.last_read_page}` : '';
-        continueBtn = `<div class="card-continue"><a class="continue-btn" href="${contUrl}" target="_blank" onclick="event.stopPropagation()">▶ Continue ${chLabel}${pgLabel}</a></div>`;
+        continueBtn = `<div class="card-continue"><a class="continue-btn" href="${contUrl}" onclick="event.stopPropagation()">▶ Continue ${chLabel}${pgLabel}</a></div>`;
       }
       return `<div class="${cardClass}" data-id="${esc(m.id)}" data-title="${esc(m.title)}">
         <div class="thumb-wrap">
@@ -521,7 +521,7 @@
         const dlUrl = `/cbz/${encodeURIComponent(id)}/${encodeURIComponent(f)}?dl=1`;
         return `<div class="chapter-row" data-file="${esc(f)}">
           <span>${esc(f.replace(/\.cbz$/, ''))}</span>
-          <a class="btn-read" href="${readUrl}" target="_blank" data-file="${esc(f)}">Read</a>
+          <a class="btn-read" href="${readUrl}" data-file="${esc(f)}">Read</a>
           <a class="btn-dl" href="${dlUrl}">↓</a>
         </div>`;
       }).join('');

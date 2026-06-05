@@ -114,6 +114,8 @@
     .log-header span { font-size:12px; color:var(--muted); }
     .log-body { overflow-y:auto; max-height:420px; padding:12px 14px; }
     .log-body pre { font-family:monospace; font-size:11px; color:#a8b0c0; white-space:pre-wrap; word-break:break-all; line-height:1.5; margin:0; }
+    .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:5px; animation:pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 
     /* confirm modal */
     .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:200; align-items:center; justify-content:center; }
@@ -134,6 +136,22 @@
   <h1>⚙️ Admin</h1>
   <a href="/">← Library</a>
 </header>
+
+<div class="section">
+  <h2>Downloader</h2>
+  <div class="dl-toolbar">
+    <button class="btn btn-muted" id="restart-dl-btn" style="font-size:12px;padding:5px 12px">🔄 Restart Downloader</button>
+    <button class="btn btn-muted" id="logs-connect-btn" style="font-size:12px;padding:5px 12px">▶ Connect Logs</button>
+    <button class="btn btn-muted" id="logs-disconnect-btn" style="font-size:12px;padding:5px 12px;display:none">⏹ Disconnect</button>
+  </div>
+  <div class="log-panel" id="log-panel">
+    <div class="log-header">
+      <span id="log-label">manga container</span>
+      <button class="btn-sm btn-muted" id="log-close-btn" style="font-size:11px">Close</button>
+    </div>
+    <div class="log-body" id="log-body"><pre id="log-pre"></pre></div>
+  </div>
+</div>
 
 <div class="section">
   <h2>Add Manga</h2>
@@ -192,22 +210,6 @@
       <tbody id="manga-rows"></tbody>
     </table>
   </div></div>
-</div>
-
-<div class="section">
-  <h2>Downloader</h2>
-  <div class="dl-toolbar">
-    <button class="btn btn-muted" id="restart-dl-btn" style="font-size:12px;padding:5px 12px">🔄 Restart Downloader</button>
-    <button class="btn btn-muted" id="logs-btn" style="font-size:12px;padding:5px 12px">📋 View Logs</button>
-    <button class="btn btn-muted" id="logs-refresh-btn" style="font-size:12px;padding:5px 12px;display:none">↻ Refresh</button>
-  </div>
-  <div class="log-panel" id="log-panel">
-    <div class="log-header">
-      <span id="log-label">manga container — last 300 lines</span>
-      <button class="btn-sm btn-muted" id="log-close-btn" style="font-size:11px">Close</button>
-    </div>
-    <div class="log-body" id="log-body"><pre id="log-pre"></pre></div>
-  </div>
 </div>
 
 <div class="section" id="dedupe-section" style="display:none">
@@ -523,44 +525,56 @@
     }
   });
 
-  async function loadLogs() {
-    const pre = document.getElementById('log-pre');
+  let logSource = null;
+
+  function setLogConnected(connected) {
+    document.getElementById('logs-connect-btn').style.display = connected ? 'none' : '';
+    document.getElementById('logs-disconnect-btn').style.display = connected ? '' : 'none';
     const label = document.getElementById('log-label');
-    label.textContent = 'Loading…';
-    pre.textContent = '';
-    try {
-      const resp = await fetch('/api/downloader/logs');
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        pre.textContent = 'Error: ' + (err.detail || resp.status);
-        label.textContent = 'Error';
-        return;
-      }
-      const data = await resp.json();
-      pre.textContent = data.logs || '(no output)';
-      label.textContent = 'manga container — last 300 lines';
-      // scroll to bottom
-      const body = document.getElementById('log-body');
-      body.scrollTop = body.scrollHeight;
-    } catch(e) {
-      pre.textContent = 'Failed to fetch logs.';
-      label.textContent = 'Error';
+    if (connected) {
+      label.innerHTML = '<span class="dot"></span>manga container — streaming';
+    } else {
+      label.textContent = 'manga container — disconnected';
     }
   }
 
-  document.getElementById('logs-btn').addEventListener('click', async () => {
+  function connectLogs() {
+    const pre = document.getElementById('log-pre');
+    const body = document.getElementById('log-body');
     const panel = document.getElementById('log-panel');
-    const refreshBtn = document.getElementById('logs-refresh-btn');
-    panel.classList.add('open');
-    refreshBtn.style.display = '';
-    await loadLogs();
-  });
 
-  document.getElementById('logs-refresh-btn').addEventListener('click', loadLogs);
+    pre.textContent = '';
+    panel.classList.add('open');
+
+    if (logSource) { logSource.close(); logSource = null; }
+
+    logSource = new EventSource('/api/downloader/logs/stream');
+    setLogConnected(true);
+
+    logSource.onmessage = e => {
+      pre.textContent += e.data + '\n';
+      body.scrollTop = body.scrollHeight;
+    };
+
+    logSource.onerror = () => {
+      pre.textContent += '\n[stream disconnected]\n';
+      logSource.close();
+      logSource = null;
+      setLogConnected(false);
+    };
+  }
+
+  function disconnectLogs() {
+    if (logSource) { logSource.close(); logSource = null; }
+    setLogConnected(false);
+  }
+
+  document.getElementById('logs-connect-btn').addEventListener('click', connectLogs);
+  document.getElementById('logs-disconnect-btn').addEventListener('click', disconnectLogs);
 
   document.getElementById('log-close-btn').addEventListener('click', () => {
+    disconnectLogs();
     document.getElementById('log-panel').classList.remove('open');
-    document.getElementById('logs-refresh-btn').style.display = 'none';
   });
 
   document.getElementById('modal-confirm').addEventListener('click', async () => {

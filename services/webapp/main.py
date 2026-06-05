@@ -649,6 +649,7 @@ def read_chapter(manga_id: str, filename: str):
     .bar .ch-title {{ color:#888; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; text-align:center; min-width:0; }}
     #viewer {{ flex:1; overflow:hidden; display:flex; align-items:center; justify-content:center; position:relative; background:#111; }}
     #page-canvas {{ display:block; }}
+    #page-canvas-over {{ display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; }}
     .hit-zone {{ position:absolute; top:0; bottom:0; width:35%; cursor:pointer; z-index:10; }}
     #hz-prev {{ left:0; }}
     #hz-next {{ right:0; }}
@@ -661,6 +662,9 @@ def read_chapter(manga_id: str, filename: str):
     #back-btn-end {{ color:#888; font-size:13px; text-decoration:none; }}
     #back-btn-end:hover {{ color:#ccc; }}
     #loading {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:14px; }}
+    /*#dbg {{ position:absolute; top:8px; right:8px; background:rgba(0,0,0,.75);
+            color:#e2b96f; font-size:10px; font-family:monospace; padding:6px 8px;
+            border-radius:6px; pointer-events:none; z-index:30; white-space:pre; line-height:1.5; }}*/
   </style>
 </head>
 <body>
@@ -674,9 +678,11 @@ def read_chapter(manga_id: str, filename: str):
   <div id="viewer">
     <div id="loading">Loading…</div>
     <canvas id="page-canvas" style="display:none"></canvas>
+    <canvas id="page-canvas-over"></canvas>
     <div class="hit-zone" id="hz-prev"></div>
     <div class="hit-zone" id="hz-next"></div>
     <div class="page-info" id="page-info"></div>
+    <!--<div id="dbg">waiting...</div>-->
     <div id="end-screen">
       <div class="msg" id="end-msg">End of chapter</div>
       <a id="next-ch-btn" href="#">Continue to next chapter →</a>
@@ -695,7 +701,7 @@ def read_chapter(manga_id: str, filename: str):
 
     let pdfDoc = null, currentPage = 1, totalPages = 0;
     let chapters = [], currentChIdx = -1, rendering = false;
-    let saveTimer = null;
+    let saveTimer = null, overTimer = null;
 
     function saveProgress(page) {{
       clearTimeout(saveTimer);
@@ -755,33 +761,65 @@ def read_chapter(manga_id: str, filename: str):
     async function renderPage(n, fade) {{
       if (rendering || !pdfDoc) return;
       rendering = true;
+      clearTimeout(overTimer);
+      const over = document.getElementById('page-canvas-over');
+      over.style.display = 'none';
       try {{
         const page = await pdfDoc.getPage(n);
         const vp0 = page.getViewport({{scale: 1}});
         const viewer = document.getElementById('viewer');
-        const dpr = window.devicePixelRatio || 1;
-        const scale = Math.min(viewer.clientHeight / vp0.height, viewer.clientWidth / vp0.width) * dpr;
+        const screenDpr = window.devicePixelRatio || 1;
+        const zoomScale = window.visualViewport ? window.visualViewport.scale : 1;
+        const dpr = screenDpr * zoomScale;
+        const fitScale = Math.min(viewer.clientHeight / vp0.height, viewer.clientWidth / vp0.width);
+        const scale = fitScale * dpr;
         const vp = page.getViewport({{scale}});
-        // Render to offscreen canvas first — no await between clear and fill on the visible canvas
         const tmp = document.createElement('canvas');
         tmp.width = Math.round(vp.width);
         tmp.height = Math.round(vp.height);
+        /*document.getElementById('dbg').textContent =
+          `page ${{n}}  fade=${{!!fade}}\n` +
+          `screen dpr: ${{screenDpr.toFixed(2)}}\n` +
+          `zoom scale: ${{zoomScale.toFixed(3)}}\n` +
+          `render dpr: ${{dpr.toFixed(3)}}\n` +
+          `fit scale:  ${{fitScale.toFixed(4)}}\n` +
+          `canvas px:  ${{tmp.width}}×${{tmp.height}}\n` +
+          `css px:     ${{(tmp.width/dpr).toFixed(0)}}×${{(tmp.height/dpr).toFixed(0)}}`;*/
         await page.render({{canvasContext: tmp.getContext('2d'), viewport: vp}}).promise;
-        // Atomic swap: synchronous, browser can't paint between these lines
         const canvas = document.getElementById('page-canvas');
-        canvas.width = tmp.width;
-        canvas.height = tmp.height;
-        canvas.style.width = (tmp.width / dpr) + 'px';
-        canvas.style.height = (tmp.height / dpr) + 'px';
-        canvas.getContext('2d').drawImage(tmp, 0, 0);
+        const cssW = (tmp.width / dpr) + 'px';
+        const cssH = (tmp.height / dpr) + 'px';
         if (fade) {{
-          canvas.style.opacity = '0';
-          void canvas.offsetWidth;
-          canvas.style.transition = 'opacity 0.2s';
-          canvas.style.opacity = '1';
+          // Render into overlay; fade it in over the still-visible main canvas
+          over.width = tmp.width;
+          over.height = tmp.height;
+          over.style.width = cssW;
+          over.style.height = cssH;
+          over.getContext('2d').drawImage(tmp, 0, 0);
+          over.style.transition = 'none';
+          over.style.opacity = '0';
+          over.style.display = 'block';
+          void over.offsetWidth;
+          over.style.transition = 'opacity 0.25s';
+          over.style.opacity = '1';
+          // After fade, promote overlay content to main canvas and hide overlay
+          overTimer = setTimeout(() => {{
+            canvas.width = tmp.width;
+            canvas.height = tmp.height;
+            canvas.style.width = cssW;
+            canvas.style.height = cssH;
+            canvas.getContext('2d').drawImage(tmp, 0, 0);
+            over.style.transition = 'none';
+            over.style.opacity = '0';
+            over.style.display = 'none';
+          }}, 280);
         }} else {{
-          canvas.style.transition = 'none';
-          canvas.style.opacity = '1';
+          // Synchronous swap — no await between clear and fill, browser sees only final state
+          canvas.width = tmp.width;
+          canvas.height = tmp.height;
+          canvas.style.width = cssW;
+          canvas.style.height = cssH;
+          canvas.getContext('2d').drawImage(tmp, 0, 0);
         }}
         currentPage = n;
         document.getElementById('page-info').textContent = `${{n}} / ${{totalPages}}`;

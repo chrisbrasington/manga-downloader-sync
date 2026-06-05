@@ -648,7 +648,7 @@ def read_chapter(manga_id: str, filename: str):
     .bar a.disabled {{ color:#444; pointer-events:none; }}
     .bar .ch-title {{ color:#888; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; text-align:center; min-width:0; }}
     #viewer {{ flex:1; overflow:hidden; display:flex; align-items:center; justify-content:center; position:relative; background:#111; }}
-    #page-canvas {{ max-height:100%; max-width:100%; display:block; object-fit:contain; }}
+    #page-canvas {{ display:block; }}
     .hit-zone {{ position:absolute; top:0; bottom:0; width:35%; cursor:pointer; z-index:10; }}
     #hz-prev {{ left:0; }}
     #hz-next {{ right:0; }}
@@ -752,22 +752,37 @@ def read_chapter(manga_id: str, filename: str):
       }}
     }}
 
-    async function renderPage(n) {{
+    async function renderPage(n, fade) {{
       if (rendering || !pdfDoc) return;
       rendering = true;
       try {{
         const page = await pdfDoc.getPage(n);
         const vp0 = page.getViewport({{scale: 1}});
         const viewer = document.getElementById('viewer');
-        const dpr = (window.devicePixelRatio || 1) * (window.visualViewport ? window.visualViewport.scale : 1);
-        const baseScale = viewer.clientHeight / vp0.height;
-        const vp = page.getViewport({{scale: baseScale * dpr}});
+        const dpr = window.devicePixelRatio || 1;
+        const scale = Math.min(viewer.clientHeight / vp0.height, viewer.clientWidth / vp0.width) * dpr;
+        const vp = page.getViewport({{scale}});
+        // Render to offscreen canvas first — no await between clear and fill on the visible canvas
+        const tmp = document.createElement('canvas');
+        tmp.width = Math.round(vp.width);
+        tmp.height = Math.round(vp.height);
+        await page.render({{canvasContext: tmp.getContext('2d'), viewport: vp}}).promise;
+        // Atomic swap: synchronous, browser can't paint between these lines
         const canvas = document.getElementById('page-canvas');
-        canvas.height = vp.height;
-        canvas.width = vp.width;
-        canvas.style.height = (vp.height / dpr) + 'px';
-        canvas.style.width = (vp.width / dpr) + 'px';
-        await page.render({{canvasContext: canvas.getContext('2d'), viewport: vp}}).promise;
+        canvas.width = tmp.width;
+        canvas.height = tmp.height;
+        canvas.style.width = (tmp.width / dpr) + 'px';
+        canvas.style.height = (tmp.height / dpr) + 'px';
+        canvas.getContext('2d').drawImage(tmp, 0, 0);
+        if (fade) {{
+          canvas.style.opacity = '0';
+          void canvas.offsetWidth;
+          canvas.style.transition = 'opacity 0.2s';
+          canvas.style.opacity = '1';
+        }} else {{
+          canvas.style.transition = 'none';
+          canvas.style.opacity = '1';
+        }}
         currentPage = n;
         document.getElementById('page-info').textContent = `${{n}} / ${{totalPages}}`;
         document.getElementById('end-screen').classList.remove('show');
@@ -800,7 +815,7 @@ def read_chapter(manga_id: str, filename: str):
       let _zt = null;
       window.visualViewport.addEventListener('resize', () => {{
         clearTimeout(_zt);
-        _zt = setTimeout(() => {{ if (pdfDoc) renderPage(currentPage); }}, 350);
+        _zt = setTimeout(() => {{ if (pdfDoc) renderPage(currentPage, true); }}, 350);
       }});
     }}
 

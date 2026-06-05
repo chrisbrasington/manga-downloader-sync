@@ -759,11 +759,14 @@ def read_chapter(manga_id: str, filename: str):
         const page = await pdfDoc.getPage(n);
         const vp0 = page.getViewport({{scale: 1}});
         const viewer = document.getElementById('viewer');
-        const scale = viewer.clientHeight / vp0.height;
-        const vp = page.getViewport({{scale}});
+        const dpr = (window.devicePixelRatio || 1) * (window.visualViewport ? window.visualViewport.scale : 1);
+        const baseScale = viewer.clientHeight / vp0.height;
+        const vp = page.getViewport({{scale: baseScale * dpr}});
         const canvas = document.getElementById('page-canvas');
         canvas.height = vp.height;
         canvas.width = vp.width;
+        canvas.style.height = (vp.height / dpr) + 'px';
+        canvas.style.width = (vp.width / dpr) + 'px';
         await page.render({{canvasContext: canvas.getContext('2d'), viewport: vp}}).promise;
         currentPage = n;
         document.getElementById('page-info').textContent = `${{n}} / ${{totalPages}}`;
@@ -792,6 +795,14 @@ def read_chapter(manga_id: str, filename: str):
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext();
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goPrev();
     }});
+
+    if (window.visualViewport) {{
+      let _zt = null;
+      window.visualViewport.addEventListener('resize', () => {{
+        clearTimeout(_zt);
+        _zt = setTimeout(() => {{ if (pdfDoc) renderPage(currentPage); }}, 350);
+      }});
+    }}
 
     init();
   </script>

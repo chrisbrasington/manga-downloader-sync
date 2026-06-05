@@ -1,4 +1,4 @@
-import glob, json, os, re, sys, time
+import glob, json, os, re, sys, time, threading
 import requests as http_requests
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -18,6 +18,11 @@ WEBAPP_PORT = int(os.environ.get('WEBAPP_PORT', 8080))
 
 app = FastAPI()
 app.mount('/static', StaticFiles(directory='static'), name='static')
+
+
+@app.on_event('startup')
+async def startup():
+    threading.Thread(target=_run_scan, daemon=True).start()
 
 
 def get_db():
@@ -250,6 +255,8 @@ def _run_scan():
     global _scan_running
     _scan_running = True
     added = 0
+    errors = 0
+    needs_thumbnail = []
     try:
         db = Database(MANGA_DB)
         known = db.get_all_manga()
@@ -257,42 +264,56 @@ def _run_scan():
         known_ids = {m['id'] for m in known}
 
         if not os.path.isdir(MANGA_STORAGE):
+            print(f'Scan: MANGA_STORAGE not found: {MANGA_STORAGE}')
             return
 
-        for folder in sorted(os.listdir(MANGA_STORAGE)):
-            if not os.path.isdir(os.path.join(MANGA_STORAGE, folder)):
-                continue
-            if folder.lower() in known_titles:
-                continue
+        folders = sorted(
+            f for f in os.listdir(MANGA_STORAGE)
+            if os.path.isdir(os.path.join(MANGA_STORAGE, f))
+            and f.lower() not in known_titles
+        )
+        print(f'Scan: {len(folders)} untracked folders to process')
 
-            manga_id, url = _mangadex_search(folder)
-            time.sleep(0.35)  # stay under MangaDex rate limit
+        for folder in folders:
+            try:
+                manga_id, url = _mangadex_search(folder)
+                time.sleep(0.35)
 
-            if manga_id and manga_id in known_ids:
-                # Already tracked under this ID with a different title spelling; just update title
-                db.update_manga_metadata(manga_id, url, title=folder)
+                if manga_id and manga_id in known_ids:
+                    db.update_manga_metadata(manga_id, url, title=folder)
+                    known_titles.add(folder.lower())
+                    continue
+
+                if not manga_id:
+                    manga_id = Database._extract_id(folder)
+                    url = f'local:{folder}'
+
+                db.update_manga_metadata(
+                    manga_id, url,
+                    title=folder, status='archived', kobo_sync=0,
+                    source_type='mangadex' if not url.startswith('local:') else 'local',
+                )
                 known_titles.add(folder.lower())
-                continue
+                known_ids.add(manga_id)
+                added += 1
 
-            if not manga_id:
-                manga_id = Database._extract_id(folder)
-                url = f'local:{folder}'
+                if not url.startswith('local:'):
+                    needs_thumbnail.append(manga_id)
 
-            db.update_manga_metadata(
-                manga_id, url,
-                title=folder, status='archived', kobo_sync=0,
-                source_type='mangadex' if not url.startswith('local:') else 'local',
-            )
-            known_titles.add(folder.lower())
-            known_ids.add(manga_id)
-            added += 1
+            except Exception as e:
+                errors += 1
+                print(f'Scan: error on {folder!r}: {e}')
 
-            if not url.startswith('local:'):
-                fetch_and_save_thumbnail(manga_id)
-
-        print(f'Scan complete: {added} new manga added from tmp/')
+        print(f'Scan complete: {added} added, {errors} errors')
     finally:
         _scan_running = False
+
+    # Fetch thumbnails after scan is marked done so the flag doesn't stay True during slow network calls
+    for manga_id in needs_thumbnail:
+        try:
+            fetch_and_save_thumbnail(manga_id)
+        except Exception as e:
+            print(f'Scan: thumbnail error for {manga_id}: {e}')
 
 
 @app.post('/api/scan')

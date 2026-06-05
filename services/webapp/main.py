@@ -702,6 +702,7 @@ def read_chapter(manga_id: str, filename: str):
     let pdfDoc = null, currentPage = 1, totalPages = 0;
     let chapters = [], currentChIdx = -1, rendering = false;
     let saveTimer = null, overTimer = null;
+    let pageCache = {{}}, prefetching = new Set();
 
     function saveProgress(page) {{
       clearTimeout(saveTimer);
@@ -758,6 +759,30 @@ def read_chapter(manga_id: str, filename: str):
       }}
     }}
 
+    async function renderToCanvas(n) {{
+      const page = await pdfDoc.getPage(n);
+      const vp0 = page.getViewport({{scale: 1}});
+      const viewer = document.getElementById('viewer');
+      const screenDpr = window.devicePixelRatio || 1;
+      const zoomScale = window.visualViewport ? window.visualViewport.scale : 1;
+      const dpr = screenDpr * zoomScale;
+      const fitScale = Math.min(viewer.clientHeight / vp0.height, viewer.clientWidth / vp0.width);
+      const scale = fitScale * dpr;
+      const vp = page.getViewport({{scale}});
+      const tmp = document.createElement('canvas');
+      tmp.width = Math.round(vp.width);
+      tmp.height = Math.round(vp.height);
+      await page.render({{canvasContext: tmp.getContext('2d'), viewport: vp}}).promise;
+      return {{canvas: tmp, cssW: (tmp.width / dpr) + 'px', cssH: (tmp.height / dpr) + 'px'}};
+    }}
+
+    async function prefetchPage(n) {{
+      if (!pdfDoc || n < 1 || n > totalPages || pageCache[n] || prefetching.has(n)) return;
+      prefetching.add(n);
+      try {{ pageCache[n] = await renderToCanvas(n); }} catch(e) {{}}
+      prefetching.delete(n);
+    }}
+
     async function renderPage(n, fade) {{
       if (rendering || !pdfDoc) return;
       rendering = true;
@@ -765,30 +790,14 @@ def read_chapter(manga_id: str, filename: str):
       const over = document.getElementById('page-canvas-over');
       over.style.display = 'none';
       try {{
-        const page = await pdfDoc.getPage(n);
-        const vp0 = page.getViewport({{scale: 1}});
-        const viewer = document.getElementById('viewer');
-        const screenDpr = window.devicePixelRatio || 1;
-        const zoomScale = window.visualViewport ? window.visualViewport.scale : 1;
-        const dpr = screenDpr * zoomScale;
-        const fitScale = Math.min(viewer.clientHeight / vp0.height, viewer.clientWidth / vp0.width);
-        const scale = fitScale * dpr;
-        const vp = page.getViewport({{scale}});
-        const tmp = document.createElement('canvas');
-        tmp.width = Math.round(vp.width);
-        tmp.height = Math.round(vp.height);
-        /*document.getElementById('dbg').textContent =
-          `page ${{n}}  fade=${{!!fade}}\n` +
-          `screen dpr: ${{screenDpr.toFixed(2)}}\n` +
-          `zoom scale: ${{zoomScale.toFixed(3)}}\n` +
-          `render dpr: ${{dpr.toFixed(3)}}\n` +
-          `fit scale:  ${{fitScale.toFixed(4)}}\n` +
-          `canvas px:  ${{tmp.width}}×${{tmp.height}}\n` +
-          `css px:     ${{(tmp.width/dpr).toFixed(0)}}×${{(tmp.height/dpr).toFixed(0)}}`;*/
-        await page.render({{canvasContext: tmp.getContext('2d'), viewport: vp}}).promise;
+        let tmp, cssW, cssH;
+        if (pageCache[n]) {{
+          ({{canvas: tmp, cssW, cssH}} = pageCache[n]);
+          delete pageCache[n];
+        }} else {{
+          ({{canvas: tmp, cssW, cssH}} = await renderToCanvas(n));
+        }}
         const canvas = document.getElementById('page-canvas');
-        const cssW = (tmp.width / dpr) + 'px';
-        const cssH = (tmp.height / dpr) + 'px';
         if (fade) {{
           // Render into overlay; fade it in over the still-visible main canvas
           over.width = tmp.width;
@@ -827,6 +836,7 @@ def read_chapter(manga_id: str, filename: str):
         saveProgress(n);
       }} finally {{
         rendering = false;
+        prefetchPage(n + 1);
       }}
     }}
 
@@ -853,6 +863,7 @@ def read_chapter(manga_id: str, filename: str):
       let _zt = null;
       window.visualViewport.addEventListener('resize', () => {{
         clearTimeout(_zt);
+        pageCache = {{}};
         _zt = setTimeout(() => {{ if (pdfDoc) renderPage(currentPage, true); }}, 350);
       }});
     }}

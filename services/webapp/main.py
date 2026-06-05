@@ -580,12 +580,18 @@ def api_dedupe():
                     'source_type': keep.get('source_type'), 'status': keep['status'],
                     'chapter_count': ck, 'folder_path': keep_folder,
                     'folder_exists': bool(keep_title and os.path.isdir(keep_folder)),
+                    'kobo_sync': keep.get('kobo_sync', 1),
+                    'download_enabled': keep.get('download_enabled', 0),
+                    'last_chapter_on_disk': keep.get('last_chapter_on_disk'),
                 },
                 'drop': {
                     'id': drop['id'], 'title': drop_title, 'url': drop['url'],
                     'source_type': drop.get('source_type'), 'status': drop['status'],
                     'chapter_count': cd, 'folder_path': drop_folder,
                     'folder_exists': bool(drop_title and os.path.isdir(drop_folder)),
+                    'kobo_sync': drop.get('kobo_sync', 1),
+                    'download_enabled': drop.get('download_enabled', 0),
+                    'last_chapter_on_disk': drop.get('last_chapter_on_disk'),
                 },
             })
     return sorted(duplicates, key=lambda x: -x['similarity'])
@@ -617,6 +623,54 @@ def api_dedupe_resolve(body: DedupeResolveRequest):
             deleted_folder = True
     db.remove_manga(body.delete_id)
     return {'ok': True, 'deleted_folder': deleted_folder}
+
+
+class DedupeMergeRequest(BaseModel):
+    keep_id: str
+    drop_id: str
+    title: str
+    kobo_sync: int
+    download_enabled: int
+
+
+@app.post('/api/dedupe/merge')
+def api_dedupe_merge(body: DedupeMergeRequest):
+    db = get_db()
+    keep = db.get_manga_by_id(body.keep_id)
+    drop = db.get_manga_by_id(body.drop_id)
+    if not keep:
+        raise HTTPException(status_code=404, detail='Keep entry not found')
+    if not drop:
+        raise HTTPException(status_code=404, detail='Drop entry not found')
+    if not body.title or '/' in body.title or body.title.startswith('.'):
+        raise HTTPException(status_code=400, detail='Invalid title')
+
+    # Rename folder on disk if title changed
+    old_title = keep.get('title') or ''
+    renamed = False
+    if old_title and body.title != old_title:
+        old_folder = os.path.join(MANGA_STORAGE, old_title)
+        new_folder = os.path.join(MANGA_STORAGE, body.title)
+        real_storage = os.path.realpath(MANGA_STORAGE)
+        if os.path.dirname(os.path.realpath(new_folder)) != real_storage:
+            raise HTTPException(status_code=400, detail='Title would escape storage root')
+        if os.path.isdir(old_folder):
+            if os.path.exists(new_folder):
+                raise HTTPException(status_code=409, detail='A folder with that title already exists')
+            os.rename(old_folder, new_folder)
+            renamed = True
+
+    # Pick highest last_chapter_on_disk
+    k_ch = keep.get('last_chapter_on_disk') or 0
+    d_ch = drop.get('last_chapter_on_disk') or 0
+    best_chapter = max(k_ch, d_ch)
+
+    update_kwargs = dict(title=body.title, kobo_sync=body.kobo_sync, download_enabled=body.download_enabled)
+    if best_chapter:
+        update_kwargs['last_chapter_on_disk'] = best_chapter
+    db.update_manga_metadata(body.keep_id, keep['url'], **update_kwargs)
+    db.remove_manga(body.drop_id)
+    return {'ok': True, 'renamed': renamed}
 
 
 # --- downloader container control ---

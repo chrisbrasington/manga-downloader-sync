@@ -215,6 +215,52 @@
   <div id="dedupe-container"></div>
 </div>
 
+<div class="modal-overlay" id="merge-overlay">
+  <div class="modal">
+    <h3 style="color:var(--accent)">Merge Duplicate Entries</h3>
+    <div class="modal-row">
+      <div class="label keep-label">Keeping</div>
+      <div class="val" id="merge-keep-info"></div>
+    </div>
+    <div class="modal-row">
+      <div class="label" style="color:var(--muted)">Removing</div>
+      <div class="val" id="merge-drop-info"></div>
+    </div>
+    <div class="modal-row">
+      <div class="label">Title to use</div>
+      <div style="display:flex;flex-direction:column;gap:7px;margin-top:5px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="radio" name="merge-title-choice" id="merge-title-keep-radio" value="keep" checked>
+          <span id="merge-title-keep-label"></span>
+        </label>
+        <label id="merge-title-drop-row" style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="radio" name="merge-title-choice" value="drop">
+          <span id="merge-title-drop-label"></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="radio" name="merge-title-choice" value="custom">
+          Custom:&nbsp;<input type="text" id="merge-title-custom-input" placeholder="Type a title…"
+            style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:4px 8px;color:var(--ink);font-size:13px"
+            onfocus="this.previousElementSibling.previousElementSibling.checked=true">
+        </label>
+      </div>
+    </div>
+    <div class="modal-row" style="display:flex;gap:24px;margin-top:4px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="merge-kobo"> Kobo sync
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="merge-download"> Download enabled
+      </label>
+    </div>
+    <div class="modal-cmd" id="merge-chapter-note" style="color:var(--muted)"></div>
+    <div class="modal-actions">
+      <button class="btn btn-muted" id="merge-cancel">Cancel</button>
+      <button class="btn btn-primary" id="merge-confirm">Merge</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal">
     <h3>⚠️ Confirm Deletion</h3>
@@ -459,13 +505,16 @@
             <div>${esc(d.drop.title)}</div>
             <div class="ch-count">${d.drop.chapter_count} ch · <span class="src-tag">${esc(d.drop.source_type)}</span></div>
           </td>
-          <td><button class="btn-sm btn-danger review-btn" data-idx="${idx}">${d.same_folder ? 'Review & Merge' : 'Review & Delete'}</button></td>
+          <td><button class="btn-sm ${d.same_folder ? 'btn-thumb merge-btn' : 'btn-danger review-btn'}" data-idx="${idx}">${d.same_folder ? 'Merge' : 'Review & Delete'}</button></td>
         </tr>`).join('')}
       </tbody>
     </table></div>`;
 
     container.querySelectorAll('.review-btn').forEach(btn => {
       btn.addEventListener('click', () => showConfirm(dupes[+btn.dataset.idx]));
+    });
+    container.querySelectorAll('.merge-btn').forEach(btn => {
+      btn.addEventListener('click', () => showMerge(dupes[+btn.dataset.idx]));
     });
   }
 
@@ -482,21 +531,12 @@
     document.getElementById('modal-drop-path').textContent =
       drop.folder_exists ? drop.folder_path : drop.folder_path + '  (folder not found on disk)';
 
-    let rmCmd, deleteFolder;
-    if (d.same_folder) {
-      rmCmd = `# Both entries share the same folder — folder will NOT be deleted\n# Remove duplicate DB entry: ${drop.id}`;
-      deleteFolder = null;
-    } else if (drop.folder_exists) {
-      rmCmd = `rm -rf "${drop.folder_path}"\n# + remove DB entry: ${drop.id}`;
-      deleteFolder = drop.folder_path;
-    } else {
-      rmCmd = `# No folder on disk — DB entry only\n# remove DB entry: ${drop.id}`;
-      deleteFolder = null;
-    }
+    const rmCmd = drop.folder_exists
+      ? `rm -rf "${drop.folder_path}"\n# + remove DB entry: ${drop.id}`
+      : `# No folder on disk — DB entry only\n# remove DB entry: ${drop.id}`;
     document.getElementById('modal-cmd').textContent = rmCmd;
-    document.getElementById('modal-confirm').textContent = d.same_folder ? 'Yes, Merge' : 'Yes, Delete';
 
-    pendingResolve = { delete_id: drop.id, delete_folder: deleteFolder };
+    pendingResolve = { delete_id: drop.id, delete_folder: drop.folder_exists ? drop.folder_path : null };
     document.getElementById('modal-overlay').classList.add('open');
   }
 
@@ -569,6 +609,90 @@
   document.getElementById('log-close-btn').addEventListener('click', () => {
     document.getElementById('log-panel').classList.remove('open');
     document.getElementById('logs-refresh-btn').style.display = 'none';
+  });
+
+  // --- merge modal ---
+
+  let pendingMerge = null;
+
+  function showMerge(d) {
+    const keep = d.keep;
+    const drop = d.drop;
+    document.getElementById('merge-keep-info').textContent =
+      `"${keep.title}" · ${keep.status} · ${keep.chapter_count} ch · ${keep.source_type}`;
+    document.getElementById('merge-drop-info').textContent =
+      `"${drop.title}" · ${drop.status} · ${drop.chapter_count} ch · ${drop.source_type}`;
+
+    const sameTitle = keep.title === drop.title;
+    document.getElementById('merge-title-keep-label').textContent = keep.title;
+    document.getElementById('merge-title-drop-label').textContent = drop.title;
+    document.getElementById('merge-title-drop-row').style.display = sameTitle ? 'none' : 'flex';
+    document.getElementById('merge-title-keep-radio').checked = true;
+    document.getElementById('merge-title-custom-input').value = keep.title;
+
+    document.getElementById('merge-kobo').checked = !!(keep.kobo_sync || drop.kobo_sync);
+    document.getElementById('merge-download').checked = !!(keep.download_enabled || drop.download_enabled);
+
+    const maxCh = Math.max(keep.last_chapter_on_disk || 0, drop.last_chapter_on_disk || 0);
+    document.getElementById('merge-chapter-note').textContent =
+      maxCh > 0 ? `Last chapter on disk: will keep highest (ch ${maxCh})` : 'No chapter data recorded';
+
+    pendingMerge = { keep_id: keep.id, drop_id: drop.id };
+    document.getElementById('merge-overlay').classList.add('open');
+  }
+
+  document.getElementById('merge-cancel').addEventListener('click', () => {
+    document.getElementById('merge-overlay').classList.remove('open');
+    pendingMerge = null;
+  });
+
+  document.getElementById('merge-overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('merge-overlay')) {
+      document.getElementById('merge-overlay').classList.remove('open');
+      pendingMerge = null;
+    }
+  });
+
+  document.getElementById('merge-confirm').addEventListener('click', async () => {
+    if (!pendingMerge) return;
+    const choice = document.querySelector('input[name="merge-title-choice"]:checked')?.value;
+    let title;
+    if (choice === 'custom') {
+      title = document.getElementById('merge-title-custom-input').value.trim();
+    } else if (choice === 'drop') {
+      title = document.getElementById('merge-title-drop-label').textContent;
+    } else {
+      title = document.getElementById('merge-title-keep-label').textContent;
+    }
+    if (!title) { toast('Title cannot be empty', 'err'); return; }
+
+    const kobo_sync = document.getElementById('merge-kobo').checked ? 1 : 0;
+    const download_enabled = document.getElementById('merge-download').checked ? 1 : 0;
+
+    const btn = document.getElementById('merge-confirm');
+    btn.disabled = true;
+    btn.textContent = 'Merging…';
+    try {
+      const resp = await fetch('/api/dedupe/merge', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ...pendingMerge, title, kobo_sync, download_enabled })
+      });
+      if (resp.ok) {
+        const r = await resp.json();
+        document.getElementById('merge-overlay').classList.remove('open');
+        pendingMerge = null;
+        load();
+        toast(r.renamed ? 'Merged & renamed folder' : 'Merged — duplicate DB entry removed', 'ok');
+        document.getElementById('dedupe-btn').click();
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        toast('Error: ' + (err.detail || resp.status), 'err');
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Merge';
+    }
   });
 
   document.getElementById('modal-confirm').addEventListener('click', async () => {

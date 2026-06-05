@@ -86,6 +86,8 @@ def manga_to_payload(row):
         'favorited': bool(row.get('favorited', 0)),
         'hidden': bool(row.get('hidden', 0)),
         'read': bool(row.get('read', 0)),
+        'last_read_chapter': row.get('last_read_chapter'),
+        'last_read_page': row.get('last_read_page'),
         'folder_path': folder,
         'folder_exists': bool(folder and os.path.isdir(folder)),
     }
@@ -196,6 +198,8 @@ class UpdateMangaRequest(BaseModel):
     url: str | None = None
     hidden: int | None = None
     read: int | None = None
+    last_read_chapter: str | None = None
+    last_read_page: int | None = None
 
 
 @app.post('/api/manga', status_code=201)
@@ -227,6 +231,10 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.update_manga_metadata(manga_id, manga['url'], hidden=body.hidden)
     if body.read is not None:
         db.update_manga_metadata(manga_id, manga['url'], read=body.read)
+    if body.last_read_chapter is not None:
+        db.update_manga_metadata(manga_id, manga['url'], last_read_chapter=body.last_read_chapter)
+    if body.last_read_page is not None:
+        db.update_manga_metadata(manga_id, manga['url'], last_read_page=body.last_read_page)
     if body.url is not None:
         existing = db.get_manga_by_url(body.url)
         if existing and existing['id'] != manga_id:
@@ -621,27 +629,172 @@ def serve_pdf(manga_id: str, filename: str, dl: int = 0):
 def read_chapter(manga_id: str, filename: str):
     safe_name = os.path.basename(filename)
     pdf_url = f'/pdf/{manga_id}/{safe_name}'
+    display_name = safe_name[:-4] if safe_name.endswith('.pdf') else safe_name
+    manga_id_js = json.dumps(manga_id)
+    filename_js = json.dumps(safe_name)
+    pdf_url_js = json.dumps(pdf_url)
+    display_name_js = json.dumps(display_name)
     return f'''<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>{safe_name}</title>
+  <title>{display_name}</title>
   <style>
     * {{ margin:0; padding:0; box-sizing:border-box; }}
-    body {{ background:#111; height:100vh; display:flex; flex-direction:column; }}
-    .bar {{ background:#1a1a2e; padding:8px 16px; display:flex; align-items:center; gap:12px; }}
-    .bar a {{ color:#e2b96f; text-decoration:none; font-size:14px; }}
-    .bar span {{ color:#888; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
-    iframe {{ flex:1; border:none; width:100%; }}
+    body {{ background:#111; height:100vh; display:flex; flex-direction:column; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }}
+    .bar {{ background:#1a1a2e; padding:8px 14px; display:flex; align-items:center; gap:10px; flex-shrink:0; min-width:0; }}
+    .bar a {{ color:#e2b96f; text-decoration:none; font-size:13px; white-space:nowrap; }}
+    .bar a:hover {{ color:#fff; }}
+    .bar a.disabled {{ color:#444; pointer-events:none; }}
+    .bar .ch-title {{ color:#888; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; text-align:center; min-width:0; }}
+    #viewer {{ flex:1; overflow:hidden; display:flex; align-items:center; justify-content:center; position:relative; background:#111; }}
+    #page-canvas {{ max-height:100%; max-width:100%; display:block; object-fit:contain; }}
+    .hit-zone {{ position:absolute; top:0; bottom:0; width:35%; cursor:pointer; z-index:10; }}
+    #hz-prev {{ left:0; }}
+    #hz-next {{ right:0; }}
+    .page-info {{ position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.55); color:#999; font-size:11px; padding:3px 9px; border-radius:8px; pointer-events:none; transition:opacity .3s; }}
+    #end-screen {{ position:absolute; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; flex-direction:column; gap:18px; z-index:20; }}
+    #end-screen.show {{ display:flex; }}
+    #end-screen .msg {{ color:#ccc; font-size:15px; }}
+    #next-ch-btn {{ background:#e2b96f; color:#111; border:none; padding:12px 32px; border-radius:6px; font-size:16px; font-weight:600; cursor:pointer; text-decoration:none; display:none; }}
+    #next-ch-btn:hover {{ background:#f0cc88; }}
+    #back-btn-end {{ color:#888; font-size:13px; text-decoration:none; }}
+    #back-btn-end:hover {{ color:#ccc; }}
+    #loading {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:14px; }}
   </style>
 </head>
 <body>
   <div class="bar">
     <a href="javascript:history.back()">← Back</a>
-    <span>{safe_name}</span>
-    <a href="{pdf_url}?dl=1" style="margin-left:auto">↓ Download</a>
+    <a id="prev-ch" class="disabled" href="#">‹ Prev</a>
+    <span class="ch-title" id="ch-title"></span>
+    <a id="next-ch" class="disabled" href="#">Next ›</a>
+    <a href="{pdf_url}?dl=1">↓</a>
   </div>
-  <iframe src="{pdf_url}"></iframe>
+  <div id="viewer">
+    <div id="loading">Loading…</div>
+    <canvas id="page-canvas" style="display:none"></canvas>
+    <div class="hit-zone" id="hz-prev"></div>
+    <div class="hit-zone" id="hz-next"></div>
+    <div class="page-info" id="page-info"></div>
+    <div id="end-screen">
+      <div class="msg" id="end-msg">End of chapter</div>
+      <a id="next-ch-btn" href="#">Continue to next chapter →</a>
+      <a id="back-btn-end" href="javascript:history.back()">← Back to library</a>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    const MANGA_ID = {manga_id_js};
+    const FILENAME = {filename_js};
+    const PDF_URL = {pdf_url_js};
+    const DISPLAY_NAME = {display_name_js};
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    let pdfDoc = null, currentPage = 1, totalPages = 0;
+    let chapters = [], currentChIdx = -1, rendering = false;
+    let saveTimer = null;
+
+    function saveProgress(page) {{
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {{
+        fetch(`/api/manga/${{encodeURIComponent(MANGA_ID)}}`, {{
+          method: 'PATCH',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{last_read_chapter: FILENAME, last_read_page: page}})
+        }}).catch(() => {{}});
+      }}, 800);
+    }}
+
+    function extractNum(f) {{
+      const m = f.match(/[\\s\\-]+(\\d+(?:\\.\\d+)?)/);
+      return m ? parseFloat(m[1]) : 0;
+    }}
+
+    function updateNav() {{
+      const prevEl = document.getElementById('prev-ch');
+      const nextEl = document.getElementById('next-ch');
+      const nextBtn = document.getElementById('next-ch-btn');
+      if (currentChIdx > 0) {{
+        const u = `/read/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(chapters[currentChIdx - 1])}}`;
+        prevEl.href = u;
+        prevEl.classList.remove('disabled');
+      }}
+      if (currentChIdx >= 0 && currentChIdx < chapters.length - 1) {{
+        const u = `/read/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(chapters[currentChIdx + 1])}}`;
+        nextEl.href = u;
+        nextEl.classList.remove('disabled');
+        nextBtn.href = u;
+        nextBtn.style.display = 'inline-block';
+      }}
+    }}
+
+    async function init() {{
+      document.getElementById('ch-title').textContent = DISPLAY_NAME;
+      try {{
+        const data = await fetch(`/api/manga/${{encodeURIComponent(MANGA_ID)}}`).then(r => r.json());
+        chapters = (data.chapters || []).slice().sort((a, b) => extractNum(a) - extractNum(b));
+        currentChIdx = chapters.indexOf(FILENAME);
+        updateNav();
+      }} catch(e) {{}}
+
+      try {{
+        pdfDoc = await pdfjsLib.getDocument(PDF_URL).promise;
+        totalPages = pdfDoc.numPages;
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('page-canvas').style.display = 'block';
+        const startPage = Math.min(Math.max(parseInt(new URLSearchParams(window.location.search).get('page')) || 1, 1), totalPages);
+        await renderPage(startPage);
+      }} catch(e) {{
+        document.getElementById('loading').textContent = 'Failed to load PDF.';
+      }}
+    }}
+
+    async function renderPage(n) {{
+      if (rendering || !pdfDoc) return;
+      rendering = true;
+      try {{
+        const page = await pdfDoc.getPage(n);
+        const vp0 = page.getViewport({{scale: 1}});
+        const viewer = document.getElementById('viewer');
+        const scale = viewer.clientHeight / vp0.height;
+        const vp = page.getViewport({{scale}});
+        const canvas = document.getElementById('page-canvas');
+        canvas.height = vp.height;
+        canvas.width = vp.width;
+        await page.render({{canvasContext: canvas.getContext('2d'), viewport: vp}}).promise;
+        currentPage = n;
+        document.getElementById('page-info').textContent = `${{n}} / ${{totalPages}}`;
+        document.getElementById('end-screen').classList.remove('show');
+        saveProgress(n);
+      }} finally {{
+        rendering = false;
+      }}
+    }}
+
+    function goNext() {{
+      if (currentPage < totalPages) {{ renderPage(currentPage + 1); }}
+      else {{ document.getElementById('end-screen').classList.add('show'); }}
+    }}
+    function goPrev() {{
+      if (document.getElementById('end-screen').classList.contains('show')) {{
+        document.getElementById('end-screen').classList.remove('show');
+      }} else if (currentPage > 1) {{
+        renderPage(currentPage - 1);
+      }}
+    }}
+
+    document.getElementById('hz-next').addEventListener('click', goNext);
+    document.getElementById('hz-prev').addEventListener('click', goPrev);
+    document.addEventListener('keydown', e => {{
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext();
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goPrev();
+    }});
+
+    init();
+  </script>
 </body>
 </html>'''
 

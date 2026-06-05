@@ -53,6 +53,8 @@ class Database:
             "ALTER TABLE manga ADD COLUMN favorited INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE manga ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE manga ADD COLUMN read INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE manga ADD COLUMN last_read_chapter TEXT",
+            "ALTER TABLE manga ADD COLUMN last_read_page INTEGER",
         ]:
             try:
                 conn.execute(stmt)
@@ -125,7 +127,7 @@ class Database:
         allowed = {
             'title', 'cover_url', 'description', 'author', 'demographic', 'tags',
             'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type',
-            'favorited', 'hidden', 'read'
+            'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page'
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
 

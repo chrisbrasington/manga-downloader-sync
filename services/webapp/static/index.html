@@ -113,6 +113,11 @@
     .btn-url { border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:500; white-space:nowrap; }
     .btn-url-save { background:var(--accent); color:#111; }
     .btn-url-ddg { background:var(--border); color:var(--ink); }
+
+    /* continue button on card */
+    .card-continue { margin-top:6px; }
+    .continue-btn { display:block; background:#1a2a1a; color:var(--green); font-size:11px; padding:3px 8px; border-radius:4px; text-decoration:none; text-align:center; transition:background .15s; }
+    .continue-btn:hover { background:#253525; }
   </style>
 </head>
 <body>
@@ -130,6 +135,7 @@
   <button class="filter-btn" data-filter="completed">Completed</button>
   <button class="filter-btn" data-filter="hiatus">Hiatus</button>
   <button class="filter-btn" data-filter="archived">Archived</button>
+  <button class="filter-btn" data-filter="reading">📖 Reading</button>
   <button class="filter-btn" data-filter="read">✓ Read</button>
   <button class="filter-btn" data-filter="hidden">👁 Hidden</button>
 </div>
@@ -188,6 +194,7 @@
     const visible = m => !m.hidden && !m.read;
     const manga = currentFilter === 'hidden' ? allManga.filter(m => m.hidden)
       : currentFilter === 'read' ? allManga.filter(m => m.read)
+      : currentFilter === 'reading' ? allManga.filter(m => m.last_read_chapter && !m.read && !m.hidden)
       : currentFilter === 'all' ? allManga.filter(visible)
       : currentFilter === 'favorites' ? allManga.filter(m => m.favorited && visible(m))
       : allManga.filter(m => m.status === currentFilter && visible(m));
@@ -209,6 +216,15 @@
       const ch = m.last_chapter_on_disk != null ? `<span class="ch-num">Ch.${m.last_chapter_on_disk}</span>` : '';
       const starClass = m.favorited ? 'star-btn on' : 'star-btn';
       const cardClass = m.status === 'archived' ? 'card archived' : 'card';
+      let continueBtn = '';
+      if (m.last_read_chapter) {
+        const pageStr = m.last_read_page && m.last_read_page > 1 ? `?page=${m.last_read_page}` : '';
+        const contUrl = `/read/${encodeURIComponent(m.id)}/${encodeURIComponent(m.last_read_chapter)}${pageStr}`;
+        const numMatch = m.last_read_chapter.match(/[\s\-]+(\d+(?:\.\d+)?)/);
+        const chLabel = numMatch ? `Ch.${numMatch[1]}` : 'chapter';
+        const pgLabel = m.last_read_page && m.last_read_page > 1 ? ` · p.${m.last_read_page}` : '';
+        continueBtn = `<div class="card-continue"><a class="continue-btn" href="${contUrl}" target="_blank" onclick="event.stopPropagation()">▶ Continue ${chLabel}${pgLabel}</a></div>`;
+      }
       return `<div class="${cardClass}" data-id="${esc(m.id)}" data-title="${esc(m.title)}">
         <div class="thumb-wrap">
           ${thumb}
@@ -217,6 +233,7 @@
         <div class="card-body">
           <div class="card-title">${esc(m.title)}</div>
           <div class="card-meta">${badge}${ch}</div>
+          ${continueBtn}
         </div>
       </div>`;
     }).join('');
@@ -477,15 +494,29 @@
         document.getElementById('chapter-list').innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px">No chapters downloaded yet.</div>';
         return;
       }
-      document.getElementById('chapter-list').innerHTML = chapters.slice().reverse().map(f => {
+      const chapterListEl = document.getElementById('chapter-list');
+      chapterListEl.innerHTML = chapters.slice().reverse().map(f => {
         const readUrl = `/read/${encodeURIComponent(id)}/${encodeURIComponent(f)}`;
         const dlUrl = `/pdf/${encodeURIComponent(id)}/${encodeURIComponent(f)}?dl=1`;
-        return `<div class="chapter-row">
+        return `<div class="chapter-row" data-file="${esc(f)}">
           <span>${esc(f.replace(/\.pdf$/, ''))}</span>
-          <a class="btn-read" href="${readUrl}" target="_blank">Read</a>
+          <a class="btn-read" href="${readUrl}" target="_blank" data-file="${esc(f)}">Read</a>
           <a class="btn-dl" href="${dlUrl}">↓</a>
         </div>`;
       }).join('');
+      chapterListEl.querySelectorAll('a.btn-read').forEach(a => {
+        a.addEventListener('click', () => {
+          const file = a.dataset.file;
+          apiFetch(`/api/manga/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({last_read_chapter: file})
+          }).then(() => {
+            const m = allManga.find(x => x.id === id);
+            if (m) m.last_read_chapter = file;
+          }).catch(() => {});
+        });
+      });
     } catch(e) {
       document.getElementById('chapter-list').innerHTML = '<div style="padding:20px;color:var(--red);font-size:13px">Failed to load chapters.</div>';
     }

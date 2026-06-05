@@ -188,7 +188,9 @@
 
 <script>
   let allManga = [];
-  let currentFilter = 'all';
+  const _validFilters = new Set(['all','favorites','reading','active','completed','hiatus','archived','read','hidden']);
+  const _urlFilter = new URLSearchParams(location.search).get('filter');
+  let currentFilter = _validFilters.has(_urlFilter) ? _urlFilter : 'all';
 
   let _pending = 0;
   async function apiFetch(url, opts = {}) {
@@ -553,10 +555,16 @@
   }
 
   document.querySelectorAll('.filter-btn').forEach(btn => {
+    if (btn.dataset.filter === currentFilter) {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
     btn.addEventListener('click', () => {
       document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       currentFilter = btn.dataset.filter;
+      const params = currentFilter === 'all' ? '' : '?filter=' + currentFilter;
+      history.replaceState(null, '', location.pathname + params);
       render();
     });
   });

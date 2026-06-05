@@ -1,4 +1,4 @@
-import glob, json, os, re, sys
+import glob, json, os, re, sys, time
 import requests as http_requests
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -222,6 +222,91 @@ def api_fetch_all_thumbnails(background_tasks: BackgroundTasks):
     for m in rows:
         background_tasks.add_task(fetch_and_save_thumbnail, m['id'])
     return {'ok': True, 'queued': len(rows)}
+
+
+# --- scan untracked folders ---
+
+_scan_running = False
+
+
+def _mangadex_search(title):
+    """Search MangaDex for a title. Returns (id, url) or (None, None)."""
+    try:
+        resp = http_requests.get(
+            'https://api.mangadex.org/manga',
+            params={'title': title, 'limit': 1, 'order[relevance]': 'desc'},
+            timeout=10
+        )
+        data = resp.json().get('data', [])
+        if not data:
+            return None, None
+        mid = data[0]['id']
+        return mid, f'https://mangadex.org/title/{mid}'
+    except Exception:
+        return None, None
+
+
+def _run_scan():
+    global _scan_running
+    _scan_running = True
+    added = 0
+    try:
+        db = Database(MANGA_DB)
+        known = db.get_all_manga()
+        known_titles = {(m.get('title') or '').lower() for m in known}
+        known_ids = {m['id'] for m in known}
+
+        if not os.path.isdir(MANGA_STORAGE):
+            return
+
+        for folder in sorted(os.listdir(MANGA_STORAGE)):
+            if not os.path.isdir(os.path.join(MANGA_STORAGE, folder)):
+                continue
+            if folder.lower() in known_titles:
+                continue
+
+            manga_id, url = _mangadex_search(folder)
+            time.sleep(0.35)  # stay under MangaDex rate limit
+
+            if manga_id and manga_id in known_ids:
+                # Already tracked under this ID with a different title spelling; just update title
+                db.update_manga_metadata(manga_id, url, title=folder)
+                known_titles.add(folder.lower())
+                continue
+
+            if not manga_id:
+                manga_id = Database._extract_id(folder)
+                url = f'local:{folder}'
+
+            db.update_manga_metadata(
+                manga_id, url,
+                title=folder, status='archived', kobo_sync=0,
+                source_type='mangadex' if not url.startswith('local:') else 'local',
+            )
+            known_titles.add(folder.lower())
+            known_ids.add(manga_id)
+            added += 1
+
+            if not url.startswith('local:'):
+                fetch_and_save_thumbnail(manga_id)
+
+        print(f'Scan complete: {added} new manga added from tmp/')
+    finally:
+        _scan_running = False
+
+
+@app.post('/api/scan')
+def api_scan(background_tasks: BackgroundTasks):
+    global _scan_running
+    if _scan_running:
+        return {'ok': False, 'message': 'Scan already in progress'}
+    background_tasks.add_task(_run_scan)
+    return {'ok': True, 'started': True}
+
+
+@app.get('/api/scan/status')
+def api_scan_status():
+    return {'running': _scan_running}
 
 
 # --- file routes ---

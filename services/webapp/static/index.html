@@ -42,6 +42,9 @@
     .badge-active { background:#1a3a2a; color:var(--green); }
     .badge-completed { background:#2a2a2a; color:var(--muted); }
     .badge-hiatus { background:#3a2a1a; color:var(--yellow); }
+    .badge-archived { background:#1a1a1a; color:#444; }
+    .card.archived { opacity:.55; }
+    .card.archived:hover { opacity:.8; }
     .ch-num { font-size:11px; color:var(--muted); margin-left:auto; }
     .star-btn { background:none; border:none; cursor:pointer; font-size:16px; line-height:1; padding:0; opacity:.5; position:absolute; top:6px; right:6px; transition:opacity .15s,transform .15s; }
     .star-btn:hover, .star-btn.on { opacity:1; }
@@ -79,9 +82,10 @@
 <div class="filters">
   <button class="filter-btn active" data-filter="all">All</button>
   <button class="filter-btn" data-filter="favorites">⭐ Favorites</button>
-  <button class="filter-btn" data-filter="active">Active</button>
+  <button class="filter-btn" data-filter="active">Downloading</button>
   <button class="filter-btn" data-filter="completed">Completed</button>
   <button class="filter-btn" data-filter="hiatus">Hiatus</button>
+  <button class="filter-btn" data-filter="archived">Archived</button>
 </div>
 <div class="stats" id="stats"></div>
 
@@ -115,7 +119,8 @@
       : currentFilter === 'favorites' ? allManga.filter(m => m.favorited)
       : allManga.filter(m => m.status === currentFilter);
     const active = allManga.filter(m => m.status === 'active').length;
-    document.getElementById('stats').textContent = `${allManga.length} series · ${active} active`;
+    const archived = allManga.filter(m => m.status === 'archived').length;
+    document.getElementById('stats').textContent = `${allManga.length} series · ${active} active · ${archived} archived`;
 
     if (!manga.length) {
       document.getElementById('grid').innerHTML = '<div class="empty">No manga found.</div>';
@@ -126,10 +131,12 @@
       const thumb = m.has_thumbnail
         ? `<div class="thumb" style="background-image:url('/thumbnail/${esc(m.id)}')"></div>`
         : `<div class="thumb">📖</div>`;
-      const badge = `<span class="badge badge-${esc(m.status)}">${esc(m.status)}</span>`;
+      const badgeLabel = m.status === 'active' ? 'downloading' : m.status;
+      const badge = `<span class="badge badge-${esc(m.status)}">${esc(badgeLabel)}</span>`;
       const ch = m.last_chapter_on_disk != null ? `<span class="ch-num">Ch.${m.last_chapter_on_disk}</span>` : '';
       const starClass = m.favorited ? 'star-btn on' : 'star-btn';
-      return `<div class="card" data-id="${esc(m.id)}" data-title="${esc(m.title)}">
+      const cardClass = m.status === 'archived' ? 'card archived' : 'card';
+      return `<div class="${cardClass}" data-id="${esc(m.id)}" data-title="${esc(m.title)}">
         <div class="thumb-wrap">
           ${thumb}
           <button class="${starClass}" data-id="${esc(m.id)}" data-fav="${m.favorited ? 1 : 0}" title="Favorite">⭐</button>

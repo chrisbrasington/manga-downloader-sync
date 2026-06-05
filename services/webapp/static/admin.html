@@ -104,7 +104,10 @@
 </div>
 
 <div class="section">
-  <h2 style="display:flex;align-items:center;gap:12px">All Manga <button class="btn btn-muted" id="fetch-all-btn" style="font-size:12px;padding:5px 12px">🖼 Fetch All Thumbnails</button></h2>
+  <h2 style="display:flex;align-items:center;gap:12px">All Manga
+    <button class="btn btn-muted" id="scan-btn" style="font-size:12px;padding:5px 12px">🔍 Scan tmp/ for Untracked</button>
+    <button class="btn btn-muted" id="fetch-all-btn" style="font-size:12px;padding:5px 12px">🖼 Fetch All Thumbnails</button>
+  </h2>
   <div class="manga-table">
     <table>
       <thead>
@@ -245,6 +248,32 @@
     if (s == null) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+
+  document.getElementById('scan-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('scan-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Scanning…';
+    const resp = await fetch('/api/scan', { method: 'POST' });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (!data.ok) { toast(data.message, 'err'); btn.disabled = false; btn.textContent = '🔍 Scan tmp/ for Untracked'; return; }
+      toast('Scan started — library will update as manga are found', 'ok');
+      // Poll until done, then reload
+      const poll = setInterval(async () => {
+        const s = await fetch('/api/scan/status').then(r => r.json());
+        if (!s.running) {
+          clearInterval(poll);
+          btn.disabled = false;
+          btn.textContent = '🔍 Scan tmp/ for Untracked';
+          load();
+        }
+      }, 2000);
+    } else {
+      toast('Failed to start scan', 'err');
+      btn.disabled = false;
+      btn.textContent = '🔍 Scan tmp/ for Untracked';
+    }
+  });
 
   document.getElementById('fetch-all-btn').addEventListener('click', async () => {
     const resp = await fetch('/api/thumbnails/fetch-all', { method: 'POST' });

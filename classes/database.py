@@ -60,6 +60,12 @@ class Database:
                 conn.execute(stmt)
             except sqlite3.OperationalError:
                 pass  # column already exists
+        try:
+            conn.execute("ALTER TABLE manga ADD COLUMN download_enabled INTEGER NOT NULL DEFAULT 0")
+            # First-time migration: active manga were being downloaded, preserve that
+            conn.execute("UPDATE manga SET download_enabled = 1 WHERE status = 'active'")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         conn.commit()
         conn.close()
 
@@ -73,7 +79,7 @@ class Database:
     def get_active_manga(self):
         conn = self._connect()
         c = conn.cursor()
-        c.execute("SELECT * FROM manga WHERE status = 'active' ORDER BY added_at")
+        c.execute("SELECT * FROM manga WHERE download_enabled = 1 ORDER BY added_at")
         rows = [self._row_to_dict(c, r) for r in c.fetchall()]
         conn.close()
         return rows
@@ -110,13 +116,13 @@ class Database:
         conn.close()
         return row
 
-    def add_manga(self, url, status='active', kobo_sync=1):
+    def add_manga(self, url, status='active', kobo_sync=1, download_enabled=1):
         manga_id = self._extract_id(url)
         source_type = 'danke' if 'danke.moe' in url else 'mangadex'
         conn = self._connect()
         conn.execute(
-            "INSERT OR IGNORE INTO manga (id, url, status, kobo_sync, source_type) VALUES (?, ?, ?, ?, ?)",
-            (manga_id, url, status, kobo_sync, source_type)
+            "INSERT OR IGNORE INTO manga (id, url, status, kobo_sync, source_type, download_enabled) VALUES (?, ?, ?, ?, ?, ?)",
+            (manga_id, url, status, kobo_sync, source_type, download_enabled)
         )
         conn.commit()
         conn.close()
@@ -127,7 +133,7 @@ class Database:
         allowed = {
             'title', 'cover_url', 'description', 'author', 'demographic', 'tags',
             'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type',
-            'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page'
+            'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page', 'download_enabled'
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
 
@@ -153,6 +159,12 @@ class Database:
     def set_kobo_sync(self, manga_id, value):
         conn = self._connect()
         conn.execute("UPDATE manga SET kobo_sync = ? WHERE id = ?", (value, manga_id))
+        conn.commit()
+        conn.close()
+
+    def set_download_enabled(self, manga_id, value):
+        conn = self._connect()
+        conn.execute("UPDATE manga SET download_enabled = ? WHERE id = ?", (value, manga_id))
         conn.commit()
         conn.close()
 

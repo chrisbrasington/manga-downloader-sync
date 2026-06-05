@@ -121,6 +121,13 @@
         <option value="0">No</option>
       </select>
     </div>
+    <div class="form-group">
+      <label>Download</label>
+      <select id="add-dl">
+        <option value="1">Yes</option>
+        <option value="0">No</option>
+      </select>
+    </div>
     <div class="form-group" style="justify-content:flex-end">
       <button class="btn btn-primary" id="add-btn">Add</button>
     </div>
@@ -141,6 +148,7 @@
           <th>URL</th>
           <th>Status</th>
           <th>Kobo</th>
+          <th>DL</th>
           <th>Last Ch.</th>
           <th>Actions</th>
         </tr>
@@ -190,13 +198,13 @@
       allManga = await fetch('/api/manga').then(r => r.json());
       renderTable();
     } catch(e) {
-      document.getElementById('manga-rows').innerHTML = '<tr><td colspan="6" class="empty">Failed to load.</td></tr>';
+      document.getElementById('manga-rows').innerHTML = '<tr><td colspan="7" class="empty">Failed to load.</td></tr>';
     }
   }
 
   function renderTable() {
     if (!allManga.length) {
-      document.getElementById('manga-rows').innerHTML = '<tr><td colspan="6" class="empty">No manga yet.</td></tr>';
+      document.getElementById('manga-rows').innerHTML = '<tr><td colspan="7" class="empty">No manga yet.</td></tr>';
       return;
     }
     document.getElementById('manga-rows').innerHTML = allManga.map(m => {
@@ -211,6 +219,7 @@
         <td class="url-cell"><a href="${esc(m.url)}" target="_blank">${esc(shortUrl)}</a></td>
         <td><select class="inline-select status-sel">${statOpts}</select></td>
         <td><input type="checkbox" class="sync-toggle sync-chk" ${m.kobo_sync ? 'checked' : ''}></td>
+        <td><input type="checkbox" class="dl-toggle dl-chk" ${m.download_enabled ? 'checked' : ''}></td>
         <td>${ch}</td>
         <td class="actions">
           <button class="btn-sm btn-thumb thumb-btn">🖼 Thumb</button>
@@ -230,6 +239,13 @@
       chk.addEventListener('change', async e => {
         const id = e.target.closest('tr').dataset.id;
         await patchManga(id, { kobo_sync: e.target.checked ? 1 : 0 });
+      });
+    });
+
+    document.querySelectorAll('.dl-chk').forEach(chk => {
+      chk.addEventListener('change', async e => {
+        const id = e.target.closest('tr').dataset.id;
+        await patchManga(id, { download_enabled: e.target.checked ? 1 : 0 });
       });
     });
 
@@ -271,7 +287,8 @@
     const body = {
       url,
       status: document.getElementById('add-status').value,
-      kobo_sync: parseInt(document.getElementById('add-sync').value)
+      kobo_sync: parseInt(document.getElementById('add-sync').value),
+      download_enabled: parseInt(document.getElementById('add-dl').value)
     };
     const resp = await fetch('/api/manga', {
       method: 'POST',

@@ -189,11 +189,13 @@ class AddMangaRequest(BaseModel):
     url: str
     status: str = 'active'
     kobo_sync: int = 1
+    download_enabled: int = 1
 
 
 class UpdateMangaRequest(BaseModel):
     status: str | None = None
     kobo_sync: int | None = None
+    download_enabled: int | None = None
     favorited: int | None = None
     url: str | None = None
     hidden: int | None = None
@@ -207,7 +209,7 @@ def api_add_manga(body: AddMangaRequest, background_tasks: BackgroundTasks):
     db = get_db()
     if db.get_manga_by_url(body.url):
         raise HTTPException(status_code=409, detail='URL already exists')
-    manga_id = db.add_manga(body.url, status=body.status, kobo_sync=body.kobo_sync)
+    manga_id = db.add_manga(body.url, status=body.status, kobo_sync=body.kobo_sync, download_enabled=body.download_enabled)
     if 'mangadex' in body.url:
         background_tasks.add_task(fetch_and_save_thumbnail, manga_id)
     return {'id': manga_id, 'url': body.url}
@@ -225,6 +227,8 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.set_manga_status(manga_id, body.status)
     if body.kobo_sync is not None:
         db.set_kobo_sync(manga_id, body.kobo_sync)
+    if body.download_enabled is not None:
+        db.set_download_enabled(manga_id, body.download_enabled)
     if body.favorited is not None:
         db.update_manga_metadata(manga_id, manga['url'], favorited=body.favorited)
     if body.hidden is not None:

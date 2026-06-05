@@ -118,6 +118,27 @@
     .card-continue { margin-top:6px; }
     .continue-btn { display:block; background:#1a2a1a; color:var(--green); font-size:11px; padding:3px 8px; border-radius:4px; text-decoration:none; text-align:center; transition:background .15s; }
     .continue-btn:hover { background:#253525; }
+
+    /* mobile */
+    @media (max-width:600px) {
+      header { padding:10px 14px; }
+      header h1 { font-size:16px; }
+
+      .filters { padding:10px 14px 0; overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+      .filters::-webkit-scrollbar { display:none; }
+      .filter-btn { flex-shrink:0; padding:5px 12px; }
+
+      .stats { padding:6px 14px; }
+
+      .grid { grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; padding:10px 14px 32px; }
+
+      .panel-footer-row { flex-wrap:wrap; }
+
+      .chapter-row { padding:10px 14px; }
+      .chapter-row a { padding:6px 12px; font-size:13px; }
+
+      .delete-cmd { white-space:pre-wrap; word-break:break-all; }
+    }
   </style>
 </head>
 <body>
@@ -131,11 +152,11 @@
 <div class="filters">
   <button class="filter-btn active" data-filter="all">All</button>
   <button class="filter-btn" data-filter="favorites">⭐ Favorites</button>
+  <button class="filter-btn" data-filter="reading">📖 Reading</button>
   <button class="filter-btn" data-filter="active">Downloading</button>
   <button class="filter-btn" data-filter="completed">Completed</button>
   <button class="filter-btn" data-filter="hiatus">Hiatus</button>
   <button class="filter-btn" data-filter="archived">Archived</button>
-  <button class="filter-btn" data-filter="reading">📖 Reading</button>
   <button class="filter-btn" data-filter="read">✓ Read</button>
   <button class="filter-btn" data-filter="hidden">👁 Hidden</button>
 </div>

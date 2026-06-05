@@ -43,6 +43,10 @@
     .badge-completed { background:#2a2a2a; color:var(--muted); }
     .badge-hiatus { background:#3a2a1a; color:var(--yellow); }
     .ch-num { font-size:11px; color:var(--muted); margin-left:auto; }
+    .star-btn { background:none; border:none; cursor:pointer; font-size:16px; line-height:1; padding:0; opacity:.5; position:absolute; top:6px; right:6px; transition:opacity .15s,transform .15s; }
+    .star-btn:hover, .star-btn.on { opacity:1; }
+    .star-btn.on { transform:scale(1.15); }
+    .thumb-wrap { position:relative; }
 
     /* chapter panel */
     .panel-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; }
@@ -74,6 +78,7 @@
 
 <div class="filters">
   <button class="filter-btn active" data-filter="all">All</button>
+  <button class="filter-btn" data-filter="favorites">⭐ Favorites</button>
   <button class="filter-btn" data-filter="active">Active</button>
   <button class="filter-btn" data-filter="completed">Completed</button>
   <button class="filter-btn" data-filter="hiatus">Hiatus</button>
@@ -106,7 +111,9 @@
   }
 
   function render() {
-    const manga = currentFilter === 'all' ? allManga : allManga.filter(m => m.status === currentFilter);
+    const manga = currentFilter === 'all' ? allManga
+      : currentFilter === 'favorites' ? allManga.filter(m => m.favorited)
+      : allManga.filter(m => m.status === currentFilter);
     const active = allManga.filter(m => m.status === 'active').length;
     document.getElementById('stats').textContent = `${allManga.length} series · ${active} active`;
 
@@ -121,8 +128,12 @@
         : `<div class="thumb">📖</div>`;
       const badge = `<span class="badge badge-${esc(m.status)}">${esc(m.status)}</span>`;
       const ch = m.last_chapter_on_disk != null ? `<span class="ch-num">Ch.${m.last_chapter_on_disk}</span>` : '';
+      const starClass = m.favorited ? 'star-btn on' : 'star-btn';
       return `<div class="card" data-id="${esc(m.id)}" data-title="${esc(m.title)}">
-        ${thumb}
+        <div class="thumb-wrap">
+          ${thumb}
+          <button class="${starClass}" data-id="${esc(m.id)}" data-fav="${m.favorited ? 1 : 0}" title="Favorite">⭐</button>
+        </div>
         <div class="card-body">
           <div class="card-title">${esc(m.title)}</div>
           <div class="card-meta">${badge}${ch}</div>
@@ -132,6 +143,25 @@
 
     document.querySelectorAll('.card').forEach(card => {
       card.addEventListener('click', () => openPanel(card.dataset.id, card.dataset.title));
+    });
+
+    document.querySelectorAll('.star-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        const newVal = btn.dataset.fav === '1' ? 0 : 1;
+        const resp = await fetch(`/api/manga/${id}`, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({favorited: newVal})
+        });
+        if (resp.ok) {
+          btn.dataset.fav = String(newVal);
+          btn.classList.toggle('on', newVal === 1);
+          const m = allManga.find(x => x.id === id);
+          if (m) m.favorited = Boolean(newVal);
+        }
+      });
     });
   }
 

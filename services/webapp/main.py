@@ -74,6 +74,7 @@ def manga_to_payload(row):
         'description': row.get('description'),
         'last_downloaded_at': row.get('last_downloaded_at'),
         'last_chapter_on_disk': row.get('last_chapter_on_disk'),
+        'favorited': bool(row.get('favorited', 0)),
     }
 
 
@@ -166,6 +167,7 @@ class AddMangaRequest(BaseModel):
 class UpdateMangaRequest(BaseModel):
     status: str | None = None
     kobo_sync: int | None = None
+    favorited: int | None = None
 
 
 @app.post('/api/manga', status_code=201)
@@ -190,6 +192,8 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest):
         db.set_manga_status(manga_id, body.status)
     if body.kobo_sync is not None:
         db.set_kobo_sync(manga_id, body.kobo_sync)
+    if body.favorited is not None:
+        db.update_manga_metadata(manga_id, db.get_manga_by_id(manga_id)['url'], favorited=body.favorited)
     return {'ok': True}
 
 

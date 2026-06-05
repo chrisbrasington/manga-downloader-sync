@@ -48,6 +48,14 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_manga_status ON manga(status);
             CREATE INDEX IF NOT EXISTS idx_manga_kobo_sync ON manga(kobo_sync);
         ''')
+        # Add columns introduced after initial schema creation
+        for stmt in [
+            "ALTER TABLE manga ADD COLUMN favorited INTEGER NOT NULL DEFAULT 0",
+        ]:
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists
         conn.commit()
         conn.close()
 
@@ -114,7 +122,8 @@ class Database:
         """Upsert: ensure row exists, then update provided metadata fields."""
         allowed = {
             'title', 'cover_url', 'description', 'author', 'demographic', 'tags',
-            'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type'
+            'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type',
+            'favorited'
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
 

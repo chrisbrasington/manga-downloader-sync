@@ -1,178 +1,114 @@
-# manga-downloader-sync
+# manga-kobo
 
-Downloads images (manga) from the web into cbz files, converts to pdf,  and syncs between local cache and a device folder. Cache ensures files will not redownload.
+Scheduled manga downloader with a web library. Two Docker containers share a SQLite database and a mounted volume of downloaded files.
 
-<u>Only syncs newer chapters.</u> If older chapters are deleted from the device, only chapters after the latest chapter on device will be added. If no chapters exist on device, all chapters will be synced to device
+## What it does
 
-# Table of Contents
+**Downloader** runs on a schedule, fetches new chapters from MangaDex and danke.moe, converts them to PDF, and optionally syncs to a Kobo e-reader.
 
-- [manga-downloader-sync](#manga-downloader-sync)
-  - [site support](#site-support)
-  - [Usage](#usage)
-    - [Arguments](#arguments)
-  - [Examples](#examples)
-  - [chapter number matching](#chapter-number-matching)
-    - [sources](#sources)
-  - [device support](#device-support)
-  - [features](#features)
-    - [auto-collections](#auto-collections)
-  - [summary of download/sync](#summary-of-downloadsync)
-  - [author](#author)
-  - [run](#run)
-  - [sample sources](#sample-sources)
-  - [language](#language)
-  - [output](#output)
-  - [server/client usage](#serverclient-usage)
+**Webapp** provides a browsable library with cover art, reading filters, and admin tools — all in a browser.
 
+## Sources
 
-## site support
-
-- [mangadex](https://mangadex.org/)
+- [MangaDex](https://mangadex.org/)
 - [danke.moe](https://danke.moe/)
 
-## Usage
-`python program.py [-h] [-u URL] [-a [ADD]] [-c [COMPLETED]] [-d [HAITUS]]`
+---
 
-## Arguments
-
-    -h, --help: Show help message and exit
-    -u URL, --url URL: Url to read from
-    -a [ADD], --add [ADD]: Add url to sources.txt
-    -c [COMPLETED], --completed [COMPLETED]: Use completed.txt
-    -d [HAITUS], --haitus [HAITUS]: Use dead haitus.txt
-    -f [FILE], --file [FILE]: Convert individual file or directory to PDF
-
-All arguments are optional. If no arguments are provided, the program will use the default ongoing source file (sources.txt).
-
-If the -u argument is provided, the program will download the manga from the given url.
-
-If the -a argument is provided with a url, the program will add the url to the sources file.
-
-If any of the -o, -c, or -d arguments are provided, the program will use the corresponding source file instead of the default ongoing file.
-
-If the -f argument is provided with a file or directory, the program convert to PDF.
-
-## Examples
-
-Download manga from a url:
-
-`python program.py -u https://example.com/manga/1`
-
-Add a url to the sources file:
-
-`python program.py -u https://example.com/manga/1 -a`
-
-Use the completed source file:
-
-`python program.py -c`
-
-Use the dead haitus source file:
-
-`python program.py -d`
-
-Convert file to PDF:
-
-`python program.py -f path_to_file.cbz`
-
-Convert directory to PDF:
-
-`python program.py -f path_to_files`
-
-## chapter number matching
-
-Even if the feed changes, the chapter number is attempted to be extracted from the feed. This will not redownload cached chapter numbers even if the file name would be different.
-
-### sources
-`sources.txt` can support a flag to combine all chapters into a single file for those manga that like to be a page or two a chapter
-
-> url, True
-
-Or keeping as separate chapters..
-
-> url
-
-## device support
-
-tested with `kobo libra 2` and will work with any device that supports pdf or cbz (zip) files
-
-<img src=".img/sample.png" style="width:100%">
-
-<img src=".img/sample2.jpg" style="width:100%">
-
-## features
-
-### auto-collections
-
-cbz/pdf doesn't seem to support a series metadata tag, I do create a user collection of the manga.
-
-<img src=".img/collection1.png" style="width:50%">
-
-<img src=".img/collection2.png" style="width:50%">
-
-### summary of download/sync
-
-Summary will display both download and synced information. If device is absent, will inform. If only sync happens, will inform.
-
-### author
-
-Author is added to PDF metadata
-
-## run
-
->  pip install -r requirements.txt       
-
-Modify `sources.txt` run with python 3
-
-> python program.py  
-
-## sample sources
-
-> Note: `mangadex` is looking for the GUID out of the url
-
-```
-https://danke.moe/read/manga/the-tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere-girl/, True
-https://danke.moe/read/manga/OL-cafe-crush/
-https://mangadex.org/title/e5148679-29de-4fff-b1a1-c77c44c41d5a/crest-of-the-stars
-```
-
-## language
-
-Hardcoded to `en` atm, and pretty much the first non-external source
-
-## output
-```
-✓ kobo detected
-
-The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day - mangadex
-   ✓ cache: 84        ✓ remote: 85          downloading: 84 to 85.0
-100%|█████████████████████████████████████████████████████████████████████████████████████████████████| 2/2 [00:01<00:00,  1.20it/s]
-   x device: 84      
-The Overworked Office Lady's Café Crush - danke.moe
-   ✓ cache: 3         ✓ remote: 3         ✓ device: 3      
-~~~~~~~~~~~~~~~~~~~~~
-Content missing from device, synced to device
-The Tsuntsuntsuntsuntsuntsuntsuntsuntsuntsuntsundere Girl Getting Less and Less Tsun Day by Day - 85.pdf
-```
-
-## docker server + client-sync usage
-
-For non-server usage:
-
-You can use `./config` directly which is default behavior of running the program. It assumes you are running the application locally without a server.
-
-For server usage:
-
-1. On the server, add the necessary sources for manga content. This will populate the `./config` folder (sources.txt) by running the program.
-2. Use the `./deploy` script to build a Docker image with the provided Dockerfile and run a container named `manga-downloader`. This container will have two folders mounted: `tmp` for downloads and `config` for configuration. The `config` folder can be edited outside the container.
-
-For client usage (syncing to e-reader):
-
-Modify the `sync` script with the following variables:
+## Running
 
 ```bash
-syncDestination="/run/media/chris/KOBOeReader" # Replace this with the path to your e-reader destination
-sourceDestination="chris@valhalla:/home/chris/code/manga-kobo" # Replace this with the path to your server's manga-kobo directory
+docker compose up -d
 ```
 
-Running the sync command will attempt to mount the server's download and config folders locally. It won't download content as it assumes you have an auto-downloader already running. The command will move content from the server to your e-reader destination (syncDestination). After usage, these folders will be unmounted. For smooth operation, it's recommended to set up passwordless SSH to avoid prompts.
+Webapp is available on port `8681`.
 
+---
+
+## Downloader
+
+```
+python program.py            # scheduled run — downloads all active manga
+python program.py -u <URL>   # single download (for testing)
+python program.py -f <path>  # convert a CBZ file or directory to PDF
+```
+
+Manga sources are managed through the webapp or directly in `manga.db`. The downloader reads the `active` entries and skips anything marked `completed`, `hiatus`, or `archived`.
+
+When MangaDex reports a series as completed, the downloader automatically marks it as such and stops checking it.
+
+The downloader pins the download folder to the title stored in the database. If MangaDex later changes a title, it won't create a second folder — it keeps downloading into the original one.
+
+---
+
+## Webapp
+
+`http://localhost:8681`
+
+### Library
+
+Grid of all manga with cover thumbnails, status badges, and last chapter number.
+
+**Filters:** All · ⭐ Favorites · Downloading · Completed · Hiatus · Archived · ✓ Read · 👁 Hidden
+
+Read and Hidden work like soft filters — entries tagged with either only appear when that filter is active. All other filters suppress them.
+
+**Per-manga panel** (click any card):
+- Chapter list with read and download links
+- URL bar — shows the source URL, editable. "Edit" to correct a bad paste. "🔍 Find" searches MangaDex by title and auto-fills the URL.
+- **🖼 Cover** — fetches all available covers from MangaDex, displays a visual picker. Select one to save it as the thumbnail.
+- **✓ Read / 👁 Hide / 🗑 Delete** — panel footer actions. Delete shows the exact `rm -rf` command before confirming.
+
+### Admin
+
+`http://localhost:8681/admin`
+
+- **Add manga** — paste a MangaDex or danke.moe URL
+- **Scan tmp/ for Untracked** — finds folders on disk not in the database, looks each up on MangaDex, adds them as `archived`
+- **Fetch All Thumbnails** — bulk-fetches missing cover art from MangaDex
+- **♻️ Find Duplicates** — compares all titles with fuzzy matching (normalizes subtitle separators like ` - `, `:`, `-…-`). Shows pairs with similarity ≥ 85%, recommends keeping the entry with more files. Confirm shows the exact folder path and `rm -rf` command before deleting.
+
+---
+
+## Database
+
+`manga.db` — SQLite with WAL mode. Replaces the old `sources.txt`, `completed.txt`, `hiatus.txt`, `ignore.txt`, and related config files.
+
+**Manga statuses:** `active` (downloading) · `completed` · `hiatus` · `archived` (on disk, not downloading)
+
+**Manga flags:** `favorited` · `read` · `hidden`
+
+Schema is forward-compatible — new columns are added via `ALTER TABLE ... ADD COLUMN` with defaults, so the database survives container rebuilds without migration.
+
+---
+
+## Docker layout
+
+```
+manga-kobo/
+  manga.db          # shared database
+  tmp/              # downloaded manga (one folder per series)
+  thumbnails/       # cover art cache (manga_id.jpg)
+```
+
+```yaml
+services:
+  manga:      # downloader — runs python program.py on a schedule
+  webapp:     # FastAPI app — port 8681
+```
+
+Both containers mount `manga.db`, `tmp/`, and `thumbnails/` from the host.
+
+---
+
+## Kobo sync
+
+`python program.py` with a Kobo mounted will sync new PDFs to the device. The sync script (`sync`) can also be run on a client machine to pull from the server and push to the reader over SSH.
+
+```bash
+# sync script variables
+syncDestination="/run/media/chris/KOBOeReader"
+sourceDestination="chris@valhalla:/home/chris/code/manga-kobo"
+```
+
+PDF metadata includes the author. A Kobo collection is created per series.

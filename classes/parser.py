@@ -677,8 +677,8 @@ class Utility:
             success = False
 
         # combine result into single pdf if requested
-        if(combine) and (did_work or not len(glob.glob(f'tmp/{name}/{name}*combo.pdf')) > 0):
-            self.combine(result, author)
+        # if(combine) and (did_work or not len(glob.glob(f'tmp/{name}/{name}*combo.pdf')) > 0):
+        #     self.combine(result, author)
 
         # cache = Cache()
         # cache.store_manga_data(name, manga.id, source)
@@ -851,8 +851,8 @@ class Utility:
                     did_work = True
 
             # convert entire dir to pdf (where pdfs do not exist)
-            if did_work: 
-                self.convert_dir_to_pdf(tmp_dir, manga.author)
+            # if did_work:
+            #     self.convert_dir_to_pdf(tmp_dir, manga.author)
 
         try:
             last_ch = self.get_latest_chapter_num_on_disk(tmp_dir, manga.title)
@@ -1189,7 +1189,7 @@ class Utility:
 
             # Sync files from `tmp_dir` to the device
             pdf_files = sorted(
-                glob.glob(f"{tmp_dir}/*.pdf"),
+                glob.glob(f"{tmp_dir}/*.cbz"),
                 key=self.extract_number
             )
 

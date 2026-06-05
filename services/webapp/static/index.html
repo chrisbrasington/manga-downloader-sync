@@ -518,9 +518,9 @@
       const chapterListEl = document.getElementById('chapter-list');
       chapterListEl.innerHTML = chapters.slice().reverse().map(f => {
         const readUrl = `/read/${encodeURIComponent(id)}/${encodeURIComponent(f)}`;
-        const dlUrl = `/pdf/${encodeURIComponent(id)}/${encodeURIComponent(f)}?dl=1`;
+        const dlUrl = `/cbz/${encodeURIComponent(id)}/${encodeURIComponent(f)}?dl=1`;
         return `<div class="chapter-row" data-file="${esc(f)}">
-          <span>${esc(f.replace(/\.pdf$/, ''))}</span>
+          <span>${esc(f.replace(/\.cbz$/, ''))}</span>
           <a class="btn-read" href="${readUrl}" target="_blank" data-file="${esc(f)}">Read</a>
           <a class="btn-dl" href="${dlUrl}">↓</a>
         </div>`;

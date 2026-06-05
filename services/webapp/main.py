@@ -1,7 +1,7 @@
-import difflib, glob, http.client, json, os, re, shutil, socket, struct, sys, time, threading
+import difflib, glob, http.client, json, os, re, shutil, socket, struct, sys, time, threading, zipfile
 import requests as http_requests
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -45,8 +45,8 @@ def list_chapter_files(title):
     manga_dir = os.path.join(MANGA_STORAGE, title)
     if not os.path.isdir(manga_dir):
         return []
-    pdfs = glob.glob(os.path.join(manga_dir, '*.pdf'))
-    return sorted([os.path.basename(p) for p in pdfs])
+    cbzs = glob.glob(os.path.join(manga_dir, '*.cbz'))
+    return sorted([os.path.basename(c) for c in cbzs])
 
 
 def extract_chapter_num(filename):
@@ -686,8 +686,12 @@ def serve_thumbnail(manga_id: str):
     return FileResponse(path, media_type='image/jpeg')
 
 
-@app.get('/pdf/{manga_id}/{filename}')
-def serve_pdf(manga_id: str, filename: str, dl: int = 0):
+_CBZ_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'}
+_CBZ_MEDIA_TYPES = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+                    '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif'}
+
+
+def _cbz_resolve(manga_id, filename):
     db = get_db()
     manga = db.get_manga_by_id(manga_id)
     if not manga or not manga.get('title'):
@@ -696,19 +700,49 @@ def serve_pdf(manga_id: str, filename: str, dl: int = 0):
     path = os.path.join(MANGA_STORAGE, manga['title'], safe_name)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail='File not found')
+    return path, safe_name
+
+
+@app.get('/cbz/{manga_id}/{filename}/info')
+def cbz_info(manga_id: str, filename: str):
+    path, _ = _cbz_resolve(manga_id, filename)
+    with zipfile.ZipFile(path) as zf:
+        pages = sorted(n for n in zf.namelist()
+                       if os.path.splitext(n.lower())[1] in _CBZ_IMAGE_EXTS
+                       and not os.path.basename(n).startswith('.'))
+    return {'page_count': len(pages)}
+
+
+@app.get('/cbz/{manga_id}/{filename}/{page_num}')
+def cbz_page(manga_id: str, filename: str, page_num: int):
+    path, _ = _cbz_resolve(manga_id, filename)
+    with zipfile.ZipFile(path) as zf:
+        pages = sorted(n for n in zf.namelist()
+                       if os.path.splitext(n.lower())[1] in _CBZ_IMAGE_EXTS
+                       and not os.path.basename(n).startswith('.'))
+        if page_num < 1 or page_num > len(pages):
+            raise HTTPException(status_code=404, detail='Page not found')
+        data = zf.read(pages[page_num - 1])
+    ext = os.path.splitext(pages[page_num - 1].lower())[1]
+    return Response(content=data, media_type=_CBZ_MEDIA_TYPES.get(ext, 'image/jpeg'))
+
+
+@app.get('/cbz/{manga_id}/{filename}')
+def serve_cbz(manga_id: str, filename: str, dl: int = 0):
+    path, safe_name = _cbz_resolve(manga_id, filename)
     disposition = 'attachment' if dl else 'inline'
-    return FileResponse(path, media_type='application/pdf',
+    return FileResponse(path, media_type='application/zip',
                         headers={'Content-Disposition': f'{disposition}; filename="{safe_name}"'})
 
 
 @app.get('/read/{manga_id}/{filename}', response_class=HTMLResponse)
 def read_chapter(manga_id: str, filename: str):
     safe_name = os.path.basename(filename)
-    pdf_url = f'/pdf/{manga_id}/{safe_name}'
-    display_name = safe_name[:-4] if safe_name.endswith('.pdf') else safe_name
+    cbz_url = f'/cbz/{manga_id}/{safe_name}'
+    display_name = safe_name[:-4] if safe_name.endswith('.cbz') else safe_name
     manga_id_js = json.dumps(manga_id)
     filename_js = json.dumps(safe_name)
-    pdf_url_js = json.dumps(pdf_url)
+    cbz_url_js = json.dumps(cbz_url)
     display_name_js = json.dumps(display_name)
     return f'''<!doctype html>
 <html>
@@ -724,8 +758,7 @@ def read_chapter(manga_id: str, filename: str):
     .bar a.disabled {{ color:#444; pointer-events:none; }}
     .bar .ch-title {{ color:#888; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; text-align:center; min-width:0; }}
     #viewer {{ flex:1; overflow:hidden; display:flex; align-items:center; justify-content:center; position:relative; background:#111; }}
-    #page-canvas {{ display:block; }}
-    #page-canvas-over {{ display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; }}
+    #page-img {{ max-width:100%; max-height:100%; object-fit:contain; display:none; }}
     .hit-zone {{ position:absolute; top:0; bottom:0; width:35%; cursor:pointer; z-index:10; }}
     #hz-prev {{ left:0; }}
     #hz-next {{ right:0; }}
@@ -738,9 +771,6 @@ def read_chapter(manga_id: str, filename: str):
     #back-btn-end {{ color:#888; font-size:13px; text-decoration:none; }}
     #back-btn-end:hover {{ color:#ccc; }}
     #loading {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:14px; }}
-    /*#dbg {{ position:absolute; top:8px; right:8px; background:rgba(0,0,0,.75);
-            color:#e2b96f; font-size:10px; font-family:monospace; padding:6px 8px;
-            border-radius:6px; pointer-events:none; z-index:30; white-space:pre; line-height:1.5; }}*/
     @media (max-width:600px) {{
       .bar {{ padding:10px 14px; gap:14px; }}
       .bar a {{ font-size:17px; padding:4px 2px; }}
@@ -756,36 +786,33 @@ def read_chapter(manga_id: str, filename: str):
     <a id="prev-ch" class="disabled" href="#">‹ Prev</a>
     <span class="ch-title" id="ch-title"></span>
     <a id="next-ch" class="disabled" href="#">Next ›</a>
-    <a href="{pdf_url}?dl=1">↓</a>
+    <a href="{cbz_url}?dl=1">↓</a>
   </div>
   <div id="viewer">
     <div id="loading">Loading…</div>
-    <canvas id="page-canvas" style="display:none"></canvas>
-    <canvas id="page-canvas-over"></canvas>
+    <img id="page-img" alt="">
     <div class="hit-zone" id="hz-prev"></div>
     <div class="hit-zone" id="hz-next"></div>
     <div class="page-info" id="page-info"></div>
-    <!--<div id="dbg">waiting...</div>-->
     <div id="end-screen">
       <div class="msg" id="end-msg">End of chapter</div>
       <a id="next-ch-btn" href="#">Continue to next chapter →</a>
       <a id="back-btn-end" href="javascript:history.back()">← Back to library</a>
     </div>
   </div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
     const MANGA_ID = {manga_id_js};
     const FILENAME = {filename_js};
-    const PDF_URL = {pdf_url_js};
+    const CBZ_URL = {cbz_url_js};
     const DISPLAY_NAME = {display_name_js};
 
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    let currentPage = 1, totalPages = 0;
+    let chapters = [], currentChIdx = -1;
+    let saveTimer = null;
 
-    let pdfDoc = null, currentPage = 1, totalPages = 0;
-    let chapters = [], currentChIdx = -1, rendering = false;
-    let saveTimer = null, overTimer = null;
-    let pageCache = {{}}, prefetching = new Set();
+    function pageUrl(n) {{
+      return `/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(FILENAME)}}/${{n}}`;
+    }}
 
     function saveProgress(page) {{
       clearTimeout(saveTimer);
@@ -821,6 +848,31 @@ def read_chapter(manga_id: str, filename: str):
       }}
     }}
 
+    function prefetchPage(n) {{
+      if (n < 1 || n > totalPages) return;
+      new Image().src = pageUrl(n);
+    }}
+
+    function renderPage(n) {{
+      const img = document.getElementById('page-img');
+      const loading = document.getElementById('loading');
+      img.style.display = 'none';
+      loading.style.display = 'flex';
+      img.onload = () => {{
+        loading.style.display = 'none';
+        img.style.display = 'block';
+        currentPage = n;
+        document.getElementById('page-info').textContent = `${{n}} / ${{totalPages}}`;
+        document.getElementById('end-screen').classList.remove('show');
+        saveProgress(n);
+        prefetchPage(n + 1);
+      }};
+      img.onerror = () => {{
+        loading.textContent = 'Failed to load page.';
+      }};
+      img.src = pageUrl(n);
+    }}
+
     async function init() {{
       document.getElementById('ch-title').textContent = DISPLAY_NAME;
       try {{
@@ -831,95 +883,12 @@ def read_chapter(manga_id: str, filename: str):
       }} catch(e) {{}}
 
       try {{
-        pdfDoc = await pdfjsLib.getDocument(PDF_URL).promise;
-        totalPages = pdfDoc.numPages;
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('page-canvas').style.display = 'block';
+        const info = await fetch(`/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(FILENAME)}}/info`).then(r => r.json());
+        totalPages = info.page_count;
         const startPage = Math.min(Math.max(parseInt(new URLSearchParams(window.location.search).get('page')) || 1, 1), totalPages);
-        await renderPage(startPage);
+        renderPage(startPage);
       }} catch(e) {{
-        document.getElementById('loading').textContent = 'Failed to load PDF.';
-      }}
-    }}
-
-    async function renderToCanvas(n) {{
-      const page = await pdfDoc.getPage(n);
-      const vp0 = page.getViewport({{scale: 1}});
-      const viewer = document.getElementById('viewer');
-      const screenDpr = window.devicePixelRatio || 1;
-      const zoomScale = window.visualViewport ? window.visualViewport.scale : 1;
-      const dpr = screenDpr * zoomScale;
-      const fitScale = Math.min(viewer.clientHeight / vp0.height, viewer.clientWidth / vp0.width);
-      const scale = fitScale * dpr;
-      const vp = page.getViewport({{scale}});
-      const tmp = document.createElement('canvas');
-      tmp.width = Math.round(vp.width);
-      tmp.height = Math.round(vp.height);
-      await page.render({{canvasContext: tmp.getContext('2d'), viewport: vp}}).promise;
-      return {{canvas: tmp, cssW: (tmp.width / dpr) + 'px', cssH: (tmp.height / dpr) + 'px'}};
-    }}
-
-    async function prefetchPage(n) {{
-      if (!pdfDoc || n < 1 || n > totalPages || pageCache[n] || prefetching.has(n)) return;
-      prefetching.add(n);
-      try {{ pageCache[n] = await renderToCanvas(n); }} catch(e) {{}}
-      prefetching.delete(n);
-    }}
-
-    async function renderPage(n, fade) {{
-      if (rendering || !pdfDoc) return;
-      rendering = true;
-      clearTimeout(overTimer);
-      const over = document.getElementById('page-canvas-over');
-      over.style.display = 'none';
-      try {{
-        let tmp, cssW, cssH;
-        if (pageCache[n]) {{
-          ({{canvas: tmp, cssW, cssH}} = pageCache[n]);
-          delete pageCache[n];
-        }} else {{
-          ({{canvas: tmp, cssW, cssH}} = await renderToCanvas(n));
-        }}
-        const canvas = document.getElementById('page-canvas');
-        if (fade) {{
-          // Render into overlay; fade it in over the still-visible main canvas
-          over.width = tmp.width;
-          over.height = tmp.height;
-          over.style.width = cssW;
-          over.style.height = cssH;
-          over.getContext('2d').drawImage(tmp, 0, 0);
-          over.style.transition = 'none';
-          over.style.opacity = '0';
-          over.style.display = 'block';
-          void over.offsetWidth;
-          over.style.transition = 'opacity 0.25s';
-          over.style.opacity = '1';
-          // After fade, promote overlay content to main canvas and hide overlay
-          overTimer = setTimeout(() => {{
-            canvas.width = tmp.width;
-            canvas.height = tmp.height;
-            canvas.style.width = cssW;
-            canvas.style.height = cssH;
-            canvas.getContext('2d').drawImage(tmp, 0, 0);
-            over.style.transition = 'none';
-            over.style.opacity = '0';
-            over.style.display = 'none';
-          }}, 280);
-        }} else {{
-          // Synchronous swap — no await between clear and fill, browser sees only final state
-          canvas.width = tmp.width;
-          canvas.height = tmp.height;
-          canvas.style.width = cssW;
-          canvas.style.height = cssH;
-          canvas.getContext('2d').drawImage(tmp, 0, 0);
-        }}
-        currentPage = n;
-        document.getElementById('page-info').textContent = `${{n}} / ${{totalPages}}`;
-        document.getElementById('end-screen').classList.remove('show');
-        saveProgress(n);
-      }} finally {{
-        rendering = false;
-        prefetchPage(n + 1);
+        document.getElementById('loading').textContent = 'Failed to load chapter.';
       }}
     }}
 
@@ -941,15 +910,6 @@ def read_chapter(manga_id: str, filename: str):
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext();
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goPrev();
     }});
-
-    if (window.visualViewport) {{
-      let _zt = null;
-      window.visualViewport.addEventListener('resize', () => {{
-        clearTimeout(_zt);
-        pageCache = {{}};
-        _zt = setTimeout(() => {{ if (pdfDoc) renderPage(currentPage, true); }}, 350);
-      }});
-    }}
 
     init();
   </script>

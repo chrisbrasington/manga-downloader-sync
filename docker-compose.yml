@@ -46,4 +46,10 @@ services:
       homepage.widget.type: customapi
       homepage.widget.url: https://manga.home.chrisincode.com/api/stats
       homepage.widget.refreshInterval: "60000"
-      homepage.widget.mappings: '[{"field":"active","label":"Downloading"},{"field":"total","label":"Titles"},{"field":"last_run","label":"Last Run","format":"relativeDate"}]'
+      homepage.widget.mappings.0.field: active
+      homepage.widget.mappings.0.label: Downloading
+      homepage.widget.mappings.1.field: total
+      homepage.widget.mappings.1.label: Titles
+      homepage.widget.mappings.2.field: last_run
+      homepage.widget.mappings.2.label: Last Run
+      homepage.widget.mappings.2.format: relativeDate

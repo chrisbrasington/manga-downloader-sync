@@ -1,0 +1,17 @@
+services:
+  manga:
+    build: .
+    image: valhalla:5000/manga:latest
+    container_name: manga
+    restart: always
+    environment:
+      TZ: America/Denver
+    volumes:
+      - ./config:/app/config
+      - ./tmp:/app/tmp
+      - ./cache.db:/app/cache.db
+    labels:
+      homepage.group: Bots
+      homepage.name: Manga Downloader
+      homepage.icon: mdi-book-open-page-variant
+      homepage.description: Manga worker

@@ -875,7 +875,8 @@ class Utility:
 
         if manga.status == 'completed':
             self.db.set_manga_status(manga.id, 'completed')
-            print(colorama.Fore.YELLOW + f'     series complete on MangaDex — marked completed, will not re-check' + colorama.Style.RESET_ALL)
+            self.db.set_download_enabled(manga.id, 0)
+            print(colorama.Fore.YELLOW + f'     series complete on MangaDex — marked completed, download disabled' + colorama.Style.RESET_ALL)
 
         return tmp_dir, manga.title, did_work, manga.author, manga.get_combined_title();
 

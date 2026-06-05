@@ -477,7 +477,7 @@
           const r = await fetch(`/api/manga/${encodeURIComponent(mangaId)}/cover`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({cover_url: c.cover_url, thumb_url: c.thumb_url})
+            body: JSON.stringify({cover_url: c.cover_url})
           });
           if (r.ok) {
             const m = allManga.find(x => x.id === mangaId);

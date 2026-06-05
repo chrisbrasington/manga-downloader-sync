@@ -14,6 +14,7 @@ from classes.database import Database
 MANGA_DB = os.environ.get('MANGA_DB', 'manga.db')
 MANGA_STORAGE = os.environ.get('MANGA_STORAGE', 'tmp')
 THUMBNAILS_DIR = os.environ.get('THUMBNAILS_DIR', 'thumbnails')
+PICKER_CACHE_DIR = os.path.join(THUMBNAILS_DIR, '_picker')
 WEBAPP_PORT = int(os.environ.get('WEBAPP_PORT', 8080))
 
 app = FastAPI()
@@ -272,6 +273,10 @@ def api_manga_covers(manga_id: str):
     md_uuid = Database._extract_id(url)
     if not md_uuid:
         return []
+    # Clear stale picker cache for this manga
+    picker_dir = os.path.join(PICKER_CACHE_DIR, manga_id)
+    if os.path.isdir(picker_dir):
+        shutil.rmtree(picker_dir)
     try:
         resp = http_requests.get(
             f'https://api.mangadex.org/cover?limit=100&manga%5B%5D={md_uuid}&order%5BcreatedAt%5D=asc',
@@ -296,7 +301,8 @@ def api_manga_covers(manga_id: str):
                 'id': item['id'],
                 'volume': item['attributes'].get('volume'),
                 'locale': item['attributes'].get('locale', ''),
-                'thumb_url': f'https://mangadex.org/covers/{rel_manga_id}/{fname}.256.jpg',
+                # proxy URL — browser fetches through our server, bypassing MangaDex hotlink protection
+                'thumb_url': f'/api/manga/{manga_id}/cover-proxy/{rel_manga_id}/{fname}',
                 'cover_url': f'https://mangadex.org/covers/{rel_manga_id}/{fname}',
             })
         return covers
@@ -304,9 +310,23 @@ def api_manga_covers(manga_id: str):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@app.get('/api/manga/{manga_id}/cover-proxy/{rel_id}/{filename}')
+def api_cover_proxy(manga_id: str, rel_id: str, filename: str):
+    picker_dir = os.path.join(PICKER_CACHE_DIR, manga_id)
+    cache_path = os.path.join(picker_dir, filename)
+    if not os.path.exists(cache_path):
+        thumb_url = f'https://mangadex.org/covers/{rel_id}/{filename}.256.jpg'
+        resp = http_requests.get(thumb_url, timeout=15)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=404, detail='Cover not found')
+        os.makedirs(picker_dir, exist_ok=True)
+        with open(cache_path, 'wb') as f:
+            f.write(resp.content)
+    return FileResponse(cache_path, media_type='image/jpeg')
+
+
 class SelectCoverRequest(BaseModel):
-    cover_url: str
-    thumb_url: str
+    cover_url: str  # MangaDex full URL — used to find cached file and store in DB
 
 
 @app.post('/api/manga/{manga_id}/cover')
@@ -315,13 +335,23 @@ def api_select_cover(manga_id: str, body: SelectCoverRequest):
     manga = db.get_manga_by_id(manga_id)
     if not manga:
         raise HTTPException(status_code=404, detail='Not found')
-    resp = http_requests.get(body.thumb_url, timeout=15)
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail='Failed to download cover image')
+    fname = body.cover_url.rsplit('/', 1)[-1]
+    cached = os.path.join(PICKER_CACHE_DIR, manga_id, fname)
     os.makedirs(THUMBNAILS_DIR, exist_ok=True)
-    with open(thumbnail_path(manga_id), 'wb') as f:
-        f.write(resp.content)
+    if os.path.exists(cached):
+        shutil.copy2(cached, thumbnail_path(manga_id))
+    else:
+        # Cache miss — download directly
+        resp = http_requests.get(body.cover_url + '.256.jpg', timeout=15)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail='Failed to download cover')
+        with open(thumbnail_path(manga_id), 'wb') as f:
+            f.write(resp.content)
     db.update_manga_metadata(manga_id, manga['url'], cover_url=body.cover_url)
+    # Clean up picker cache
+    picker_dir = os.path.join(PICKER_CACHE_DIR, manga_id)
+    if os.path.isdir(picker_dir):
+        shutil.rmtree(picker_dir)
     return {'ok': True}
 
 

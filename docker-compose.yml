@@ -37,6 +37,7 @@ services:
       - ./manga.db:/app/manga.db
       - ./tmp:/app/tmp
       - ./thumbnails:/app/thumbnails
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     labels:
       homepage.group: Media
       homepage.name: Manga Library

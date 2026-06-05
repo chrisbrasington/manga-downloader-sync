@@ -1,4 +1,4 @@
-import difflib, glob, json, os, re, shutil, sys, time, threading
+import difflib, glob, http.client, json, os, re, shutil, socket, struct, sys, time, threading
 import requests as http_requests
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -603,6 +603,77 @@ def api_dedupe_resolve(body: DedupeResolveRequest):
             deleted_folder = True
     db.remove_manga(body.delete_id)
     return {'ok': True, 'deleted_folder': deleted_folder}
+
+
+# --- downloader container control ---
+
+DOCKER_SOCKET = '/var/run/docker.sock'
+DOWNLOADER_CONTAINER = 'manga'
+
+
+class _UnixConn(http.client.HTTPConnection):
+    def __init__(self):
+        super().__init__('localhost')
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.connect(DOCKER_SOCKET)
+
+
+def _docker(method, path, timeout=15):
+    conn = _UnixConn()
+    conn.timeout = timeout
+    conn.request(method, path, headers={'Host': 'localhost'})
+    r = conn.getresponse()
+    body = r.read()
+    conn.close()
+    return r.status, body
+
+
+def _parse_docker_logs(raw):
+    """Strip Docker multiplexed-stream headers (8-byte per frame) → plain text."""
+    out = []
+    i = 0
+    while i + 8 <= len(raw):
+        size = struct.unpack('>I', raw[i + 4:i + 8])[0]
+        chunk = raw[i + 8:i + 8 + size].decode('utf-8', errors='replace')
+        out.append(chunk)
+        i += 8 + size
+    return ''.join(out)
+
+
+@app.post('/api/downloader/restart')
+def api_downloader_restart():
+    if not os.path.exists(DOCKER_SOCKET):
+        raise HTTPException(status_code=503, detail='Docker socket not available')
+    try:
+        status, body = _docker('POST', f'/containers/{DOWNLOADER_CONTAINER}/restart?t=5')
+        if status in (204, 200):
+            return {'ok': True}
+        raise HTTPException(status_code=500, detail=body.decode(errors='replace'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get('/api/downloader/logs')
+def api_downloader_logs(tail: int = 300):
+    if not os.path.exists(DOCKER_SOCKET):
+        raise HTTPException(status_code=503, detail='Docker socket not available')
+    try:
+        status, body = _docker(
+            'GET',
+            f'/containers/{DOWNLOADER_CONTAINER}/logs?stdout=1&stderr=1&tail={tail}&timestamps=1',
+            timeout=20,
+        )
+        if status != 200:
+            raise HTTPException(status_code=500, detail=body.decode(errors='replace'))
+        return {'ok': True, 'logs': _parse_docker_logs(body)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # --- file routes ---

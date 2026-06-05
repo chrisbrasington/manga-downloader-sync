@@ -79,6 +79,42 @@
     .ch-count { color:var(--muted); font-size:12px; }
     .src-tag { font-size:11px; color:var(--muted); font-style:italic; }
 
+    /* mobile */
+    @media (max-width: 600px) {
+      .section { padding: 0 12px; margin: 16px auto; }
+
+      .add-form { flex-direction: column; }
+      .add-form input[type=url] { width: 100%; }
+      .form-group { width: 100%; }
+      .form-group select { width: 100%; }
+
+      .manga-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+      /* hide URL (col 2) and Last Ch. (col 6) — less useful for admin actions */
+      .manga-table th:nth-child(2), .manga-table td:nth-child(2),
+      .manga-table th:nth-child(6), .manga-table td:nth-child(6) { display: none; }
+
+      .manga-table th, .manga-table td { padding: 8px 8px; font-size: 12px; }
+      .title-cell { max-width: 120px; }
+      select.inline-select { font-size: 11px; padding: 3px 4px; }
+
+      .sync-toggle, .dl-toggle { width: 20px; height: 20px; }
+
+      .btn-sm { padding: 6px 8px; font-size: 11px; }
+      .actions { gap: 4px; }
+
+      .section-toolbar { flex-wrap: wrap; gap: 8px; }
+    }
+
+    /* downloader */
+    .dl-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .log-panel { background:var(--panel); border:1px solid var(--border); border-radius:8px; margin-top:12px; display:none; }
+    .log-panel.open { display:block; }
+    .log-header { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; border-bottom:1px solid var(--border); }
+    .log-header span { font-size:12px; color:var(--muted); }
+    .log-body { overflow-y:auto; max-height:420px; padding:12px 14px; }
+    .log-body pre { font-family:monospace; font-size:11px; color:#a8b0c0; white-space:pre-wrap; word-break:break-all; line-height:1.5; margin:0; }
+
     /* confirm modal */
     .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:200; align-items:center; justify-content:center; }
     .modal-overlay.open { display:flex; }
@@ -135,12 +171,12 @@
 </div>
 
 <div class="section">
-  <h2 style="display:flex;align-items:center;gap:12px">All Manga
+  <h2 class="section-toolbar" style="display:flex;align-items:center;gap:12px">All Manga
     <button class="btn btn-muted" id="scan-btn" style="font-size:12px;padding:5px 12px">🔍 Scan tmp/ for Untracked</button>
     <button class="btn btn-muted" id="fetch-all-btn" style="font-size:12px;padding:5px 12px">🖼 Fetch All Thumbnails</button>
     <button class="btn btn-muted" id="dedupe-btn" style="font-size:12px;padding:5px 12px">♻️ Find Duplicates</button>
   </h2>
-  <div class="manga-table">
+  <div class="manga-table-wrap"><div class="manga-table">
     <table>
       <thead>
         <tr>
@@ -155,6 +191,22 @@
       </thead>
       <tbody id="manga-rows"></tbody>
     </table>
+  </div></div>
+</div>
+
+<div class="section">
+  <h2>Downloader</h2>
+  <div class="dl-toolbar">
+    <button class="btn btn-muted" id="restart-dl-btn" style="font-size:12px;padding:5px 12px">🔄 Restart Downloader</button>
+    <button class="btn btn-muted" id="logs-btn" style="font-size:12px;padding:5px 12px">📋 View Logs</button>
+    <button class="btn btn-muted" id="logs-refresh-btn" style="font-size:12px;padding:5px 12px;display:none">↻ Refresh</button>
+  </div>
+  <div class="log-panel" id="log-panel">
+    <div class="log-header">
+      <span id="log-label">manga container — last 300 lines</span>
+      <button class="btn-sm btn-muted" id="log-close-btn" style="font-size:11px">Close</button>
+    </div>
+    <div class="log-body" id="log-body"><pre id="log-pre"></pre></div>
   </div>
 </div>
 
@@ -449,6 +501,66 @@
       document.getElementById('modal-overlay').classList.remove('open');
       pendingResolve = null;
     }
+  });
+
+  // --- downloader ---
+
+  document.getElementById('restart-dl-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('restart-dl-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Restarting…';
+    try {
+      const resp = await fetch('/api/downloader/restart', { method: 'POST' });
+      if (resp.ok) {
+        toast('Downloader restarted', 'ok');
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        toast('Error: ' + (err.detail || resp.status), 'err');
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔄 Restart Downloader';
+    }
+  });
+
+  async function loadLogs() {
+    const pre = document.getElementById('log-pre');
+    const label = document.getElementById('log-label');
+    label.textContent = 'Loading…';
+    pre.textContent = '';
+    try {
+      const resp = await fetch('/api/downloader/logs');
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        pre.textContent = 'Error: ' + (err.detail || resp.status);
+        label.textContent = 'Error';
+        return;
+      }
+      const data = await resp.json();
+      pre.textContent = data.logs || '(no output)';
+      label.textContent = 'manga container — last 300 lines';
+      // scroll to bottom
+      const body = document.getElementById('log-body');
+      body.scrollTop = body.scrollHeight;
+    } catch(e) {
+      pre.textContent = 'Failed to fetch logs.';
+      label.textContent = 'Error';
+    }
+  }
+
+  document.getElementById('logs-btn').addEventListener('click', async () => {
+    const panel = document.getElementById('log-panel');
+    const refreshBtn = document.getElementById('logs-refresh-btn');
+    panel.classList.add('open');
+    refreshBtn.style.display = '';
+    await loadLogs();
+  });
+
+  document.getElementById('logs-refresh-btn').addEventListener('click', loadLogs);
+
+  document.getElementById('log-close-btn').addEventListener('click', () => {
+    document.getElementById('log-panel').classList.remove('open');
+    document.getElementById('logs-refresh-btn').style.display = 'none';
   });
 
   document.getElementById('modal-confirm').addEventListener('click', async () => {

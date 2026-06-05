@@ -665,6 +665,13 @@ def read_chapter(manga_id: str, filename: str):
     /*#dbg {{ position:absolute; top:8px; right:8px; background:rgba(0,0,0,.75);
             color:#e2b96f; font-size:10px; font-family:monospace; padding:6px 8px;
             border-radius:6px; pointer-events:none; z-index:30; white-space:pre; line-height:1.5; }}*/
+    @media (max-width:600px) {{
+      .bar {{ padding:10px 14px; gap:14px; }}
+      .bar a {{ font-size:17px; padding:4px 2px; }}
+      .bar .ch-title {{ font-size:13px; }}
+      #next-ch-btn {{ font-size:19px; padding:16px 40px; width:80%; text-align:center; }}
+      #back-btn-end {{ font-size:16px; }}
+    }}
   </style>
 </head>
 <body>

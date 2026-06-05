@@ -870,17 +870,19 @@ def read_chapter(manga_id: str, filename: str):
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{display_name}</title>
   <style>
     * {{ margin:0; padding:0; box-sizing:border-box; }}
     body {{ background:#111; height:100vh; display:flex; flex-direction:column; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }}
     .bar {{ background:#1a1a2e; padding:8px 14px; display:flex; align-items:center; gap:10px; flex-shrink:0; min-width:0; }}
+    body.fs .bar {{ display:none; }}
     .bar a, .bar button {{ color:#e2b96f; text-decoration:none; font-size:13px; white-space:nowrap; background:none; border:none; cursor:pointer; padding:0; font-family:inherit; }}
     .bar a:hover, .bar button:hover {{ color:#fff; }}
-    .bar a.disabled {{ color:#444; pointer-events:none; }}
+    .bar a.disabled {{ color:#555; pointer-events:none; }}
     .bar .ch-title {{ color:#888; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; text-align:center; min-width:0; }}
     #viewer {{ flex:1; overflow:hidden; display:flex; align-items:center; justify-content:center; position:relative; background:#111; }}
-    #page-img {{ max-width:100%; max-height:100%; object-fit:contain; display:none; }}
+    #page-img {{ max-width:100%; max-height:100%; object-fit:contain; display:none; touch-action:none; }}
     .hit-zone {{ position:absolute; top:0; bottom:0; width:35%; cursor:pointer; z-index:10; }}
     #hz-prev {{ left:0; }}
     #hz-next {{ right:0; }}
@@ -893,10 +895,10 @@ def read_chapter(manga_id: str, filename: str):
     #back-btn-end {{ color:#888; font-size:13px; text-decoration:none; }}
     #back-btn-end:hover {{ color:#ccc; }}
     #loading {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:14px; }}
-    @media (max-width:600px) {{
-      .bar {{ padding:14px 16px; gap:18px; min-height:62px; }}
-      .bar a, .bar button {{ font-size:26px; padding:6px 2px; }}
-      .bar .ch-title {{ font-size:14px; }}
+    @media (max-width:768px) {{
+      .bar {{ padding:0 4px; gap:0; min-height:64px; justify-content:space-between; }}
+      .bar-m-hide {{ display:none; }}
+      .bar a, .bar button {{ font-size:36px; padding:12px 24px; }}
       #next-ch-btn {{ font-size:19px; padding:16px 40px; width:80%; text-align:center; }}
       #back-btn-end {{ font-size:16px; }}
     }}
@@ -904,11 +906,11 @@ def read_chapter(manga_id: str, filename: str):
 </head>
 <body>
   <div class="bar">
-    <a href="javascript:history.back()">← Back</a>
-    <a id="prev-ch" class="disabled" href="#">‹ Prev</a>
-    <span class="ch-title" id="ch-title"></span>
-    <a id="next-ch" class="disabled" href="#">Next ›</a>
-    <a href="{cbz_url}?dl=1">↓</a>
+    <a class="bar-m-hide" href="javascript:history.back()">← Back</a>
+    <a id="prev-ch" class="disabled" href="#">‹</a>
+    <span class="ch-title bar-m-hide" id="ch-title"></span>
+    <a id="next-ch" class="disabled" href="#">›</a>
+    <a class="bar-m-hide" href="{cbz_url}?dl=1">↓</a>
     <button id="fs-btn" title="Fullscreen">⛶</button>
   </div>
   <div id="viewer">
@@ -977,6 +979,8 @@ def read_chapter(manga_id: str, filename: str):
     }}
 
     function renderPage(n) {{
+      zReset();
+      applyImageSizing();
       const img = document.getElementById('page-img');
       const loading = document.getElementById('loading');
       img.style.display = 'none';
@@ -1033,8 +1037,11 @@ def read_chapter(manga_id: str, filename: str):
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext();
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goPrev();
       if (e.key === 'f' || e.key === 'F') document.getElementById('fs-btn').click();
+      if (e.key === 'r') rotate(-90);
+      if (e.key === 'R') rotate(90);
     }});
 
+    // Fullscreen toggle
     const fsBtn = document.getElementById('fs-btn');
     fsBtn.addEventListener('click', () => {{
       if (!document.fullscreenElement) {{
@@ -1044,9 +1051,111 @@ def read_chapter(manga_id: str, filename: str):
       }}
     }});
     document.addEventListener('fullscreenchange', () => {{
-      fsBtn.textContent = document.fullscreenElement ? '⊠' : '⛶';
-      fsBtn.title = document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen';
+      const inFs = !!document.fullscreenElement;
+      document.body.classList.toggle('fs', inFs);
+      fsBtn.textContent = inFs ? '⊠' : '⛶';
+      fsBtn.title = inFs ? 'Exit fullscreen' : 'Fullscreen';
     }});
+
+    // Rotation — read from URL, persist on change
+    const _qp = new URLSearchParams(window.location.search);
+    let currentRot = Math.round((parseInt(_qp.get('rotation')) || 0) / 90) * 90 % 360;
+
+    function applyImageSizing() {{
+      if (currentRot === 90 || currentRot === 270) {{
+        // swap constraints so rotated image fills viewer correctly
+        zImg.style.maxWidth  = zViewer.clientHeight + 'px';
+        zImg.style.maxHeight = zViewer.clientWidth  + 'px';
+      }} else {{
+        zImg.style.maxWidth  = '';
+        zImg.style.maxHeight = '';
+      }}
+    }}
+
+    function rotate(delta) {{
+      currentRot = ((currentRot + delta) % 360 + 360) % 360;
+      applyImageSizing();
+      zReset();
+      const p = new URLSearchParams(window.location.search);
+      if (currentRot) p.set('rotation', currentRot); else p.delete('rotation');
+      history.replaceState(null, '', window.location.pathname + (p.toString() ? '?' + p : ''));
+    }}
+
+    // Pinch zoom + single-finger pan
+    let zSc = 1, zTx = 0, zTy = 0;
+    let zDistStart = 0, zScStart = 1, zTxStart = 0, zTyStart = 0;
+    let zMidXStart = 0, zMidYStart = 0;
+    let zPanX = 0, zPanY = 0;
+    const zViewer = document.getElementById('viewer');
+    const zImg = document.getElementById('page-img');
+
+    function zApply() {{
+      if (zSc <= 1) {{ zSc = 1; zTx = 0; zTy = 0; }}
+      else {{
+        const r = zViewer.getBoundingClientRect();
+        const mx = (r.width  * (zSc - 1)) / 2;
+        const my = (r.height * (zSc - 1)) / 2;
+        zTx = Math.max(-mx, Math.min(mx, zTx));
+        zTy = Math.max(-my, Math.min(my, zTy));
+      }}
+      const rot  = currentRot ? `rotate(${{currentRot}}deg)` : '';
+      const zoom = zSc > 1   ? `translate(${{zTx}}px,${{zTy}}px) scale(${{zSc}})` : '';
+      zImg.style.transform = [rot, zoom].filter(Boolean).join(' ');
+    }}
+
+    function zReset() {{ zSc = 1; zTx = 0; zTy = 0; zApply(); }}
+
+    zViewer.addEventListener('touchstart', e => {{
+      if (e.touches.length === 2) {{
+        const t0 = e.touches[0], t1 = e.touches[1];
+        zDistStart = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+        zScStart = zSc; zTxStart = zTx; zTyStart = zTy;
+        zMidXStart = (t0.clientX + t1.clientX) / 2;
+        zMidYStart = (t0.clientY + t1.clientY) / 2;
+      }} else if (e.touches.length === 1 && zSc > 1) {{
+        zPanX = e.touches[0].clientX;
+        zPanY = e.touches[0].clientY;
+      }}
+    }}, {{ passive: true }});
+
+    zViewer.addEventListener('touchmove', e => {{
+      if (e.touches.length === 2) {{
+        const t0 = e.touches[0], t1 = e.touches[1];
+        const d = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
+        zSc = Math.max(1, Math.min(5, zScStart * d / zDistStart));
+        zTx = zTxStart + (t0.clientX + t1.clientX) / 2 - zMidXStart;
+        zTy = zTyStart + (t0.clientY + t1.clientY) / 2 - zMidYStart;
+        zApply();
+        e.preventDefault();
+      }} else if (e.touches.length === 1 && zSc > 1) {{
+        zTx += e.touches[0].clientX - zPanX;
+        zTy += e.touches[0].clientY - zPanY;
+        zPanX = e.touches[0].clientX;
+        zPanY = e.touches[0].clientY;
+        zApply();
+        e.preventDefault();
+      }}
+    }}, {{ passive: false }});
+
+    zViewer.addEventListener('touchend', e => {{
+      if (e.touches.length === 0 && zSc < 1.05) zReset();
+      // Block hit-zone click while zoomed so single-finger pan doesn't flip pages
+      if (zSc > 1.05 && e.touches.length === 0) e.preventDefault();
+    }}, {{ passive: false }});
+
+    // Swipe right from left edge → exit fullscreen (only when not zoomed)
+    let tsX = 0, tsY = 0;
+    document.addEventListener('touchstart', e => {{
+      tsX = e.touches[0].clientX;
+      tsY = e.touches[0].clientY;
+    }}, {{ passive: true }});
+    document.addEventListener('touchend', e => {{
+      const dx = e.changedTouches[0].clientX - tsX;
+      const dy = e.changedTouches[0].clientY - tsY;
+      if (document.fullscreenElement && zSc <= 1 && tsX < 44 && dx > 60 && Math.abs(dy) < 100) {{
+        document.exitFullscreen();
+      }}
+    }}, {{ passive: true }});
 
     init();
   </script>

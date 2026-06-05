@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  echo "Usage: $0 <source_dir> <target_dir>"
+usage() {
+  echo "Usage: $0 [--dry-run] <source_dir> <target_dir>"
   exit 1
+}
+
+DRY_RUN=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY_RUN=true
+  shift
 fi
+
+[[ $# -ne 2 ]] && usage
 
 SRC="${1%/}"
 DST="${2%/}"
@@ -16,15 +24,18 @@ fi
 
 declare -A folder_counts
 declare -a folder_order
+declare -a all_moves  # "src_path|dst_path" pairs
 
 while IFS= read -r pdf; do
   folder=$(dirname "$pdf")
   name=$(basename "$folder")
+  dst_folder="$DST/$name"
+  all_moves+=("$pdf|$dst_folder/$(basename "$pdf")")
   if [[ -z "${folder_counts[$name]+_}" ]]; then
     folder_order+=("$name")
-    folder_counts[$name]=0
+    folder_counts["$name"]=0
   fi
-  (( ++folder_counts[$name] ))
+  folder_counts["$name"]=$(( ${folder_counts["$name"]} + 1 ))
 done < <(find "$SRC" -maxdepth 2 -mindepth 2 -name "*.pdf" | sort)
 
 if [[ ${#folder_order[@]} -eq 0 ]]; then
@@ -33,8 +44,8 @@ if [[ ${#folder_order[@]} -eq 0 ]]; then
 fi
 
 echo ""
-echo "Dry run — PDFs to move from: $SRC"
-echo "                          to: $DST"
+echo "  Source : $SRC"
+echo "  Dest   : $DST"
 echo ""
 printf "  %-50s  %s\n" "Folder" "PDFs"
 printf "  %-50s  %s\n" "------" "----"
@@ -48,16 +59,26 @@ echo ""
 echo "  Total: $total PDF(s) across ${#folder_order[@]} folder(s)"
 echo ""
 
+echo "  Files to move:"
+echo ""
+for entry in "${all_moves[@]}"; do
+  src_file="${entry%%|*}"
+  dst_file="${entry##*|}"
+  printf "    %s\n      -> %s\n" "$src_file" "$dst_file"
+done
+echo ""
+
+if $DRY_RUN; then
+  echo "  Dry run — no files moved."
+  exit 0
+fi
+
 conflicts=()
-for name in "${folder_order[@]}"; do
-  src_folder="$SRC/$name"
-  dst_folder="$DST/$name"
-  while IFS= read -r pdf; do
-    dst_file="$dst_folder/$(basename "$pdf")"
-    if [[ -e "$dst_file" ]]; then
-      conflicts+=("$dst_file")
-    fi
-  done < <(find "$src_folder" -maxdepth 1 -name "*.pdf" | sort)
+for entry in "${all_moves[@]}"; do
+  dst_file="${entry##*|}"
+  if [[ -e "$dst_file" ]]; then
+    conflicts+=("$dst_file")
+  fi
 done
 
 if [[ ${#conflicts[@]} -gt 0 ]]; then
@@ -77,14 +98,14 @@ if [[ "${answer,,}" != "y" ]]; then
 fi
 
 echo ""
-for name in "${folder_order[@]}"; do
-  src_folder="$SRC/$name"
-  dst_folder="$DST/$name"
+for entry in "${all_moves[@]}"; do
+  src_file="${entry%%|*}"
+  dst_file="${entry##*|}"
+  dst_folder=$(dirname "$dst_file")
   mkdir -p "$dst_folder"
-  while IFS= read -r pdf; do
-    mv "$pdf" "$dst_folder/"
-    echo "  Moved: $name/$(basename "$pdf")"
-  done < <(find "$src_folder" -maxdepth 1 -name "*.pdf" | sort)
+  mv "$src_file" "$dst_file"
+  echo "  Moved: $src_file"
+  echo "      -> $dst_file"
 done
 
 echo ""

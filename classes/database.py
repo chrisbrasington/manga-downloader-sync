@@ -152,6 +152,12 @@ class Database:
         conn.commit()
         conn.close()
 
+    def update_url(self, manga_id, new_url):
+        conn = self._connect()
+        conn.execute("UPDATE manga SET url = ? WHERE id = ?", (new_url, manga_id))
+        conn.commit()
+        conn.close()
+
     def remove_manga(self, manga_id):
         conn = self._connect()
         conn.execute("DELETE FROM manga WHERE id = ?", (manga_id,))

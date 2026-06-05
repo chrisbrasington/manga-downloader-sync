@@ -70,6 +70,17 @@
     .btn-dl:hover { background:#2a3a2a; }
 
     .empty { text-align:center; padding:60px 20px; color:var(--muted); font-size:14px; }
+
+    /* panel url bar */
+    .panel-url-bar { padding:10px 20px; border-bottom:1px solid var(--border); font-size:13px; }
+    .panel-url-bar a { color:var(--accent); text-decoration:none; word-break:break-all; }
+    .panel-url-bar a:hover { text-decoration:underline; }
+    .url-input-row { display:flex; gap:8px; align-items:center; }
+    .url-input-row input { flex:1; background:#0e0f13; border:1px solid var(--border); color:var(--ink); padding:6px 10px; border-radius:4px; font-size:13px; min-width:0; }
+    .url-input-row input:focus { outline:none; border-color:var(--accent); }
+    .btn-url { border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:500; white-space:nowrap; }
+    .btn-url-save { background:var(--accent); color:#111; }
+    .btn-url-ddg { background:var(--border); color:var(--ink); }
   </style>
 </head>
 <body>
@@ -97,6 +108,7 @@
       <h2 id="panel-title"></h2>
       <button class="panel-close" id="panel-close">✕</button>
     </div>
+    <div class="panel-url-bar" id="panel-url-bar"></div>
     <div class="chapter-list" id="chapter-list"></div>
   </div>
 </div>
@@ -174,11 +186,44 @@
 
   async function openPanel(id, title) {
     document.getElementById('panel-title').textContent = title;
+    document.getElementById('panel-url-bar').innerHTML = '';
     document.getElementById('chapter-list').innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px">Loading…</div>';
     document.getElementById('overlay').classList.add('open');
 
     try {
       const data = await fetch(`/api/manga/${encodeURIComponent(id)}`).then(r => r.json());
+
+      // URL bar
+      const urlBar = document.getElementById('panel-url-bar');
+      const mangaUrl = data.url || '';
+      if (mangaUrl && !mangaUrl.startsWith('local:')) {
+        urlBar.innerHTML = `<a href="${esc(mangaUrl)}" target="_blank">${esc(mangaUrl)}</a>`;
+      } else {
+        urlBar.innerHTML = `<div class="url-input-row">
+          <input type="url" id="url-input" placeholder="Paste MangaDex URL…">
+          <button class="btn-url btn-url-save" id="url-save">Save</button>
+          <button class="btn-url btn-url-ddg" id="url-ddg">🔍 DDG</button>
+        </div>`;
+        document.getElementById('url-save').addEventListener('click', async () => {
+          const newUrl = document.getElementById('url-input').value.trim();
+          if (!newUrl) return;
+          const r = await fetch(`/api/manga/${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({url: newUrl})
+          });
+          if (r.ok) {
+            urlBar.innerHTML = `<a href="${esc(newUrl)}" target="_blank">${esc(newUrl)}</a>`;
+            const m = allManga.find(x => x.id === id);
+            if (m) { m.url = newUrl; m.source_type = newUrl.includes('mangadex.org') ? 'mangadex' : 'local'; }
+          }
+        });
+        document.getElementById('url-ddg').addEventListener('click', () => {
+          window.open(`https://duckduckgo.com/?q=${encodeURIComponent((data.title || title) + ' mangadex')}`, '_blank');
+        });
+      }
+
+      // Chapter list
       const chapters = data.chapters || [];
       if (!chapters.length) {
         document.getElementById('chapter-list').innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px">No chapters downloaded yet.</div>';

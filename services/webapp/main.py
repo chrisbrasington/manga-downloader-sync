@@ -1,4 +1,4 @@
-import glob, json, os, re, sys, time, threading
+import difflib, glob, json, os, re, shutil, sys, time, threading
 import requests as http_requests
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -88,16 +88,23 @@ def fetch_and_save_thumbnail(manga_id, db_path=None):
     manga = db.get_manga_by_id(manga_id)
     if not manga or manga.get('source_type') != 'mangadex':
         return
+    url = manga.get('url', '')
+    if url.startswith('local:'):
+        return
+    # UUID in the URL may differ from manga_id for entries originally added as 'local'
+    md_uuid = Database._extract_id(url)
+    if not md_uuid:
+        return
     try:
         resp = http_requests.get(
-            f'https://api.mangadex.org/cover?manga%5B%5D={manga_id}',
+            f'https://api.mangadex.org/cover?manga%5B%5D={md_uuid}',
             timeout=10
         )
         data = resp.json().get('data', [])
         if not data:
             return
         filename = data[0]['attributes']['fileName']
-        cover_url = f'https://mangadex.org/covers/{manga_id}/{filename}'
+        cover_url = f'https://mangadex.org/covers/{md_uuid}/{filename}'
         thumb_url = f'{cover_url}.256.jpg'
 
         os.makedirs(THUMBNAILS_DIR, exist_ok=True)
@@ -173,6 +180,7 @@ class UpdateMangaRequest(BaseModel):
     status: str | None = None
     kobo_sync: int | None = None
     favorited: int | None = None
+    url: str | None = None
 
 
 @app.post('/api/manga', status_code=201)
@@ -187,9 +195,10 @@ def api_add_manga(body: AddMangaRequest, background_tasks: BackgroundTasks):
 
 
 @app.patch('/api/manga/{manga_id}')
-def api_update_manga(manga_id: str, body: UpdateMangaRequest):
+def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: BackgroundTasks):
     db = get_db()
-    if not db.get_manga_by_id(manga_id):
+    manga = db.get_manga_by_id(manga_id)
+    if not manga:
         raise HTTPException(status_code=404, detail='Not found')
     if body.status is not None:
         if body.status not in ('active', 'completed', 'hiatus'):
@@ -198,7 +207,18 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest):
     if body.kobo_sync is not None:
         db.set_kobo_sync(manga_id, body.kobo_sync)
     if body.favorited is not None:
-        db.update_manga_metadata(manga_id, db.get_manga_by_id(manga_id)['url'], favorited=body.favorited)
+        db.update_manga_metadata(manga_id, manga['url'], favorited=body.favorited)
+    if body.url is not None:
+        if 'mangadex.org' in body.url:
+            new_source = 'mangadex'
+        elif 'danke.moe' in body.url:
+            new_source = 'danke'
+        else:
+            new_source = 'local'
+        db.update_url(manga_id, body.url)
+        db.update_manga_metadata(manga_id, body.url, source_type=new_source)
+        if new_source == 'mangadex' and not has_thumbnail(manga_id):
+            background_tasks.add_task(fetch_and_save_thumbnail, manga_id)
     return {'ok': True}
 
 
@@ -328,6 +348,85 @@ def api_scan(background_tasks: BackgroundTasks):
 @app.get('/api/scan/status')
 def api_scan_status():
     return {'running': _scan_running}
+
+
+# --- dedupe ---
+
+def _title_similarity(a, b):
+    a = (a or '').lower().strip()
+    b = (b or '').lower().strip()
+    if not a or not b:
+        return 0.0
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
+@app.get('/api/dedupe')
+def api_dedupe():
+    db = get_db()
+    all_manga = db.get_all_manga()
+    duplicates = []
+    n = len(all_manga)
+    for i in range(n):
+        for j in range(i + 1, n):
+            m1, m2 = all_manga[i], all_manga[j]
+            t1 = m1.get('title') or ''
+            t2 = m2.get('title') or ''
+            if not t1 or not t2:
+                continue
+            ratio = _title_similarity(t1, t2)
+            if ratio < 0.85:
+                continue
+            c1 = len(list_chapter_files(t1))
+            c2 = len(list_chapter_files(t2))
+            # Keep: more chapters; tie → prefer mangadex over local
+            if c1 > c2 or (c1 == c2 and m1.get('source_type') == 'mangadex'):
+                keep, drop, ck, cd = m1, m2, c1, c2
+            else:
+                keep, drop, ck, cd = m2, m1, c2, c1
+            drop_title = drop.get('title') or ''
+            keep_title = keep.get('title') or ''
+            drop_folder = os.path.join(MANGA_STORAGE, drop_title) if drop_title else None
+            keep_folder = os.path.join(MANGA_STORAGE, keep_title) if keep_title else None
+            duplicates.append({
+                'similarity': round(ratio * 100),
+                'keep': {
+                    'id': keep['id'], 'title': keep_title, 'url': keep['url'],
+                    'source_type': keep.get('source_type'), 'status': keep['status'],
+                    'chapter_count': ck, 'folder_path': keep_folder,
+                    'folder_exists': bool(keep_title and os.path.isdir(keep_folder)),
+                },
+                'drop': {
+                    'id': drop['id'], 'title': drop_title, 'url': drop['url'],
+                    'source_type': drop.get('source_type'), 'status': drop['status'],
+                    'chapter_count': cd, 'folder_path': drop_folder,
+                    'folder_exists': bool(drop_title and os.path.isdir(drop_folder)),
+                },
+            })
+    return sorted(duplicates, key=lambda x: -x['similarity'])
+
+
+class DedupeResolveRequest(BaseModel):
+    delete_id: str
+    delete_folder: str | None = None
+
+
+@app.post('/api/dedupe/resolve')
+def api_dedupe_resolve(body: DedupeResolveRequest):
+    db = get_db()
+    if not db.get_manga_by_id(body.delete_id):
+        raise HTTPException(status_code=404, detail='Manga not found')
+    deleted_folder = False
+    if body.delete_folder:
+        real_storage = os.path.realpath(MANGA_STORAGE)
+        real_folder = os.path.realpath(body.delete_folder)
+        # Only allow deleting direct children of MANGA_STORAGE — no traversal
+        if os.path.dirname(real_folder) != real_storage:
+            raise HTTPException(status_code=400, detail='Folder not directly inside storage root')
+        if os.path.isdir(real_folder):
+            shutil.rmtree(real_folder)
+            deleted_folder = True
+    db.remove_manga(body.delete_id)
+    return {'ok': True, 'deleted_folder': deleted_folder}
 
 
 # --- file routes ---

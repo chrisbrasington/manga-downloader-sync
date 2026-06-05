@@ -42,3 +42,8 @@ services:
       homepage.name: Manga Library
       homepage.icon: mdi-book-open-page-variant
       homepage.description: Browse and read manga
+      homepage.href: https://manga.home.chrisincode.com
+      homepage.widget.type: customapi
+      homepage.widget.url: https://manga.home.chrisincode.com/api/stats
+      homepage.widget.refreshInterval: "60000"
+      homepage.widget.mappings: '[{"field":"active","label":"Downloading"},{"field":"total","label":"Titles"},{"field":"last_run","label":"Last Run","format":"relativeDate"}]'

@@ -5,6 +5,16 @@ from classes.database import Database
 
 device = '/media/chris/KOBOeReader'
 sync_destination = f'{device}/manga'
+MANGA_STORAGE = os.environ.get('MANGA_STORAGE', 'tmp')
+
+
+def _write_heartbeat():
+    path = os.path.join(MANGA_STORAGE, '.downloader_heartbeat')
+    try:
+        with open(path, 'w') as f:
+            f.write(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+    except Exception as e:
+        print(f'Warning: could not write heartbeat: {e}')
 
 
 def main(args):
@@ -40,6 +50,7 @@ def main(args):
             print('Exiting')
             return
 
+    _write_heartbeat()
     source = db.get_active_manga()
     print(f'Found {len(source)} active manga in database')
 

@@ -13,6 +13,7 @@ from classes.database import Database
 
 MANGA_DB = os.environ.get('MANGA_DB', 'manga.db')
 MANGA_STORAGE = os.environ.get('MANGA_STORAGE', 'tmp')
+DOWNLOADER_HEARTBEAT = os.path.join(MANGA_STORAGE, '.downloader_heartbeat')
 THUMBNAILS_DIR = os.environ.get('THUMBNAILS_DIR', 'thumbnails')
 PICKER_CACHE_DIR = os.path.join(THUMBNAILS_DIR, '_picker')
 WEBAPP_PORT = int(os.environ.get('WEBAPP_PORT', 8080))
@@ -172,6 +173,11 @@ def api_stats():
         if ld and (last_download is None or ld > last_download):
             last_download = ld
     counts['last_download'] = last_download
+    last_run = None
+    if os.path.exists(DOWNLOADER_HEARTBEAT):
+        with open(DOWNLOADER_HEARTBEAT) as f:
+            last_run = f.read().strip()
+    counts['last_run'] = last_run
     return counts
 
 

@@ -875,8 +875,8 @@ def read_chapter(manga_id: str, filename: str):
     * {{ margin:0; padding:0; box-sizing:border-box; }}
     body {{ background:#111; height:100vh; display:flex; flex-direction:column; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }}
     .bar {{ background:#1a1a2e; padding:8px 14px; display:flex; align-items:center; gap:10px; flex-shrink:0; min-width:0; }}
-    .bar a {{ color:#e2b96f; text-decoration:none; font-size:13px; white-space:nowrap; }}
-    .bar a:hover {{ color:#fff; }}
+    .bar a, .bar button {{ color:#e2b96f; text-decoration:none; font-size:13px; white-space:nowrap; background:none; border:none; cursor:pointer; padding:0; font-family:inherit; }}
+    .bar a:hover, .bar button:hover {{ color:#fff; }}
     .bar a.disabled {{ color:#444; pointer-events:none; }}
     .bar .ch-title {{ color:#888; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; text-align:center; min-width:0; }}
     #viewer {{ flex:1; overflow:hidden; display:flex; align-items:center; justify-content:center; position:relative; background:#111; }}
@@ -894,9 +894,9 @@ def read_chapter(manga_id: str, filename: str):
     #back-btn-end:hover {{ color:#ccc; }}
     #loading {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:14px; }}
     @media (max-width:600px) {{
-      .bar {{ padding:10px 14px; gap:14px; }}
-      .bar a {{ font-size:17px; padding:4px 2px; }}
-      .bar .ch-title {{ font-size:13px; }}
+      .bar {{ padding:14px 16px; gap:18px; min-height:62px; }}
+      .bar a, .bar button {{ font-size:26px; padding:6px 2px; }}
+      .bar .ch-title {{ font-size:14px; }}
       #next-ch-btn {{ font-size:19px; padding:16px 40px; width:80%; text-align:center; }}
       #back-btn-end {{ font-size:16px; }}
     }}
@@ -909,6 +909,7 @@ def read_chapter(manga_id: str, filename: str):
     <span class="ch-title" id="ch-title"></span>
     <a id="next-ch" class="disabled" href="#">Next ›</a>
     <a href="{cbz_url}?dl=1">↓</a>
+    <button id="fs-btn" title="Fullscreen">⛶</button>
   </div>
   <div id="viewer">
     <div id="loading">Loading…</div>
@@ -1031,6 +1032,20 @@ def read_chapter(manga_id: str, filename: str):
     document.addEventListener('keydown', e => {{
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext();
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goPrev();
+      if (e.key === 'f' || e.key === 'F') document.getElementById('fs-btn').click();
+    }});
+
+    const fsBtn = document.getElementById('fs-btn');
+    fsBtn.addEventListener('click', () => {{
+      if (!document.fullscreenElement) {{
+        document.documentElement.requestFullscreen().catch(() => {{}});
+      }} else {{
+        document.exitFullscreen();
+      }}
+    }});
+    document.addEventListener('fullscreenchange', () => {{
+      fsBtn.textContent = document.fullscreenElement ? '⊠' : '⛶';
+      fsBtn.title = document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen';
     }});
 
     init();

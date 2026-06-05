@@ -186,11 +186,17 @@
   </div>
 </div>
 
+<div class="section" id="dedupe-section">
+  <h2 class="section-toolbar" style="display:flex;align-items:center;gap:12px">Duplicates
+    <button class="btn btn-muted" id="dedupe-btn" style="font-size:12px;padding:5px 12px">♻️ Find Duplicates</button>
+  </h2>
+  <div id="dedupe-container"></div>
+</div>
+
 <div class="section">
   <h2 class="section-toolbar" style="display:flex;align-items:center;gap:12px">All Manga
     <button class="btn btn-muted" id="scan-btn" style="font-size:12px;padding:5px 12px">🔍 Scan tmp/ for Untracked</button>
     <button class="btn btn-muted" id="fetch-all-btn" style="font-size:12px;padding:5px 12px">🖼 Fetch All Thumbnails</button>
-    <button class="btn btn-muted" id="dedupe-btn" style="font-size:12px;padding:5px 12px">♻️ Find Duplicates</button>
   </h2>
   <div class="manga-table-wrap"><div class="manga-table">
     <table>
@@ -208,11 +214,6 @@
       <tbody id="manga-rows"></tbody>
     </table>
   </div></div>
-</div>
-
-<div class="section" id="dedupe-section" style="display:none">
-  <h2>Duplicate Candidates</h2>
-  <div id="dedupe-container"></div>
 </div>
 
 <div class="modal-overlay" id="merge-overlay">
@@ -477,14 +478,11 @@
   });
 
   function renderDedupe(dupes) {
-    const section = document.getElementById('dedupe-section');
     const container = document.getElementById('dedupe-container');
     if (!dupes.length) {
-      section.style.display = 'block';
       container.innerHTML = '<div class="empty">No duplicates found.</div>';
       return;
     }
-    section.style.display = 'block';
     container.innerHTML = `<div class="dedupe-table"><table>
       <thead><tr>
         <th>Sim</th>

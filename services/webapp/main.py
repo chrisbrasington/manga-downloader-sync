@@ -88,6 +88,7 @@ def manga_to_payload(row):
         'read': bool(row.get('read', 0)),
         'last_read_chapter': row.get('last_read_chapter'),
         'last_read_page': row.get('last_read_page'),
+        'download_enabled': bool(row.get('download_enabled', 0)),
         'folder_path': folder,
         'folder_exists': bool(folder and os.path.isdir(folder)),
     }

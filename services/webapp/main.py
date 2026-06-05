@@ -222,6 +222,30 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
     if body.read is not None:
         db.update_manga_metadata(manga_id, manga['url'], read=body.read)
     if body.url is not None:
+        existing = db.get_manga_by_url(body.url)
+        if existing and existing['id'] != manga_id:
+            ex_title = existing.get('title') or existing['id']
+            my_title = manga.get('title') or manga_id
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    'message': 'URL already in use',
+                    'mine': {
+                        'id': manga_id,
+                        'title': my_title,
+                        'chapter_count': len(list_chapter_files(manga.get('title'))),
+                        'folder_path': os.path.join(MANGA_STORAGE, manga['title']) if manga.get('title') else None,
+                        'folder_exists': bool(manga.get('title') and os.path.isdir(os.path.join(MANGA_STORAGE, manga['title']))),
+                    },
+                    'conflict': {
+                        'id': existing['id'],
+                        'title': ex_title,
+                        'chapter_count': len(list_chapter_files(existing.get('title'))),
+                        'folder_path': os.path.join(MANGA_STORAGE, ex_title) if existing.get('title') else None,
+                        'folder_exists': bool(existing.get('title') and os.path.isdir(os.path.join(MANGA_STORAGE, ex_title))),
+                    },
+                }
+            )
         if 'mangadex.org' in body.url:
             new_source = 'mangadex'
         elif 'danke.moe' in body.url:

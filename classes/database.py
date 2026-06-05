@@ -9,7 +9,7 @@ class Database:
         self._ensure_schema()
 
     def _connect(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=15)
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 

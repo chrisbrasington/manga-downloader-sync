@@ -23,6 +23,9 @@
     header h1 { font-size:18px; font-weight:600; color:var(--accent); flex:1; }
     header a { color:var(--muted); text-decoration:none; font-size:14px; }
     header a:hover { color:var(--ink); }
+    #saving { font-size:12px; color:var(--muted); display:none; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+    #saving.active { display:inline; animation:blink 1s ease-in-out infinite; }
 
     .filters { padding:14px 20px 0; display:flex; gap:8px; }
     .filter-btn { background:var(--panel); border:1px solid var(--border); color:var(--muted); padding:5px 14px; border-radius:20px; cursor:pointer; font-size:13px; transition:all .15s; }
@@ -46,9 +49,9 @@
     .card.archived { opacity:.55; }
     .card.archived:hover { opacity:.8; }
     .ch-num { font-size:11px; color:var(--muted); margin-left:auto; }
-    .star-btn { background:none; border:none; cursor:pointer; font-size:16px; line-height:1; padding:0; opacity:.5; position:absolute; top:6px; right:6px; transition:opacity .15s,transform .15s; }
-    .star-btn:hover, .star-btn.on { opacity:1; }
-    .star-btn.on { transform:scale(1.15); }
+    .star-btn { background:rgba(0,0,0,.55); border:none; border-radius:6px; cursor:pointer; font-size:14px; line-height:1; padding:4px 5px; opacity:.6; position:absolute; top:6px; right:6px; transition:opacity .15s,transform .15s,background .15s; }
+    .star-btn:hover { opacity:1; background:rgba(0,0,0,.75); }
+    .star-btn.on { opacity:1; background:rgba(0,0,0,.75); transform:scale(1.1); }
     .thumb-wrap { position:relative; }
 
     /* chapter panel */
@@ -116,6 +119,7 @@
 
 <header>
   <h1>📚 Manga Library</h1>
+  <span id="saving">saving…</span>
   <a href="/admin">Admin</a>
 </header>
 
@@ -158,6 +162,18 @@
 <script>
   let allManga = [];
   let currentFilter = 'all';
+
+  let _pending = 0;
+  async function apiFetch(url, opts = {}) {
+    _pending++;
+    if (_pending === 1) document.getElementById('saving').classList.add('active');
+    try {
+      return await fetch(url, opts);
+    } finally {
+      _pending--;
+      if (_pending === 0) document.getElementById('saving').classList.remove('active');
+    }
+  }
 
   async function load() {
     try {
@@ -214,7 +230,7 @@
         e.stopPropagation();
         const id = btn.dataset.id;
         const newVal = btn.dataset.fav === '1' ? 0 : 1;
-        const resp = await fetch(`/api/manga/${id}`, {
+        const resp = await apiFetch(`/api/manga/${id}`, {
           method: 'PATCH',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({favorited: newVal})
@@ -256,7 +272,9 @@
         async function saveUrl() {
           const newUrl = input.value.trim();
           if (!newUrl) return;
-          const r = await fetch(`/api/manga/${encodeURIComponent(id)}`, {
+          const saveBtn = document.getElementById('url-save');
+          saveBtn.disabled = true;
+          const r = await apiFetch(`/api/manga/${encodeURIComponent(id)}`, {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({url: newUrl})
@@ -265,6 +283,67 @@
             showUrlLink(newUrl);
             const m = allManga.find(x => x.id === id);
             if (m) { m.url = newUrl; m.source_type = newUrl.includes('mangadex.org') ? 'mangadex' : 'local'; }
+          } else {
+            const err = await r.json().catch(() => ({}));
+            const detail = err.detail || {};
+            saveBtn.disabled = false;
+            if (r.status === 409 && detail.conflict) {
+              const mine = detail.mine;
+              const other = detail.conflict;
+              const loser = mine.chapter_count <= other.chapter_count ? mine : other;
+              const keeper = loser === mine ? other : mine;
+              const box = document.createElement('div');
+              box.style.cssText = 'margin-top:8px;background:#1a1520;border:1px solid #3a2a3a;border-radius:6px;padding:10px;font-size:12px';
+              box.innerHTML = `
+                <div style="color:var(--yellow);margin-bottom:8px">⚠ URL conflict</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+                  <div>
+                    <div style="color:var(--muted);font-size:10px;text-transform:uppercase;margin-bottom:2px">This entry</div>
+                    <div style="font-weight:500">${esc(mine.title)}</div>
+                    <div style="color:var(--muted)">${mine.chapter_count} chapters</div>
+                  </div>
+                  <div>
+                    <div style="color:var(--muted);font-size:10px;text-transform:uppercase;margin-bottom:2px">Other entry</div>
+                    <div style="font-weight:500">${esc(other.title)}</div>
+                    <div style="color:var(--muted)">${other.chapter_count} chapters</div>
+                  </div>
+                </div>
+                <button id="resolve-url-conflict" style="background:var(--red);color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:500;width:100%">
+                  Delete "${esc(loser.title)}" (${loser.chapter_count} ch, fewer files)
+                </button>`;
+              input.closest('.url-input-row').after(box);
+              document.getElementById('resolve-url-conflict').addEventListener('click', async () => {
+                const btn = document.getElementById('resolve-url-conflict');
+                btn.disabled = true; btn.textContent = 'Deleting…';
+                const delUrl = `/api/manga/${encodeURIComponent(loser.id)}${loser.folder_exists ? '?delete_folder=true' : ''}`;
+                const dr = await apiFetch(delUrl, { method: 'DELETE' });
+                if (!dr.ok) { btn.textContent = 'Delete failed'; return; }
+                if (loser.id === id) {
+                  // deleted the current panel entry — close and remove
+                  closePanel();
+                  allManga = allManga.filter(m => m.id !== id);
+                  render();
+                } else {
+                  // deleted the other entry — now retry the URL save
+                  allManga = allManga.filter(m => m.id !== loser.id);
+                  const retry = await apiFetch(`/api/manga/${encodeURIComponent(id)}`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url: newUrl})
+                  });
+                  if (retry.ok) {
+                    showUrlLink(newUrl);
+                    const m = allManga.find(x => x.id === id);
+                    if (m) { m.url = newUrl; m.source_type = newUrl.includes('mangadex.org') ? 'mangadex' : 'local'; }
+                  }
+                }
+              });
+            } else {
+              const msg = document.createElement('div');
+              msg.style.cssText = 'font-size:11px;color:var(--red);margin-top:4px';
+              msg.textContent = (typeof detail === 'string' ? detail : detail.message) || 'Failed to save URL';
+              input.after(msg);
+            }
           }
         }
         document.getElementById('url-save').addEventListener('click', saveUrl);
@@ -338,7 +417,7 @@
 
       document.getElementById('read-btn').addEventListener('click', async () => {
         const newVal = isRead ? 0 : 1;
-        const r = await fetch(`/api/manga/${encodeURIComponent(id)}`, {
+        const r = await apiFetch(`/api/manga/${encodeURIComponent(id)}`, {
           method: 'PATCH',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({read: newVal})
@@ -354,7 +433,7 @@
       document.getElementById('hide-btn').addEventListener('click', async () => {
         const btn = document.getElementById('hide-btn');
         const newVal = isHidden ? 0 : 1;
-        const r = await fetch(`/api/manga/${encodeURIComponent(id)}`, {
+        const r = await apiFetch(`/api/manga/${encodeURIComponent(id)}`, {
           method: 'PATCH',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({hidden: newVal})
@@ -381,7 +460,7 @@
         btn.disabled = true;
         btn.textContent = 'Deleting…';
         const url = `/api/manga/${encodeURIComponent(id)}${folderExists ? '?delete_folder=true' : ''}`;
-        const r = await fetch(url, { method: 'DELETE' });
+        const r = await apiFetch(url, { method: 'DELETE' });
         if (r.ok) {
           closePanel();
           allManga = allManga.filter(m => m.id !== id);
@@ -474,7 +553,7 @@
         card.style.borderColor = 'var(--accent)';
         card.style.opacity = '.5';
         try {
-          const r = await fetch(`/api/manga/${encodeURIComponent(mangaId)}/cover`, {
+          const r = await apiFetch(`/api/manga/${encodeURIComponent(mangaId)}/cover`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({cover_url: c.cover_url})

@@ -706,7 +706,15 @@ class Utility:
 
         # else:    
             # print(manga.title, f'- mangadex - {manga.type}')
-        tmp_dir = f"tmp/{manga.title}"
+        # Use the title already stored in DB (and on disk) to avoid creating a second
+        # folder if MangaDex has changed the title since first download.
+        db_row = self.db.get_manga_by_id(manga.id)
+        stored_title = db_row.get('title') if db_row else None
+        if stored_title and os.path.isdir(f"tmp/{stored_title}"):
+            folder_title = stored_title
+        else:
+            folder_title = manga.title
+        tmp_dir = f"tmp/{folder_title}"
 
         # print truncated description
         desc = manga.desc[:300].rstrip()

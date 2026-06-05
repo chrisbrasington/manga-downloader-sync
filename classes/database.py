@@ -62,10 +62,14 @@ class Database:
                 pass  # column already exists
         try:
             conn.execute("ALTER TABLE manga ADD COLUMN download_enabled INTEGER NOT NULL DEFAULT 0")
-            # First-time migration: active manga were being downloaded, preserve that
-            conn.execute("UPDATE manga SET download_enabled = 1 WHERE status = 'active'")
         except sqlite3.OperationalError:
             pass  # column already exists
+        # One-time data migration: active manga were the download queue before this field existed.
+        # user_version tracks whether this backfill has run so it survives restarts.
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version < 1:
+            conn.execute("UPDATE manga SET download_enabled = 1 WHERE status = 'active'")
+            conn.execute("PRAGMA user_version = 1")
         conn.commit()
         conn.close()
 

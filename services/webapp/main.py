@@ -203,6 +203,7 @@ class UpdateMangaRequest(BaseModel):
     read: int | None = None
     last_read_chapter: str | None = None
     last_read_page: int | None = None
+    clear_progress: bool | None = None
 
 
 @app.post('/api/manga', status_code=201)
@@ -236,6 +237,8 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.update_manga_metadata(manga_id, manga['url'], hidden=body.hidden)
     if body.read is not None:
         db.update_manga_metadata(manga_id, manga['url'], read=body.read)
+    if body.clear_progress:
+        db.clear_reading_progress(manga_id)
     if body.last_read_chapter is not None:
         db.update_manga_metadata(manga_id, manga['url'], last_read_chapter=body.last_read_chapter)
     if body.last_read_page is not None:

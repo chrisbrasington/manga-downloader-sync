@@ -154,6 +154,12 @@ class Database:
         conn.commit()
         conn.close()
 
+    def clear_reading_progress(self, manga_id):
+        conn = self._connect()
+        conn.execute("UPDATE manga SET last_read_chapter = NULL, last_read_page = NULL WHERE id = ?", (manga_id,))
+        conn.commit()
+        conn.close()
+
     def set_manga_status(self, manga_id, status):
         conn = self._connect()
         conn.execute("UPDATE manga SET status = ? WHERE id = ?", (status, manga_id))

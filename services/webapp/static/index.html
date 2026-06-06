@@ -66,12 +66,6 @@
       background:linear-gradient(to bottom, transparent 0%, rgba(14,15,19,.82) 38%, rgba(14,15,19,.97) 100%);
       padding:48px 20px 16px;
     }
-    .panel-hero-hires {
-      position:absolute; inset:0; width:100%; height:100%;
-      object-fit:cover; object-position:center top;
-      display:block; opacity:0; transition:opacity .4s ease; z-index:1;
-    }
-    .panel-hero-hires.loaded { opacity:1; }
     .panel-hero.no-cover .panel-head {
       position:static; padding:16px 20px;
       border-bottom:1px solid var(--border);
@@ -350,8 +344,7 @@
     document.getElementById('panel-url-bar').innerHTML = '';
     document.getElementById('panel-footer').innerHTML = '';
     const heroEl = document.getElementById('panel-hero');
-    const existingImg = heroEl.querySelector('.panel-hero-img');
-    if (existingImg) existingImg.remove();
+    heroEl.querySelectorAll('img').forEach(el => el.remove());
     heroEl.className = 'panel-hero no-cover';
     document.getElementById('chapter-list').innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px">Loading…</div>';
     document.getElementById('overlay').classList.add('open');
@@ -362,25 +355,17 @@
       // Refresh panel title with alias if set
       document.getElementById('panel-title').textContent = data.alias || data.title || title;
 
-      // Hero cover image — thumbnail first, high-res fades in over it
+      // Hero cover image
       if (data.has_thumbnail) {
         const m = allManga.find(x => x.id === id);
         const ts = m && m._coverTs ? '?t=' + m._coverTs : '';
         const hero = document.getElementById('panel-hero');
-
         const img = document.createElement('img');
         img.className = 'panel-hero-img';
         img.alt = 'cover';
-        img.src = `/thumbnail/${encodeURIComponent(id)}${ts}`;
+        img.src = `/cover/${encodeURIComponent(id)}${ts}`;
         hero.insertBefore(img, hero.firstChild);
         hero.className = 'panel-hero has-cover';
-
-        const hires = document.createElement('img');
-        hires.className = 'panel-hero-hires';
-        hires.alt = '';
-        hires.addEventListener('load', () => hires.classList.add('loaded'));
-        hires.src = `/cover/${encodeURIComponent(id)}${ts}`;
-        img.after(hires);
       }
 
       // URL bar

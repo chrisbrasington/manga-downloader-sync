@@ -1067,6 +1067,9 @@ def read_chapter(manga_id: str, filename: str):
       const prevEl = document.getElementById('prev-ch');
       const nextEl = document.getElementById('next-ch');
       const nextBtn = document.getElementById('next-ch-btn');
+      prevEl.href = '#'; prevEl.classList.add('disabled');
+      nextEl.href = '#'; nextEl.classList.add('disabled');
+      nextBtn.style.display = 'none';
       if (currentChIdx > 0) {{
         const u = `/read/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(chapters[currentChIdx - 1])}}`;
         prevEl.href = u;

@@ -1002,7 +1002,7 @@ def read_chapter(manga_id: str, filename: str):
     #back-btn-end {{ color:#888; font-size:13px; text-decoration:none; }}
     #back-btn-end:hover {{ color:#ccc; }}
     #loading {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:14px; }}
-    @media (max-width:768px) {{
+    @media (max-width:768px), (pointer:coarse) {{
       .bar {{ padding:0 4px; gap:0; min-height:64px; justify-content:space-between; }}
       .bar-m-hide {{ display:none; }}
       .bar a, .bar button {{ font-size:36px; padding:12px 24px; }}

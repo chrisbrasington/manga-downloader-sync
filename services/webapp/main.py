@@ -1140,7 +1140,7 @@ def read_chapter(manga_id: str, filename: str):
       const endScreen = document.getElementById('end-screen');
       if (endScreen.classList.contains('show')) {{
         const nextBtn = document.getElementById('next-ch-btn');
-        if (nextBtn.style.display !== 'none') {{
+        if (nextBtn.style.display === 'inline-block') {{
           window.location.href = nextBtn.href;
         }} else {{
           window.location.href = '/';

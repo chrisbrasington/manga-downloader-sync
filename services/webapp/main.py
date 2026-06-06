@@ -1041,9 +1041,10 @@ def read_chapter(manga_id: str, filename: str):
     let currentPage = 1, totalPages = 0;
     let chapters = [], currentChIdx = -1;
     let saveTimer = null;
+    let activeFilename = FILENAME;
 
     function pageUrl(n) {{
-      return `/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(FILENAME)}}/${{n}}`;
+      return `/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(activeFilename)}}/${{n}}`;
     }}
 
     function saveProgress(page) {{
@@ -1052,7 +1053,7 @@ def read_chapter(manga_id: str, filename: str):
         fetch(`/api/manga/${{encodeURIComponent(MANGA_ID)}}`, {{
           method: 'PATCH',
           headers: {{'Content-Type': 'application/json'}},
-          body: JSON.stringify({{last_read_chapter: FILENAME, last_read_page: page}})
+          body: JSON.stringify({{last_read_chapter: activeFilename, last_read_page: page}})
         }}).catch(() => {{}});
       }}, 800);
     }}
@@ -1136,11 +1137,20 @@ def read_chapter(manga_id: str, filename: str):
       }} catch(e) {{}}
     }}
 
-    function fsUrl(href) {{
-      if (!document.fullscreenElement || !href || href === '#') return href;
-      const url = new URL(href, location.origin);
-      url.searchParams.set('fs', '1');
-      return url.toString();
+    async function loadChapter(filename) {{
+      activeFilename = filename;
+      currentChIdx = chapters.indexOf(filename);
+      document.getElementById('ch-title').textContent = filename.replace(/\.cbz$/, '');
+      history.pushState(null, '', `/read/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(filename)}}`);
+      updateNav();
+      document.getElementById('end-screen').classList.remove('show');
+      try {{
+        const info = await fetch(`/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(filename)}}/info`).then(r => r.json());
+        totalPages = info.page_count;
+        renderPage(1);
+      }} catch(e) {{
+        document.getElementById('loading').textContent = 'Failed to load chapter.';
+      }}
     }}
 
     function goNext() {{
@@ -1148,7 +1158,7 @@ def read_chapter(manga_id: str, filename: str):
       if (endScreen.classList.contains('show')) {{
         const nextBtn = document.getElementById('next-ch-btn');
         if (nextBtn.style.display === 'inline-block') {{
-          window.location.href = fsUrl(nextBtn.href);
+          loadChapter(chapters[currentChIdx + 1]);
         }} else {{
           window.location.href = '/';
         }}
@@ -1175,12 +1185,20 @@ def read_chapter(manga_id: str, filename: str):
 
     document.getElementById('hz-next').addEventListener('click', goNext);
     document.getElementById('hz-prev').addEventListener('click', goPrev);
-    ['next-ch', 'prev-ch', 'next-ch-btn'].forEach(id => {{
-      document.getElementById(id).addEventListener('click', function(e) {{
-        if (!document.fullscreenElement || this.classList.contains('disabled') || !this.href || this.href.endsWith('#')) return;
-        e.preventDefault();
-        window.location.href = fsUrl(this.href);
-      }});
+    document.getElementById('next-ch').addEventListener('click', function(e) {{
+      if (this.classList.contains('disabled')) return;
+      e.preventDefault();
+      loadChapter(chapters[currentChIdx + 1]);
+    }});
+    document.getElementById('prev-ch').addEventListener('click', function(e) {{
+      if (this.classList.contains('disabled')) return;
+      e.preventDefault();
+      loadChapter(chapters[currentChIdx - 1]);
+    }});
+    document.getElementById('next-ch-btn').addEventListener('click', function(e) {{
+      if (this.style.display !== 'inline-block') return;
+      e.preventDefault();
+      loadChapter(chapters[currentChIdx + 1]);
     }});
     document.addEventListener('keydown', e => {{
       if (e.key === 'Escape' && !document.fullscreenElement) {{ history.back(); return; }}
@@ -1210,10 +1228,6 @@ def read_chapter(manga_id: str, filename: str):
     // Rotation — read from URL, persist on change
     const _qp = new URLSearchParams(window.location.search);
     let currentRot = Math.round((parseInt(_qp.get('rotation')) || 0) / 90) * 90 % 360;
-    if (_qp.get('fs') === '1') {{
-      document.documentElement.requestFullscreen().catch(() => {{}});
-    }}
-
     function applyImageSizing() {{
       if (currentRot === 90 || currentRot === 270) {{
         // swap constraints so rotated image fills viewer correctly

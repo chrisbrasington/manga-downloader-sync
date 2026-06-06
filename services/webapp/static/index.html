@@ -260,7 +260,7 @@
       : currentFilter === 'read' ? allManga.filter(m => m.read)
       : currentFilter === 'reading' ? allManga.filter(m => m.last_read_chapter && !m.read && !m.hidden)
       : currentFilter === 'all' ? allManga.filter(visible)
-      : currentFilter === 'favorites' ? allManga.filter(m => m.favorited && visible(m))
+      : currentFilter === 'favorites' ? allManga.filter(m => m.favorited)
       : allManga.filter(m => m.status === currentFilter && visible(m));
     const q = currentSearch.trim().toLowerCase();
     if (q) manga = manga.filter(m => displayTitle(m).toLowerCase().includes(q));

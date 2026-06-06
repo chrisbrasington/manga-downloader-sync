@@ -55,7 +55,7 @@
     /* chapter panel */
     .panel-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; }
     .panel-overlay.open { display:flex; align-items:flex-end; justify-content:center; }
-    .panel { background:var(--panel); border-radius:12px 12px 0 0; width:100%; max-width:600px; max-height:85vh; display:flex; flex-direction:column; }
+    .panel { background:var(--panel); border-radius:12px 12px 0 0; width:100%; max-width:600px; height:100dvh; max-height:100dvh; display:flex; flex-direction:column; }
 
     /* hero: cover image + overlaid panel-head */
     .panel-hero { position:relative; width:100%; flex-shrink:0; background:#0e0f13; border-radius:12px 12px 0 0; overflow:hidden; }
@@ -842,8 +842,12 @@
             body: JSON.stringify({cover_url: c.cover_url})
           });
           if (r.ok) {
+            const ts = Date.now();
             const m = allManga.find(x => x.id === mangaId);
-            if (m) { m.has_thumbnail = true; m.cover_url = c.cover_url; m._coverTs = Date.now(); }
+            if (m) { m.has_thumbnail = true; m.cover_url = c.cover_url; m._coverTs = ts; }
+            // Update the hero image live without reopening the panel
+            const heroImg = document.querySelector('#panel-hero .panel-hero-img');
+            if (heroImg) heroImg.src = `/cover/${encodeURIComponent(mangaId)}?t=${ts}`;
             document.getElementById('covers-overlay').classList.remove('open');
             render();
           } else {

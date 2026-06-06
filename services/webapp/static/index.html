@@ -55,14 +55,33 @@
     /* chapter panel */
     .panel-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:100; }
     .panel-overlay.open { display:flex; align-items:flex-end; justify-content:center; }
-    .panel { background:var(--panel); border-radius:12px 12px 0 0; width:100%; max-width:600px; max-height:80vh; display:flex; flex-direction:column; }
-    .panel-head { padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; }
-    .panel-head h2 { font-size:15px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .panel { background:var(--panel); border-radius:12px 12px 0 0; width:100%; max-width:600px; max-height:85vh; display:flex; flex-direction:column; }
+
+    /* hero: cover image + overlaid panel-head */
+    .panel-hero { position:relative; width:100%; flex-shrink:0; background:#0e0f13; border-radius:12px 12px 0 0; overflow:hidden; }
+    .panel-hero-img { width:100%; height:400px; object-fit:cover; object-position:center top; display:block; }
+    .panel-head { display:flex; align-items:center; gap:8px; }
+    .panel-hero.has-cover .panel-head {
+      position:absolute; bottom:0; left:0; right:0;
+      background:linear-gradient(to bottom, transparent 0%, rgba(14,15,19,.82) 38%, rgba(14,15,19,.97) 100%);
+      padding:48px 20px 16px;
+    }
+    .panel-hero.no-cover .panel-head {
+      position:static; padding:16px 20px;
+      border-bottom:1px solid var(--border);
+      background:var(--panel);
+    }
+    .panel-head h2 { font-size:16px; font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .panel-hero.has-cover .panel-head h2 { color:#fff; text-shadow:0 1px 4px rgba(0,0,0,.7); }
     .panel-close { background:none; border:none; color:var(--muted); cursor:pointer; font-size:20px; line-height:1; }
     .panel-close:hover { color:var(--ink); }
+    .panel-hero.has-cover .panel-close { color:rgba(255,255,255,.7); }
+    .panel-hero.has-cover .panel-close:hover { color:#fff; }
     .panel-nav { background:none; border:1px solid var(--border); color:var(--muted); cursor:pointer; font-size:18px; line-height:1; border-radius:4px; padding:2px 8px; transition:color .15s,border-color .15s; flex-shrink:0; }
     .panel-nav:hover:not(:disabled) { color:var(--ink); border-color:var(--ink); }
     .panel-nav:disabled { opacity:.25; cursor:default; }
+    .panel-hero.has-cover .panel-nav { border-color:rgba(255,255,255,.3); color:rgba(255,255,255,.6); }
+    .panel-hero.has-cover .panel-nav:hover:not(:disabled) { border-color:#fff; color:#fff; }
     .chapter-list { overflow-y:auto; padding:8px 0; flex:1; }
     .chapter-row { display:flex; align-items:center; padding:10px 20px; gap:12px; border-bottom:1px solid var(--border); }
     .chapter-row:last-child { border-bottom:none; }
@@ -186,11 +205,13 @@
 
 <div class="panel-overlay" id="overlay">
   <div class="panel">
-    <div class="panel-head">
-      <button class="panel-nav" id="panel-prev" title="Previous (←)">‹</button>
-      <h2 id="panel-title"></h2>
-      <button class="panel-nav" id="panel-next" title="Next (→)">›</button>
-      <button class="panel-close" id="panel-close">✕</button>
+    <div class="panel-hero no-cover" id="panel-hero">
+      <div class="panel-head">
+        <button class="panel-nav" id="panel-prev" title="Previous (←)">‹</button>
+        <h2 id="panel-title"></h2>
+        <button class="panel-nav" id="panel-next" title="Next (→)">›</button>
+        <button class="panel-close" id="panel-close">✕</button>
+      </div>
     </div>
     <div class="panel-url-bar" id="panel-url-bar"></div>
     <div class="chapter-list" id="chapter-list"></div>
@@ -322,6 +343,10 @@
     document.getElementById('panel-title').textContent = title;
     document.getElementById('panel-url-bar').innerHTML = '';
     document.getElementById('panel-footer').innerHTML = '';
+    const heroEl = document.getElementById('panel-hero');
+    const existingImg = heroEl.querySelector('.panel-hero-img');
+    if (existingImg) existingImg.remove();
+    heroEl.className = 'panel-hero no-cover';
     document.getElementById('chapter-list').innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px">Loading…</div>';
     document.getElementById('overlay').classList.add('open');
 
@@ -330,6 +355,19 @@
 
       // Refresh panel title with alias if set
       document.getElementById('panel-title').textContent = data.alias || data.title || title;
+
+      // Hero cover image
+      if (data.has_thumbnail) {
+        const m = allManga.find(x => x.id === id);
+        const ts = m && m._coverTs ? '?t=' + m._coverTs : '';
+        const hero = document.getElementById('panel-hero');
+        const img = document.createElement('img');
+        img.className = 'panel-hero-img';
+        img.src = `/thumbnail/${encodeURIComponent(id)}${ts}`;
+        img.alt = 'cover';
+        hero.insertBefore(img, hero.firstChild);
+        hero.className = 'panel-hero has-cover';
+      }
 
       // URL bar
       const urlBar = document.getElementById('panel-url-bar');

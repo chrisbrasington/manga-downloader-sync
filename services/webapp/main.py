@@ -1013,7 +1013,7 @@ def read_chapter(manga_id: str, filename: str):
 </head>
 <body>
   <div class="bar">
-    <a class="bar-m-hide" href="javascript:history.back()">← Back</a>
+    <a href="javascript:history.back()">← Back</a>
     <a id="prev-ch" class="disabled" href="#">‹</a>
     <span class="ch-title bar-m-hide" id="ch-title"></span>
     <a id="next-ch" class="disabled" href="#">›</a>

@@ -372,6 +372,18 @@
         img.className = 'panel-hero-img';
         img.alt = 'cover';
         img.src = `/cover/${encodeURIComponent(id)}${ts}`;
+        let heroReadUrl = null;
+        if (data.last_read_chapter) {
+          const pgStr = data.last_read_page && data.last_read_page > 1 ? `?page=${data.last_read_page}` : '';
+          heroReadUrl = `/read/${encodeURIComponent(id)}/${encodeURIComponent(data.last_read_chapter)}${pgStr}`;
+        } else if (data.chapters && data.chapters.length) {
+          heroReadUrl = `/read/${encodeURIComponent(id)}/${encodeURIComponent(data.chapters[0])}`;
+        }
+        if (heroReadUrl) {
+          img.style.cursor = 'pointer';
+          img.title = data.last_read_chapter ? 'Continue reading' : 'Start reading';
+          img.addEventListener('click', () => { window.location.href = heroReadUrl; });
+        }
         hero.insertBefore(img, hero.firstChild);
         hero.className = 'panel-hero has-cover';
       }

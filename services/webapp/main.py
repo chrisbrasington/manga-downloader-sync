@@ -1131,6 +1131,7 @@ def read_chapter(manga_id: str, filename: str):
     document.getElementById('hz-next').addEventListener('click', goNext);
     document.getElementById('hz-prev').addEventListener('click', goPrev);
     document.addEventListener('keydown', e => {{
+      if (e.key === 'Escape' && !document.fullscreenElement) {{ history.back(); return; }}
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goNext();
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goPrev();
       if (e.key === 'f' || e.key === 'F') document.getElementById('fs-btn').click();

@@ -24,6 +24,9 @@
     header a { color:var(--muted); text-decoration:none; font-size:14px; }
     header a:hover { color:var(--ink); }
     #saving { font-size:12px; color:var(--muted); display:none; }
+    #search-input { background:#0e0f13; border:1px solid var(--border); color:var(--ink); padding:6px 12px; border-radius:20px; font-size:13px; width:200px; outline:none; }
+    #search-input:focus { border-color:var(--accent); }
+    #search-input::placeholder { color:var(--muted); }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
     #saving.active { display:inline; animation:blink 1s ease-in-out infinite; }
 
@@ -151,6 +154,7 @@
       header { padding:10px 14px; }
       header h1 { font-size:16px; }
 
+      #search-input { width:130px; }
       .filters { padding:10px 14px 0; overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
       .filters::-webkit-scrollbar { display:none; }
       .filter-btn { flex-shrink:0; padding:5px 12px; }
@@ -174,6 +178,7 @@
 
 <header>
   <h1>📚 Manga Library</h1>
+  <input type="search" id="search-input" placeholder="Search…" autocomplete="off" spellcheck="false">
   <span id="saving">saving…</span>
   <a href="/admin">Admin</a>
 </header>
@@ -223,6 +228,7 @@
   let allManga = [];
   let visibleManga = [];
   let currentPanelIndex = -1;
+  let currentSearch = '';
   const _validFilters = new Set(['all','favorites','reading','active','completed','hiatus','archived','read','hidden']);
   const _urlFilter = new URLSearchParams(location.search).get('filter');
   let currentFilter = _validFilters.has(_urlFilter) ? _urlFilter : 'all';
@@ -250,12 +256,14 @@
 
   function render() {
     const visible = m => !m.hidden && !m.read;
-    const manga = currentFilter === 'hidden' ? allManga.filter(m => m.hidden)
+    let manga = currentFilter === 'hidden' ? allManga.filter(m => m.hidden)
       : currentFilter === 'read' ? allManga.filter(m => m.read)
       : currentFilter === 'reading' ? allManga.filter(m => m.last_read_chapter && !m.read && !m.hidden)
       : currentFilter === 'all' ? allManga.filter(visible)
       : currentFilter === 'favorites' ? allManga.filter(m => m.favorited && visible(m))
       : allManga.filter(m => m.status === currentFilter && visible(m));
+    const q = currentSearch.trim().toLowerCase();
+    if (q) manga = manga.filter(m => displayTitle(m).toLowerCase().includes(q));
     const active = allManga.filter(m => m.status === 'active').length;
     const archived = allManga.filter(m => m.status === 'archived').length;
     document.getElementById('stats').textContent = `${allManga.length} series · ${active} active · ${archived} archived`;
@@ -772,6 +780,11 @@
   function closePanel() {
     document.getElementById('overlay').classList.remove('open');
   }
+
+  document.getElementById('search-input').addEventListener('input', e => {
+    currentSearch = e.target.value;
+    render();
+  });
 
   document.querySelectorAll('.filter-btn').forEach(btn => {
     if (btn.dataset.filter === currentFilter) {

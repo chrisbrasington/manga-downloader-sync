@@ -442,12 +442,23 @@ def api_select_cover(manga_id: str, body: SelectCoverRequest):
     if os.path.exists(cached):
         shutil.copy2(cached, thumbnail_path(manga_id))
     else:
-        # Cache miss — download directly
         resp = http_requests.get(body.cover_url + '.256.jpg', timeout=15)
         if resp.status_code != 200:
             raise HTTPException(status_code=502, detail='Failed to download cover')
         with open(thumbnail_path(manga_id), 'wb') as f:
             f.write(resp.content)
+    # Refresh the large cover cache
+    large = large_cover_path(manga_id)
+    if os.path.exists(large):
+        os.remove(large)
+    try:
+        resp512 = http_requests.get(body.cover_url + '.512.jpg', timeout=15)
+        if resp512.status_code == 200:
+            os.makedirs(LARGE_COVERS_DIR, exist_ok=True)
+            with open(large, 'wb') as f:
+                f.write(resp512.content)
+    except Exception:
+        pass
     db.update_manga_metadata(manga_id, manga['url'], cover_url=body.cover_url)
     # Clean up picker cache
     picker_dir = os.path.join(PICKER_CACHE_DIR, manga_id)

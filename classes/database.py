@@ -55,6 +55,7 @@ class Database:
             "ALTER TABLE manga ADD COLUMN read INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE manga ADD COLUMN last_read_chapter TEXT",
             "ALTER TABLE manga ADD COLUMN last_read_page INTEGER",
+            "ALTER TABLE manga ADD COLUMN alias TEXT",
         ]:
             try:
                 conn.execute(stmt)
@@ -137,7 +138,8 @@ class Database:
         allowed = {
             'title', 'cover_url', 'description', 'author', 'demographic', 'tags',
             'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type',
-            'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page', 'download_enabled'
+            'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page', 'download_enabled',
+            'alias',
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
 
@@ -181,6 +183,12 @@ class Database:
     def update_url(self, manga_id, new_url):
         conn = self._connect()
         conn.execute("UPDATE manga SET url = ? WHERE id = ?", (new_url, manga_id))
+        conn.commit()
+        conn.close()
+
+    def set_alias(self, manga_id, alias):
+        conn = self._connect()
+        conn.execute("UPDATE manga SET alias = ? WHERE id = ?", (alias, manga_id))
         conn.commit()
         conn.close()
 

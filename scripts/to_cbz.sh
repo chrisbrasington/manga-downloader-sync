@@ -138,8 +138,9 @@ convert_rar() {
   fi
 
   echo "         repacking as cbz..."
-  # zip from inside tmp so paths inside the archive are relative
-  (cd "$tmp" && zip -r -q "$dst" .)
+  local abs_dst
+  abs_dst="$(cd "$(dirname "$src")" && pwd)/$(basename "$dst")"
+  (cd "$tmp" && zip -r -q "$abs_dst" .)
 
   rm -rf "$tmp"
   rar_converted+=("$src")
@@ -171,7 +172,9 @@ convert_7z() {
   7z x -bd -bso0 "$src" -o"$tmp"
 
   echo "         repacking as cbz..."
-  (cd "$tmp" && zip -r -q "$dst" .)
+  local abs_dst
+  abs_dst="$(cd "$(dirname "$src")" && pwd)/$(basename "$dst")"
+  (cd "$tmp" && zip -r -q "$abs_dst" .)
 
   rm -rf "$tmp"
   sevenz_converted+=("$src")
@@ -195,19 +198,19 @@ if [[ $errors -gt 0 ]]; then
 fi
 
 if [[ ${#rar_converted[@]} -gt 0 ]]; then
-  echo "  Removing original RAR files..."
+  echo "  Trashing original RAR files..."
   for src in "${rar_converted[@]}"; do
-    rm -f "$src"
-    echo "    deleted: $src"
+    trash "$src"
+    echo "    trashed: $src"
   done
   echo ""
 fi
 
 if [[ ${#sevenz_converted[@]} -gt 0 ]]; then
-  echo "  Removing original 7z files..."
+  echo "  Trashing original 7z files..."
   for src in "${sevenz_converted[@]}"; do
-    rm -f "$src"
-    echo "    deleted: $src"
+    trash "$src"
+    echo "    trashed: $src"
   done
   echo ""
 fi

@@ -89,6 +89,7 @@ def manga_to_payload(row):
         'last_read_chapter': row.get('last_read_chapter'),
         'last_read_page': row.get('last_read_page'),
         'download_enabled': bool(row.get('download_enabled', 0)),
+        'alias': row.get('alias') or None,
         'folder_path': folder,
         'folder_exists': bool(folder and os.path.isdir(folder)),
     }
@@ -204,6 +205,7 @@ class UpdateMangaRequest(BaseModel):
     last_read_chapter: str | None = None
     last_read_page: int | None = None
     clear_progress: bool | None = None
+    alias: str | None = None
 
 
 @app.post('/api/manga', status_code=201)
@@ -243,6 +245,8 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.update_manga_metadata(manga_id, manga['url'], last_read_chapter=body.last_read_chapter)
     if body.last_read_page is not None:
         db.update_manga_metadata(manga_id, manga['url'], last_read_page=body.last_read_page)
+    if body.alias is not None:
+        db.set_alias(manga_id, body.alias.strip() or None)
     if body.url is not None:
         existing = db.get_manga_by_url(body.url)
         if existing and existing['id'] != manga_id:
@@ -352,6 +356,52 @@ def api_manga_covers(manga_id: str):
                 'cover_url': f'https://mangadex.org/covers/{rel_manga_id}/{fname}',
             })
         return covers
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@app.get('/api/manga/{manga_id}/titles')
+def api_manga_titles(manga_id: str):
+    db = get_db()
+    manga = db.get_manga_by_id(manga_id)
+    if not manga:
+        raise HTTPException(status_code=404, detail='Not found')
+    url = manga.get('url', '')
+    if manga.get('source_type') != 'mangadex' or url.startswith('local:'):
+        return []
+    md_uuid = Database._extract_id(url)
+    if not md_uuid:
+        return []
+    try:
+        resp = http_requests.get(
+            f'https://api.mangadex.org/manga/{md_uuid}',
+            headers={'accept': 'application/json'},
+            timeout=10
+        )
+        data = resp.json().get('data', {})
+        attrs = data.get('attributes', {})
+        titles = []
+        seen = set()
+        for locale, t in (attrs.get('title') or {}).items():
+            if t and t not in seen:
+                titles.append({'title': t, 'locale': locale})
+                seen.add(t)
+        for alt in (attrs.get('altTitles') or []):
+            for locale, t in alt.items():
+                if t and t not in seen:
+                    titles.append({'title': t, 'locale': locale})
+                    seen.add(t)
+
+        def locale_rank(x):
+            l = x['locale']
+            if l.startswith('en'):
+                return 0
+            if l.startswith('ja'):
+                return 1
+            return 2
+
+        titles.sort(key=locale_rank)
+        return titles
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
 

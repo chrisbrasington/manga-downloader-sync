@@ -120,6 +120,13 @@
     .continue-btn { display:block; background:#1a2a1a; color:var(--green); font-size:11px; padding:3px 8px; border-radius:4px; text-decoration:none; text-align:center; transition:background .15s; }
     .continue-btn:hover { background:#253525; }
 
+    /* alias chip suggestions */
+    .alias-chip { background:var(--border); color:var(--ink); border:1px solid var(--border); padding:3px 10px; border-radius:12px; cursor:pointer; font-size:12px; transition:background .15s,border-color .15s; }
+    .alias-chip:hover { background:var(--accent); color:#111; border-color:var(--accent); }
+    .alias-chip.en { border-color:var(--green); }
+    .alias-chip.ja { border-color:#8ab4f8; }
+    .btn-panel-primary { background:var(--accent); color:#111; }
+
     /* mobile */
     @media (max-width:600px) {
       header { padding:10px 14px; }
@@ -240,14 +247,16 @@
     }
 
     document.getElementById('grid').innerHTML = manga.map(m => {
+      const thumbUrl = `/thumbnail/${esc(m.id)}${m._coverTs ? '?t=' + m._coverTs : ''}`;
       const thumb = m.has_thumbnail
-        ? `<div class="thumb" style="background-image:url('/thumbnail/${esc(m.id)}')"></div>`
+        ? `<div class="thumb" style="background-image:url('${thumbUrl}')"></div>`
         : `<div class="thumb">📖</div>`;
       const badgeLabel = m.status === 'active' ? 'downloading' : m.status;
       const badge = `<span class="badge badge-${esc(m.status)}">${esc(badgeLabel)}</span>`;
       const ch = m.last_chapter_on_disk != null ? `<span class="ch-num">Ch.${m.last_chapter_on_disk}</span>` : '';
       const starClass = m.favorited ? 'star-btn on' : 'star-btn';
       const cardClass = m.status === 'archived' ? 'card archived' : 'card';
+      const dtitle = displayTitle(m);
       let continueBtn = '';
       if (m.last_read_chapter) {
         const pageStr = m.last_read_page && m.last_read_page > 1 ? `?page=${m.last_read_page}` : '';
@@ -257,13 +266,13 @@
         const pgLabel = m.last_read_page && m.last_read_page > 1 ? ` · p.${m.last_read_page}` : '';
         continueBtn = `<div class="card-continue"><a class="continue-btn" href="${contUrl}" onclick="event.stopPropagation()">▶ Continue ${chLabel}${pgLabel}</a></div>`;
       }
-      return `<div class="${cardClass}" data-id="${esc(m.id)}" data-title="${esc(m.title)}">
+      return `<div class="${cardClass}" data-id="${esc(m.id)}" data-title="${esc(dtitle)}">
         <div class="thumb-wrap">
           ${thumb}
           <button class="${starClass}" data-id="${esc(m.id)}" data-fav="${m.favorited ? 1 : 0}" title="Favorite">⭐</button>
         </div>
         <div class="card-body">
-          <div class="card-title">${esc(m.title)}</div>
+          <div class="card-title">${esc(dtitle)}</div>
           <div class="card-meta">${badge}${ch}</div>
           ${continueBtn}
         </div>
@@ -304,7 +313,7 @@
     if (next < 0 || next >= visibleManga.length) return;
     currentPanelIndex = next;
     const m = visibleManga[currentPanelIndex];
-    openPanel(m.id, m.title);
+    openPanel(m.id, displayTitle(m));
   }
 
   async function openPanel(id, title) {
@@ -318,6 +327,9 @@
 
     try {
       const data = await fetch(`/api/manga/${encodeURIComponent(id)}`).then(r => r.json());
+
+      // Refresh panel title with alias if set
+      document.getElementById('panel-title').textContent = data.alias || data.title || title;
 
       // URL bar
       const urlBar = document.getElementById('panel-url-bar');
@@ -456,18 +468,33 @@
       const folderExists = data.folder_exists || false;
       const isHidden = data.hidden || false;
       const isRead = data.read || false;
+      const isDownloadEnabled = data.download_enabled !== false;
       const hasProgress = !!data.last_read_chapter;
       const deleteCmd = folderExists
         ? `rm -rf "${folderPath}"\n# + remove DB entry`
         : `# No folder on disk\n# Remove DB entry only`;
       const isMangadex = data.source_type === 'mangadex' && !mangaUrl.startsWith('local:');
+      const currentAlias = data.alias || '';
       footer.innerHTML = `
         <div class="panel-footer-row">
           <button class="btn-panel-action" id="hide-btn">${isHidden ? '👁 Unhide' : '👁 Hide'}</button>
           <button class="btn-panel-action" id="read-btn">${isRead ? '✓ Unread' : '✓ Read'}</button>
+          <button class="btn-panel-action" id="download-btn">${isDownloadEnabled ? '⏸ Pause' : '▶ Resume'}</button>
           ${hasProgress ? `<button class="btn-panel-action" id="clear-progress-btn">▶ Clear progress</button>` : ''}
           ${isMangadex ? `<button class="btn-panel-action" id="cover-btn">🖼 Cover</button>` : ''}
+          <button class="btn-panel-action" id="alias-btn">✏ Alias${currentAlias ? ' ✓' : ''}</button>
           <button class="btn-delete-open" id="delete-open">🗑 Delete…</button>
+        </div>
+        <div id="alias-section" style="display:none;margin-top:10px">
+          <div class="url-input-row" style="margin-bottom:8px">
+            <input type="text" id="alias-input" value="${esc(currentAlias)}" placeholder="Display name… (empty to clear)">
+            ${isMangadex ? `<button class="btn-url btn-url-ddg" id="alias-fetch">Fetch titles</button>` : ''}
+          </div>
+          <div id="alias-suggestions" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+          <div class="delete-actions">
+            <button class="btn-panel btn-panel-cancel" id="alias-cancel">Cancel</button>
+            <button class="btn-panel btn-panel-primary" id="alias-save">Save</button>
+          </div>
         </div>
         <div class="delete-confirm" id="delete-confirm" style="display:none;margin-top:10px">
           <div class="delete-cmd">${esc(deleteCmd)}</div>
@@ -479,6 +506,79 @@
 
       if (isMangadex) {
         document.getElementById('cover-btn').addEventListener('click', () => openCovers(id, data.title || title));
+      }
+
+      // Alias button
+      document.getElementById('alias-btn').addEventListener('click', () => {
+        const section = document.getElementById('alias-section');
+        const isOpen = section.style.display !== 'none';
+        section.style.display = isOpen ? 'none' : 'block';
+        if (!isOpen) {
+          document.getElementById('delete-confirm').style.display = 'none';
+          document.getElementById('delete-open').style.display = '';
+          document.getElementById('alias-input').focus();
+          document.getElementById('alias-input').select();
+        }
+      });
+
+      document.getElementById('alias-cancel').addEventListener('click', () => {
+        document.getElementById('alias-section').style.display = 'none';
+      });
+
+      async function saveAlias() {
+        const btn = document.getElementById('alias-save');
+        const newAlias = document.getElementById('alias-input').value.trim();
+        btn.disabled = true;
+        const r = await apiFetch(`/api/manga/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({alias: newAlias})
+        });
+        if (r.ok) {
+          const m = allManga.find(x => x.id === id);
+          if (m) m.alias = newAlias || null;
+          document.getElementById('alias-section').style.display = 'none';
+          document.getElementById('alias-btn').textContent = `✏ Alias${newAlias ? ' ✓' : ''}`;
+          document.getElementById('panel-title').textContent = newAlias || data.title || title;
+          render();
+        } else {
+          btn.disabled = false;
+        }
+      }
+
+      document.getElementById('alias-save').addEventListener('click', saveAlias);
+      document.getElementById('alias-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveAlias(); });
+
+      if (isMangadex) {
+        document.getElementById('alias-fetch').addEventListener('click', async () => {
+          const btn = document.getElementById('alias-fetch');
+          btn.textContent = '…';
+          btn.disabled = true;
+          const sugDiv = document.getElementById('alias-suggestions');
+          try {
+            const r = await fetch(`/api/manga/${encodeURIComponent(id)}/titles`);
+            if (!r.ok) throw new Error('fetch failed');
+            const titles = await r.json();
+            if (!titles.length) {
+              sugDiv.textContent = 'No titles found.';
+            } else {
+              sugDiv.innerHTML = titles.map((t, i) => {
+                const cls = t.locale.startsWith('en') ? 'alias-chip en' : t.locale.startsWith('ja') ? 'alias-chip ja' : 'alias-chip';
+                return `<button class="${cls}" data-idx="${i}">${esc(t.title)} <span style="font-size:10px;opacity:.6">${esc(t.locale)}</span></button>`;
+              }).join('');
+              sugDiv.querySelectorAll('.alias-chip').forEach((chip, i) => {
+                chip.addEventListener('click', () => {
+                  document.getElementById('alias-input').value = titles[i].title;
+                  document.getElementById('alias-input').focus();
+                });
+              });
+            }
+          } catch(e) {
+            sugDiv.textContent = 'Failed to fetch titles.';
+          }
+          btn.textContent = 'Fetch titles';
+          btn.disabled = false;
+        });
       }
 
       if (hasProgress) {
@@ -530,6 +630,25 @@
           btn.textContent = newVal ? '👁 Unhide' : '👁 Hide';
           closePanel();
           render();
+        }
+      });
+
+      document.getElementById('download-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('download-btn');
+        const newVal = isDownloadEnabled ? 0 : 1;
+        btn.disabled = true;
+        const r = await apiFetch(`/api/manga/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({download_enabled: newVal})
+        });
+        if (r.ok) {
+          const m = allManga.find(x => x.id === id);
+          if (m) m.download_enabled = Boolean(newVal);
+          btn.textContent = newVal ? '⏸ Pause' : '▶ Resume';
+          btn.disabled = false;
+        } else {
+          btn.disabled = false;
         }
       });
 
@@ -637,6 +756,10 @@
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  function displayTitle(m) {
+    return m.alias || m.title || m.url || '';
+  }
+
   // --- cover picker ---
 
   document.getElementById('covers-close').addEventListener('click', () => {
@@ -683,7 +806,7 @@
           });
           if (r.ok) {
             const m = allManga.find(x => x.id === mangaId);
-            if (m) { m.has_thumbnail = true; m.cover_url = c.cover_url; }
+            if (m) { m.has_thumbnail = true; m.cover_url = c.cover_url; m._coverTs = Date.now(); }
             document.getElementById('covers-overlay').classList.remove('open');
             render();
           } else {

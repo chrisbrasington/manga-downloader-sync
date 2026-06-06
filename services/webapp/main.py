@@ -990,7 +990,7 @@ def read_chapter(manga_id: str, filename: str):
     .bar .ch-title {{ color:#888; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; text-align:center; min-width:0; }}
     #viewer {{ flex:1; overflow:hidden; display:flex; align-items:center; justify-content:center; position:relative; background:#111; }}
     #page-img {{ max-width:100%; max-height:100%; object-fit:contain; display:none; touch-action:none; }}
-    .hit-zone {{ position:absolute; top:0; bottom:0; width:35%; cursor:pointer; z-index:10; }}
+    .hit-zone {{ position:absolute; top:0; bottom:0; width:35%; cursor:pointer; z-index:25; }}
     #hz-prev {{ left:0; }}
     #hz-next {{ right:0; }}
     .page-info {{ position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.55); color:#999; font-size:11px; padding:3px 9px; border-radius:8px; pointer-events:none; transition:opacity .3s; }}

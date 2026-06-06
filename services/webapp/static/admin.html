@@ -395,8 +395,25 @@
       body: JSON.stringify(body)
     });
     if (resp.ok) {
+      const data = await resp.json();
       document.getElementById('add-url').value = '';
       toast('Added', 'ok');
+      if (url.includes('mangadex') && data.id) {
+        try {
+          const titlesResp = await fetch(`/api/manga/${data.id}/titles`);
+          if (titlesResp.ok) {
+            const titles = await titlesResp.json();
+            const en = titles.find(t => t.locale && t.locale.startsWith('en'));
+            if (en) {
+              await fetch(`/api/manga/${data.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alias: en.title })
+              });
+            }
+          }
+        } catch (_) {}
+      }
       load();
     } else if (resp.status === 409) {
       toast('URL already exists', 'err');

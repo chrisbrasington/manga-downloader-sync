@@ -98,7 +98,7 @@
     .empty { text-align:center; padding:60px 20px; color:var(--muted); font-size:14px; }
 
     /* panel footer / delete */
-    .panel-footer { padding:12px 20px; border-top:1px solid var(--border); }
+    .panel-footer { padding:12px 20px; border-top:1px solid var(--border); overflow-y:auto; }
     .panel-footer-row { display:flex; gap:8px; margin-bottom:0; }
     .btn-panel-action { background:none; border:1px solid var(--border); color:var(--muted); padding:5px 12px; border-radius:4px; font-size:12px; cursor:pointer; transition:border-color .15s,color .15s; }
     .btn-panel-action:hover { border-color:var(--ink); color:var(--ink); }
@@ -563,6 +563,7 @@
           document.getElementById('delete-open').style.display = '';
           document.getElementById('alias-input').focus();
           document.getElementById('alias-input').select();
+          document.getElementById('alias-save').scrollIntoView({block:'nearest'});
         }
       });
 

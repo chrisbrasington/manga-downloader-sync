@@ -211,6 +211,7 @@ class UpdateMangaRequest(BaseModel):
     last_read_page: int | None = None
     clear_progress: bool | None = None
     alias: str | None = None
+    last_chapter_on_disk: float | None = None
 
 
 @app.post('/api/manga', status_code=201)
@@ -252,6 +253,8 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.update_manga_metadata(manga_id, manga['url'], last_read_page=body.last_read_page)
     if body.alias is not None:
         db.set_alias(manga_id, body.alias.strip() or None)
+    if body.last_chapter_on_disk is not None:
+        db.update_manga_metadata(manga_id, manga['url'], last_chapter_on_disk=body.last_chapter_on_disk)
     if body.url is not None:
         existing = db.get_manga_by_url(body.url)
         if existing and existing['id'] != manga_id:
@@ -909,6 +912,13 @@ _CBZ_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'}
 _CBZ_MEDIA_TYPES = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
                     '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif'}
 
+def _cbz_ext(name):
+    # Some CBZ files contain entries like "1.jpg_v=12345"; splitext gives the full
+    # "_v=..." blob as the extension, so we strip anything after the alpha chars.
+    ext = os.path.splitext(name.lower())[1]
+    m = re.match(r'(\.[a-z]+)', ext)
+    return m.group(1) if m else ext
+
 
 def _cbz_resolve(manga_id, filename):
     db = get_db()
@@ -927,7 +937,7 @@ def cbz_info(manga_id: str, filename: str):
     path, _ = _cbz_resolve(manga_id, filename)
     with zipfile.ZipFile(path) as zf:
         pages = sorted(n for n in zf.namelist()
-                       if os.path.splitext(n.lower())[1] in _CBZ_IMAGE_EXTS
+                       if _cbz_ext(n) in _CBZ_IMAGE_EXTS
                        and not os.path.basename(n).startswith('.'))
     return {'page_count': len(pages)}
 
@@ -937,12 +947,12 @@ def cbz_page(manga_id: str, filename: str, page_num: int):
     path, _ = _cbz_resolve(manga_id, filename)
     with zipfile.ZipFile(path) as zf:
         pages = sorted(n for n in zf.namelist()
-                       if os.path.splitext(n.lower())[1] in _CBZ_IMAGE_EXTS
+                       if _cbz_ext(n) in _CBZ_IMAGE_EXTS
                        and not os.path.basename(n).startswith('.'))
         if page_num < 1 or page_num > len(pages):
             raise HTTPException(status_code=404, detail='Page not found')
         data = zf.read(pages[page_num - 1])
-    ext = os.path.splitext(pages[page_num - 1].lower())[1]
+    ext = _cbz_ext(pages[page_num - 1])
     return Response(content=data, media_type=_CBZ_MEDIA_TYPES.get(ext, 'image/jpeg'))
 
 
@@ -1116,9 +1126,37 @@ def read_chapter(manga_id: str, filename: str):
       }}
     }}
 
+    async function markRead() {{
+      try {{
+        await fetch(`/api/manga/${{encodeURIComponent(MANGA_ID)}}`, {{
+          method: 'PATCH',
+          headers: {{'Content-Type': 'application/json'}},
+          body: JSON.stringify({{read: 1}})
+        }});
+      }} catch(e) {{}}
+    }}
+
     function goNext() {{
-      if (currentPage < totalPages) {{ renderPage(currentPage + 1); }}
-      else {{ document.getElementById('end-screen').classList.add('show'); }}
+      const endScreen = document.getElementById('end-screen');
+      if (endScreen.classList.contains('show')) {{
+        const nextBtn = document.getElementById('next-ch-btn');
+        if (nextBtn.style.display !== 'none') {{
+          window.location.href = nextBtn.href;
+        }} else {{
+          window.location.href = '/';
+        }}
+        return;
+      }}
+      if (currentPage < totalPages) {{
+        renderPage(currentPage + 1);
+      }} else {{
+        endScreen.classList.add('show');
+        if (chapters.length > 0 && currentChIdx === chapters.length - 1) {{
+          markRead();
+          document.getElementById('end-msg').textContent = 'End of manga';
+          document.getElementById('back-btn-end').href = '/';
+        }}
+      }}
     }}
     function goPrev() {{
       if (document.getElementById('end-screen').classList.contains('show')) {{

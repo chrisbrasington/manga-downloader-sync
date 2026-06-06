@@ -312,14 +312,14 @@
       const statOpts = ['active','completed','hiatus'].map(s =>
         `<option value="${s}"${m.status===s?' selected':''}>${s}</option>`
       ).join('');
-      const ch = m.last_chapter_on_disk != null ? m.last_chapter_on_disk : '—';
+      const ch = m.last_chapter_on_disk != null ? m.last_chapter_on_disk : '';
       return `<tr data-id="${esc(m.id)}">
         <td class="title-cell" title="${esc(m.title)}">${title}</td>
         <td class="url-cell"><a href="${esc(m.url)}" target="_blank">${esc(shortUrl)}</a></td>
         <td><select class="inline-select status-sel">${statOpts}</select></td>
         <td><input type="checkbox" class="sync-toggle sync-chk" ${m.kobo_sync ? 'checked' : ''}></td>
         <td><input type="checkbox" class="dl-toggle dl-chk" ${m.download_enabled ? 'checked' : ''}></td>
-        <td>${ch}</td>
+        <td><input type="number" class="inline-select ch-input" value="${esc(ch)}" placeholder="—" step="any" style="width:60px"></td>
         <td class="actions">
           <button class="btn-sm btn-thumb thumb-btn">🖼 Thumb</button>
           <button class="btn-sm btn-del del-btn">✕</button>
@@ -345,6 +345,17 @@
       chk.addEventListener('change', async e => {
         const id = e.target.closest('tr').dataset.id;
         await patchManga(id, { download_enabled: e.target.checked ? 1 : 0 });
+      });
+    });
+
+    document.querySelectorAll('.ch-input').forEach(input => {
+      input.addEventListener('change', async e => {
+        const id = e.target.closest('tr').dataset.id;
+        const val = e.target.value.trim();
+        if (val === '') return;
+        const num = parseFloat(val);
+        if (isNaN(num)) { toast('Invalid chapter number', 'err'); return; }
+        await patchManga(id, { last_chapter_on_disk: num });
       });
     });
 

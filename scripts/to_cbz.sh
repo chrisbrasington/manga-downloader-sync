@@ -45,6 +45,11 @@ if $need_rar && ! command -v unrar &>/dev/null && ! command -v 7z &>/dev/null; t
   exit 1
 fi
 
+if ! $DRY_RUN && ! command -v trash &>/dev/null; then
+  echo "'trash' is not installed — needed to safely remove source files after conversion."
+  exit 1
+fi
+
 EXTRACTOR=""
 if command -v unrar &>/dev/null; then
   EXTRACTOR="unrar"
@@ -80,6 +85,45 @@ echo "  Total     : ${#FILES[@]}"
 $DRY_RUN && echo "  Mode      : DRY RUN"
 echo ""
 
+# Verify extracted content: at least one file, no empty files.
+check_extraction() {
+  local tmp="$1" src="$2"
+
+  local file_count
+  file_count=$(find "$tmp" -type f | wc -l)
+  if [[ $file_count -eq 0 ]]; then
+    echo "         ERROR: extraction produced no files — archive may be empty or corrupt: $src"
+    return 1
+  fi
+
+  local zero_files=()
+  while IFS= read -r f; do
+    zero_files+=("$f")
+  done < <(find "$tmp" -type f -empty)
+  if [[ ${#zero_files[@]} -gt 0 ]]; then
+    echo "         ERROR: extraction produced ${#zero_files[@]} empty file(s) — archive may be corrupt or use an unsupported method: $src"
+    for zf in "${zero_files[@]}"; do
+      echo "           $(basename "$zf")"
+    done
+    [[ "$EXTRACTOR" == "7z" ]] && echo "         Tip: install 'unrar' for full RAR compression support."
+    return 1
+  fi
+
+  echo "         $file_count file(s) extracted OK"
+}
+
+repack_as_cbz() {
+  local tmp="$1" abs_dst="$2"
+  local ec=0
+  (cd "$tmp" && zip -r -q "$abs_dst" .) || ec=$?
+  if [[ $ec -ne 0 ]]; then
+    echo "         ERROR: zip failed (exit $ec)"
+    # Remove partial output — it's a file we just created, not a source.
+    [[ -f "$abs_dst" ]] && rm -f "$abs_dst"
+    return 1
+  fi
+}
+
 convert_zip() {
   local src="$1"
   local dst="${src%.*}.cbz"
@@ -90,7 +134,7 @@ convert_zip() {
   fi
 
   echo "  [zip] $src"
-  echo "          -> $(basename "$dst")"
+  echo "         -> $(basename "$dst")"
 
   if $DRY_RUN; then
     echo "         (dry run)"
@@ -98,7 +142,7 @@ convert_zip() {
   fi
 
   if [[ -e "$dst" ]]; then
-    echo "         WARNING: destination exists, skipping"
+    echo "         SKIP: destination already exists: $dst"
     return
   fi
 
@@ -125,22 +169,37 @@ convert_rar() {
   fi
 
   if [[ -e "$dst" ]]; then
-    echo "         WARNING: destination exists, skipping"
+    echo "         SKIP: destination already exists: $dst"
     rm -rf "$tmp"
     return
   fi
 
   echo "         extracting..."
+  local ec=0
   if [[ "$EXTRACTOR" == "unrar" ]]; then
-    unrar x -inul "$src" "$tmp/"
+    unrar x -inul "$src" "$tmp/" || ec=$?
   else
-    7z x -bd -bso0 "$src" -o"$tmp"
+    7z x -bd -bso0 "$src" -o"$tmp" || ec=$?
+  fi
+  if [[ $ec -ne 0 ]]; then
+    echo "         ERROR: $EXTRACTOR exited with $ec"
+    [[ "$EXTRACTOR" == "7z" ]] && echo "         Tip: install 'unrar' for full RAR compression support."
+    rm -rf "$tmp"
+    return 1
+  fi
+
+  if ! check_extraction "$tmp" "$src"; then
+    rm -rf "$tmp"
+    return 1
   fi
 
   echo "         repacking as cbz..."
   local abs_dst
   abs_dst="$(cd "$(dirname "$src")" && pwd)/$(basename "$dst")"
-  (cd "$tmp" && zip -r -q "$abs_dst" .)
+  if ! repack_as_cbz "$tmp" "$abs_dst"; then
+    rm -rf "$tmp"
+    return 1
+  fi
 
   rm -rf "$tmp"
   rar_converted+=("$src")
@@ -163,18 +222,32 @@ convert_7z() {
   fi
 
   if [[ -e "$dst" ]]; then
-    echo "         WARNING: destination exists, skipping"
+    echo "         SKIP: destination already exists: $dst"
     rm -rf "$tmp"
     return
   fi
 
   echo "         extracting..."
-  7z x -bd -bso0 "$src" -o"$tmp"
+  local ec=0
+  7z x -bd -bso0 "$src" -o"$tmp" || ec=$?
+  if [[ $ec -ne 0 ]]; then
+    echo "         ERROR: 7z exited with $ec"
+    rm -rf "$tmp"
+    return 1
+  fi
+
+  if ! check_extraction "$tmp" "$src"; then
+    rm -rf "$tmp"
+    return 1
+  fi
 
   echo "         repacking as cbz..."
   local abs_dst
   abs_dst="$(cd "$(dirname "$src")" && pwd)/$(basename "$dst")"
-  (cd "$tmp" && zip -r -q "$abs_dst" .)
+  if ! repack_as_cbz "$tmp" "$abs_dst"; then
+    rm -rf "$tmp"
+    return 1
+  fi
 
   rm -rf "$tmp"
   sevenz_converted+=("$src")
@@ -193,7 +266,7 @@ done
 
 echo ""
 if [[ $errors -gt 0 ]]; then
-  echo "Done with $errors error(s) — original RAR/7z files kept."
+  echo "Done with $errors error(s) — no source files removed."
   exit 1
 fi
 

@@ -92,7 +92,7 @@ class Database:
     def get_all_manga(self):
         conn = self._connect()
         c = conn.cursor()
-        c.execute("SELECT * FROM manga ORDER BY COALESCE(title, url)")
+        c.execute("SELECT * FROM manga ORDER BY LOWER(COALESCE(alias, title, url))")
         rows = [self._row_to_dict(c, r) for r in c.fetchall()]
         conn.close()
         return rows

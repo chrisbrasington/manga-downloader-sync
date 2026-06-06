@@ -779,9 +779,18 @@
       }
       return;
     }
-    if (!document.getElementById('overlay').classList.contains('open')) return;
-    if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePanel(-1); }
-    else if (e.key === 'ArrowRight') { e.preventDefault(); navigatePanel(1); }
+    if (document.getElementById('overlay').classList.contains('open')) {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); navigatePanel(-1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); navigatePanel(1); }
+      return;
+    }
+    if (
+      e.key.length === 1 &&
+      !e.ctrlKey && !e.metaKey && !e.altKey &&
+      !document.getElementById('covers-overlay').classList.contains('open')
+    ) {
+      document.getElementById('search-input').focus();
+    }
   });
 
   function closePanel() {

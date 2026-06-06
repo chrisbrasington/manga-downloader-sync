@@ -16,6 +16,7 @@ MANGA_STORAGE = os.environ.get('MANGA_STORAGE', 'tmp')
 DOWNLOADER_HEARTBEAT = os.path.join(MANGA_STORAGE, '.downloader_heartbeat')
 THUMBNAILS_DIR = os.environ.get('THUMBNAILS_DIR', 'thumbnails')
 PICKER_CACHE_DIR = os.path.join(THUMBNAILS_DIR, '_picker')
+LARGE_COVERS_DIR = os.path.join(THUMBNAILS_DIR, '_large')
 WEBAPP_PORT = int(os.environ.get('WEBAPP_PORT', 8080))
 
 app = FastAPI()
@@ -33,6 +34,10 @@ def get_db():
 
 def thumbnail_path(manga_id):
     return os.path.join(THUMBNAILS_DIR, f'{manga_id}.jpg')
+
+
+def large_cover_path(manga_id):
+    return os.path.join(LARGE_COVERS_DIR, f'{manga_id}.jpg')
 
 
 def has_thumbnail(manga_id):
@@ -859,6 +864,34 @@ def serve_thumbnail(manga_id: str):
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail='No thumbnail')
     return FileResponse(path, media_type='image/jpeg')
+
+
+@app.get('/cover/{manga_id}')
+def serve_cover(manga_id: str):
+    """Serve a 512px cover, downloading and caching it on first access."""
+    large = large_cover_path(manga_id)
+    if os.path.exists(large):
+        return FileResponse(large, media_type='image/jpeg')
+
+    db = get_db()
+    manga = db.get_manga_by_id(manga_id)
+    if manga and manga.get('cover_url'):
+        try:
+            resp = http_requests.get(manga['cover_url'] + '.512.jpg', timeout=15)
+            if resp.status_code == 200:
+                os.makedirs(LARGE_COVERS_DIR, exist_ok=True)
+                with open(large, 'wb') as f:
+                    f.write(resp.content)
+                return FileResponse(large, media_type='image/jpeg')
+        except Exception:
+            pass
+
+    # Fall back to the small thumbnail
+    thumb = thumbnail_path(manga_id)
+    if os.path.exists(thumb):
+        return FileResponse(thumb, media_type='image/jpeg')
+
+    raise HTTPException(status_code=404, detail='No cover')
 
 
 _CBZ_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'}

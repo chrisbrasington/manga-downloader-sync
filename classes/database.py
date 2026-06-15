@@ -56,6 +56,8 @@ class Database:
             "ALTER TABLE manga ADD COLUMN last_read_chapter TEXT",
             "ALTER TABLE manga ADD COLUMN last_read_page INTEGER",
             "ALTER TABLE manga ADD COLUMN alias TEXT",
+            "ALTER TABLE manga ADD COLUMN english_title TEXT",
+            "ALTER TABLE manga ADD COLUMN japanese_title TEXT",
         ]:
             try:
                 conn.execute(stmt)
@@ -139,7 +141,7 @@ class Database:
             'title', 'cover_url', 'description', 'author', 'demographic', 'tags',
             'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type',
             'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page', 'download_enabled',
-            'alias',
+            'alias', 'english_title', 'japanese_title',
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
 

@@ -86,6 +86,8 @@ def manga_to_payload(row):
         'demographic': row.get('demographic'),
         'tags': tags or [],
         'description': row.get('description'),
+        'english_title': row.get('english_title') or None,
+        'japanese_title': row.get('japanese_title') or None,
         'last_downloaded_at': row.get('last_downloaded_at'),
         'last_chapter_on_disk': row.get('last_chapter_on_disk'),
         'favorited': bool(row.get('favorited', 0)),
@@ -134,6 +136,56 @@ def fetch_and_save_thumbnail(manga_id, db_path=None):
         print(f'thumbnail fetch failed for {manga_id}: {e}')
 
 
+def _extract_mangadex_titles(attrs):
+    """Return (english_title, japanese_title, description) from MangaDex manga attributes."""
+    all_titles = {}
+    for locale, t in (attrs.get('title') or {}).items():
+        if t:
+            all_titles[locale] = t
+    for alt in (attrs.get('altTitles') or []):
+        for locale, t in alt.items():
+            if t and locale not in all_titles:
+                all_titles[locale] = t
+    en_title = next((v for k, v in all_titles.items() if k.startswith('en')), None)
+    ja_title = next((v for k, v in all_titles.items() if k.startswith('ja')), None)
+    desc_dict = attrs.get('description') or {}
+    description = desc_dict.get('en') or next(iter(desc_dict.values()), None)
+    return en_title, ja_title, description
+
+
+def fetch_and_save_titles(manga_id, db_path=None):
+    db = Database(db_path or MANGA_DB)
+    manga = db.get_manga_by_id(manga_id)
+    if not manga or manga.get('source_type') != 'mangadex':
+        return
+    url = manga.get('url', '')
+    if url.startswith('local:'):
+        return
+    md_uuid = Database._extract_id(url)
+    if not md_uuid:
+        return
+    try:
+        resp = http_requests.get(
+            f'https://api.mangadex.org/manga/{md_uuid}',
+            headers={'accept': 'application/json'},
+            timeout=10
+        )
+        data = resp.json().get('data', {})
+        attrs = data.get('attributes', {})
+        en_title, ja_title, description = _extract_mangadex_titles(attrs)
+        updates = {}
+        if en_title:
+            updates['english_title'] = en_title
+        if ja_title:
+            updates['japanese_title'] = ja_title
+        if description:
+            updates['description'] = description
+        if updates:
+            db.update_manga_metadata(manga_id, url, **updates)
+    except Exception as e:
+        print(f'titles fetch failed for {manga_id}: {e}')
+
+
 # --- page routes ---
 
 @app.get('/', response_class=FileResponse)
@@ -153,6 +205,74 @@ def api_manga_list():
     db = get_db()
     rows = db.get_all_manga()
     return [manga_to_payload(r) for r in rows]
+
+
+def _fetch_titles_row(manga_id, url, db_path):
+    """Fetch EN/JA titles + description from MangaDex and write to DB. Returns (en, ja, status, error)."""
+    md_uuid = Database._extract_id(url)
+    if not md_uuid:
+        return None, None, 'skip', None
+    try:
+        resp = http_requests.get(
+            f'https://api.mangadex.org/manga/{md_uuid}',
+            headers={'accept': 'application/json'}, timeout=10
+        )
+        if resp.status_code == 429:
+            return None, None, 'rate_limited', None
+        data = resp.json().get('data', {})
+        attrs = data.get('attributes', {})
+        en_title, ja_title, description = _extract_mangadex_titles(attrs)
+        updates = {}
+        if en_title:
+            updates['english_title'] = en_title
+        if ja_title:
+            updates['japanese_title'] = ja_title
+        if description:
+            updates['description'] = description
+        if updates:
+            Database(db_path).update_manga_metadata(manga_id, url, **updates)
+        return en_title, ja_title, 'ok', None
+    except Exception as e:
+        return None, None, 'error', str(e)
+
+
+@app.get('/api/manga/fetch-titles-stream')
+async def api_fetch_titles_stream():
+    async def generate():
+        loop = asyncio.get_running_loop()
+        rows = await loop.run_in_executor(None, lambda: [
+            m for m in Database(MANGA_DB).get_all_manga()
+            if m.get('source_type') == 'mangadex' and not (m.get('url') or '').startswith('local:')
+        ])
+        total = len(rows)
+        yield f'data: {json.dumps({"type": "start", "total": total})}\n\n'
+        ok = skip = err = 0
+        for i, m in enumerate(rows):
+            manga_id = m['id']
+            url = m.get('url', '')
+            display = m.get('english_title') or m.get('title') or manga_id
+            en, ja, status, error = await loop.run_in_executor(
+                None, _fetch_titles_row, manga_id, url, MANGA_DB
+            )
+            if status == 'ok':
+                ok += 1
+            elif status == 'skip':
+                skip += 1
+            elif status == 'rate_limited':
+                yield f'data: {json.dumps({"type": "progress", "index": i+1, "total": total, "title": display, "status": "rate_limited"})}\n\n'
+                await asyncio.sleep(10)
+                continue
+            else:
+                err += 1
+            yield f'data: {json.dumps({"type": "progress", "index": i+1, "total": total, "title": display, "status": status, "en": en, "ja": ja, "error": error})}\n\n'
+            await asyncio.sleep(0.5)
+        yield f'data: {json.dumps({"type": "done", "ok": ok, "skip": skip, "error": err})}\n\n'
+
+    return StreamingResponse(
+        generate(),
+        media_type='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
 
 
 @app.get('/api/manga/{manga_id}')
@@ -222,6 +342,7 @@ def api_add_manga(body: AddMangaRequest, background_tasks: BackgroundTasks):
     manga_id = db.add_manga(body.url, status=body.status, kobo_sync=body.kobo_sync, download_enabled=body.download_enabled)
     if 'mangadex' in body.url:
         background_tasks.add_task(fetch_and_save_thumbnail, manga_id)
+        background_tasks.add_task(fetch_and_save_titles, manga_id)
     return {'id': manga_id, 'url': body.url}
 
 
@@ -1284,14 +1405,37 @@ def read_chapter(manga_id: str, filename: str):
       }}
     }}
 
+    function updateHitZones() {{
+      const prev = document.getElementById('hz-prev');
+      const next = document.getElementById('hz-next');
+      if (currentRot === 90) {{
+        // 90° CW: image-left → top of screen
+        prev.style.cssText = 'top:0;bottom:65%;left:0;right:0;width:100%';
+        next.style.cssText = 'top:65%;bottom:0;left:0;right:0;width:100%';
+      }} else if (currentRot === 180) {{
+        // 180°: image-left → right of screen
+        prev.style.cssText = 'top:0;bottom:0;right:0;left:auto;width:35%';
+        next.style.cssText = 'top:0;bottom:0;left:0;right:auto;width:35%';
+      }} else if (currentRot === 270) {{
+        // 270° CW (=90° CCW): image-left → bottom of screen
+        prev.style.cssText = 'top:65%;bottom:0;left:0;right:0;width:100%';
+        next.style.cssText = 'top:0;bottom:65%;left:0;right:0;width:100%';
+      }} else {{
+        prev.style.cssText = '';
+        next.style.cssText = '';
+      }}
+    }}
+
     function rotate(delta) {{
       currentRot = ((currentRot + delta) % 360 + 360) % 360;
       applyImageSizing();
       zReset();
+      updateHitZones();
       const p = new URLSearchParams(window.location.search);
       if (currentRot) p.set('rotation', currentRot); else p.delete('rotation');
       history.replaceState(null, '', window.location.pathname + (p.toString() ? '?' + p : ''));
     }}
+    updateHitZones();
 
     // Pinch zoom + single-finger pan
     let zSc = 1, zTx = 0, zTy = 0;

@@ -197,7 +197,15 @@
   <h2 class="section-toolbar" style="display:flex;align-items:center;gap:12px">All Manga
     <button class="btn btn-muted" id="scan-btn" style="font-size:12px;padding:5px 12px">🔍 Scan tmp/ for Untracked</button>
     <button class="btn btn-muted" id="fetch-all-btn" style="font-size:12px;padding:5px 12px">🖼 Fetch All Thumbnails</button>
+    <button class="btn btn-muted" id="fetch-all-titles-btn" style="font-size:12px;padding:5px 12px">📥 Fetch All Titles</button>
   </h2>
+  <div class="log-panel" id="fetch-titles-panel">
+    <div class="log-header">
+      <span id="fetch-titles-label">Fetching titles…</span>
+      <button class="btn-sm btn-muted" id="fetch-titles-close-btn" style="font-size:11px">Close</button>
+    </div>
+    <div class="log-body" id="fetch-titles-body"><pre id="fetch-titles-pre"></pre></div>
+  </div>
   <div class="manga-table-wrap"><div class="manga-table">
     <table>
       <thead>
@@ -406,25 +414,8 @@
       body: JSON.stringify(body)
     });
     if (resp.ok) {
-      const data = await resp.json();
       document.getElementById('add-url').value = '';
-      toast('Added', 'ok');
-      if (url.includes('mangadex') && data.id) {
-        try {
-          const titlesResp = await fetch(`/api/manga/${data.id}/titles`);
-          if (titlesResp.ok) {
-            const titles = await titlesResp.json();
-            const en = titles.find(t => t.locale && t.locale.startsWith('en'));
-            if (en) {
-              await fetch(`/api/manga/${data.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ alias: en.title })
-              });
-            }
-          }
-        } catch (_) {}
-      }
+      toast('Added — fetching titles in background', 'ok');
       load();
     } else if (resp.status === 409) {
       toast('URL already exists', 'err');
@@ -482,6 +473,59 @@
     } else {
       toast('Failed', 'err');
     }
+  });
+
+  document.getElementById('fetch-titles-close-btn').addEventListener('click', () => {
+    document.getElementById('fetch-titles-panel').classList.remove('open');
+  });
+
+  document.getElementById('fetch-all-titles-btn').addEventListener('click', () => {
+    const panel = document.getElementById('fetch-titles-panel');
+    const pre = document.getElementById('fetch-titles-pre');
+    const label = document.getElementById('fetch-titles-label');
+    const body = document.getElementById('fetch-titles-body');
+    const btn = document.getElementById('fetch-all-titles-btn');
+    panel.classList.add('open');
+    pre.textContent = '';
+    label.textContent = 'Connecting…';
+    btn.disabled = true;
+    btn.textContent = '⏳ Fetching…';
+
+    const es = new EventSource('/api/manga/fetch-titles-stream');
+
+    es.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'start') {
+        label.textContent = `Fetching titles for ${msg.total} manga — this may take a few minutes`;
+        pre.textContent = `Starting: ${msg.total} manga to process\n`;
+      } else if (msg.type === 'progress') {
+        const icon = msg.status === 'ok' ? '✓' : msg.status === 'skip' ? '—' : msg.status === 'rate_limited' ? '⏳' : '✗';
+        let detail = '';
+        if (msg.status === 'ok') detail = ` → ${msg.en || ''}${msg.ja ? ` (${msg.ja})` : ''}`;
+        else if (msg.status === 'rate_limited') detail = ' (rate limited, pausing)';
+        else if (msg.status === 'error') detail = ` ✗ ${msg.error || 'error'}`;
+        else detail = ' (skipped)';
+        pre.textContent += `[${msg.index}/${msg.total}] ${icon} ${msg.title}${detail}\n`;
+        body.scrollTop = body.scrollHeight;
+        label.textContent = `[${msg.index}/${msg.total}] ${msg.title}`;
+      } else if (msg.type === 'done') {
+        pre.textContent += `\nDone! ✓ ${msg.ok} updated · — ${msg.skip} skipped · ✗ ${msg.error} errors\n`;
+        body.scrollTop = body.scrollHeight;
+        label.textContent = `Done — ${msg.ok} updated, ${msg.skip} skipped, ${msg.error} errors`;
+        es.close();
+        btn.disabled = false;
+        btn.textContent = '📥 Fetch All Titles';
+        load();
+      }
+    };
+
+    es.onerror = () => {
+      pre.textContent += '\n[Connection closed]\n';
+      label.textContent = 'Disconnected';
+      es.close();
+      btn.disabled = false;
+      btn.textContent = '📥 Fetch All Titles';
+    };
   });
 
   load();

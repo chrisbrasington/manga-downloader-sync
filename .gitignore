@@ -18,3 +18,4 @@ markdown
 config
 config_backup*
 *backup/thumbnails/
+*.bak

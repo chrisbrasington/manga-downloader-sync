@@ -17,6 +17,7 @@ services:
       homepage.name: Manga Downloader
       homepage.icon: mdi-book-open-page-variant
       homepage.description: Manga worker
+      homepage.href: https://manga.home.chrisincode.com/admin
 
   webapp:
     build:
@@ -43,7 +44,7 @@ services:
       homepage.name: Manga Library
       homepage.icon: mdi-book-open-page-variant
       homepage.description: Browse and read manga
-      homepage.href: https://manga.home.chrisincode.com
+      homepage.href: https://manga.home.chrisincode.com/?filter=reading
       homepage.widget.type: customapi
       homepage.widget.url: https://manga.home.chrisincode.com/api/stats
       homepage.widget.refreshInterval: "60000"

@@ -1042,7 +1042,8 @@ def read_chapter(manga_id: str, filename: str):
     let chapters = [], currentChIdx = -1;
     let saveTimer = null;
     let activeFilename = FILENAME;
-    let prefetchImg = null;
+    let prefetchImg = null;  // {{ img: Image, page: number }}
+    let renderSeq = 0;
 
     function pageUrl(n) {{
       return `/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(activeFilename)}}/${{n}}`;
@@ -1087,19 +1088,24 @@ def read_chapter(manga_id: str, filename: str):
 
     function prefetchPage(n) {{
       if (n < 1 || n > totalPages) return;
-      prefetchImg = new Image();
-      prefetchImg.src = pageUrl(n);
+      if (prefetchImg && prefetchImg.page === n) return;
+      if (prefetchImg) {{ prefetchImg.img.src = ''; }}
+      const image = new Image();
+      image.src = pageUrl(n);
+      prefetchImg = {{ img: image, page: n }};
     }}
 
     function renderPage(n) {{
-      if (prefetchImg) {{ prefetchImg.src = ''; prefetchImg = null; }}
+      const seq = ++renderSeq;
       zReset();
       applyImageSizing();
       const img = document.getElementById('page-img');
       const loading = document.getElementById('loading');
-      img.style.display = 'none';
-      loading.style.display = 'flex';
-      img.onload = () => {{
+      img.onload = null;
+      img.onerror = null;
+
+      const commit = () => {{
+        if (seq !== renderSeq) return;
         loading.style.display = 'none';
         img.style.display = 'block';
         currentPage = n;
@@ -1108,7 +1114,38 @@ def read_chapter(manga_id: str, filename: str):
         saveProgress(n);
         prefetchPage(n + 1);
       }};
+
+      if (prefetchImg && prefetchImg.page === n) {{
+        const pf = prefetchImg;
+        prefetchImg = null;
+        if (pf.img.complete && pf.img.naturalWidth > 0) {{
+          img.src = pf.img.src;
+          commit();
+          return;
+        }}
+        pf.img.onload = () => {{
+          if (seq !== renderSeq) return;
+          img.src = pf.img.src;
+          commit();
+        }};
+        pf.img.onerror = () => {{
+          if (seq !== renderSeq) return;
+          loading.style.display = 'flex';
+          loading.textContent = 'Failed to load page.';
+        }};
+        return;
+      }}
+
+      if (prefetchImg) {{ prefetchImg.img.src = ''; prefetchImg = null; }}
+      img.style.display = 'none';
+      loading.style.display = 'flex';
+      loading.textContent = 'Loading…';
+      img.onload = () => {{
+        if (seq !== renderSeq) return;
+        commit();
+      }};
       img.onerror = () => {{
+        if (seq !== renderSeq) return;
         loading.textContent = 'Failed to load page.';
       }};
       img.src = '';
@@ -1145,6 +1182,7 @@ def read_chapter(manga_id: str, filename: str):
     }}
 
     async function loadChapter(filename) {{
+      if (prefetchImg) {{ prefetchImg.img.src = ''; prefetchImg = null; }}
       activeFilename = filename;
       currentChIdx = chapters.indexOf(filename);
       document.getElementById('ch-title').textContent = filename.replace(/\.cbz$/, '');

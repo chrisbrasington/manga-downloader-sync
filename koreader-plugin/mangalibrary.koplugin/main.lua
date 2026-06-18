@@ -17,6 +17,9 @@ local FrameContainer = require("ui/widget/container/framecontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local ImageWidget = require("ui/widget/imagewidget")
+local ImageViewer = require("ui/widget/imageviewer")
+local RenderImage = require("ui/renderimage")
+local ProgressWidget = require("ui/widget/progresswidget")
 local TextWidget = require("ui/widget/textwidget")
 local Menu = require("ui/widget/menu")
 local InfoMessage = require("ui/widget/infomessage")
@@ -29,8 +32,6 @@ local Blitbuffer = require("ffi/blitbuffer")
 local NetworkMgr = require("ui/network/manager")
 local DataStorage = require("datastorage")
 local LuaSettings = require("luasettings")
-local lfs = require("libs/libkoreader-lfs")
-local logger = require("logger")
 local _ = require("gettext")
 local T = require("ffi/util").template
 
@@ -43,7 +44,6 @@ local socketutil = require("socketutil")
 local socket_url = require("socket.url")
 local rapidjson = require("rapidjson")
 
-local CACHE_DIR = DataStorage:getDataDir() .. "/cache/mangalibrary"
 local DEFAULT_BASE_URL = "http://192.168.0.11:8684"
 
 -- rapidjson decodes JSON null to a sentinel (rapidjson.null), not Lua nil, which
@@ -62,28 +62,18 @@ local function denull(v)
     return v
 end
 
--- Recursive mkdir (lfs.mkdir only creates one level).
-local function mkdir_p(path)
-    local cur = ""
-    for part in path:gmatch("[^/]+") do
-        cur = cur .. "/" .. part
-        if lfs.attributes(cur, "mode") ~= "directory" then
-            lfs.mkdir(cur)
-        end
-    end
-end
-
 -- The nine webapp library filters, plus tag browsing, mirrored here.
+-- Plain-text labels only: KOReader's bundled fonts don't render emoji glyphs.
 local FILTERS = {
     { key = "all",         text = _("All") },
-    { key = "favorites",   text = _("\u{2B50} Favorites") },
-    { key = "reading",     text = _("\u{1F4D6} Reading") },
-    { key = "downloading", text = _("\u{1F4E5} Downloading") },
+    { key = "favorites",   text = _("Favorites") },
+    { key = "reading",     text = _("Reading") },
+    { key = "downloading", text = _("Downloading") },
     { key = "completed",   text = _("Completed") },
     { key = "hiatus",      text = _("Hiatus") },
     { key = "archived",    text = _("Archived") },
-    { key = "read",        text = _("\u{2713} Read") },
-    { key = "hidden",      text = _("\u{1F441} Hidden") },
+    { key = "read",        text = _("Read") },
+    { key = "hidden",      text = _("Hidden") },
 }
 
 local function matchesFilter(m, key)
@@ -114,7 +104,11 @@ function MangaApi.new(base_url)
     return setmetatable({ base_url = root or (url:gsub("/+$", "")) }, MangaApi)
 end
 
-function MangaApi:_request(method, path, body_tbl, sink_file)
+-- mode: "json" (decode body) | "raw" (return body string). Everything is fetched
+-- into memory via a table sink — the same path the working JSON calls use — so there
+-- is no dependency on writable temp files on the device.
+function MangaApi:_request(method, path, body_tbl, mode)
+    mode = mode or "json"
     local url = self.base_url .. path
     local requester = url:sub(1, 6) == "https:" and https.request or http.request
     local headers = {}
@@ -125,17 +119,11 @@ function MangaApi:_request(method, path, body_tbl, sink_file)
         headers["Content-Type"] = "application/json"
         headers["Content-Length"] = tostring(#body)
     end
-    local sink, result_tbl, out_file
-    if sink_file then
-        out_file = io.open(sink_file .. ".part", "w")
-        if not out_file then return nil, "cannot open cache file" end
-        sink = ltn12.sink.file(out_file)
-    else
-        result_tbl = {}
-        sink = ltn12.sink.table(result_tbl)
-    end
-
-    local req = { url = url, method = method, headers = headers, source = source, sink = sink }
+    local result_tbl = {}
+    local req = {
+        url = url, method = method, headers = headers, source = source,
+        sink = ltn12.sink.table(result_tbl),
+    }
     if requester == https.request then
         -- Be permissive so a self-hosted cert / modern TLS negotiates cleanly.
         req.protocol = "any"
@@ -143,27 +131,25 @@ function MangaApi:_request(method, path, body_tbl, sink_file)
         req.verify = "none"
     end
 
-    socketutil:set_timeout(10, 30)
+    socketutil:set_timeout(10, 60)
     -- table form returns (1, code, headers, status) on success, (nil, err) on failure
     local ok, code = requester(req)
     socketutil:reset_timeout()
-    if out_file then pcall(function() out_file:close() end) end
 
     if ok == nil then
         -- socket-level failure: DNS, connection refused, TLS handshake, timeout…
-        if sink_file then os.remove(sink_file .. ".part") end
         return nil, tostring(code)
     end
     if code ~= 200 then
-        if sink_file then os.remove(sink_file .. ".part") end
         return nil, "HTTP " .. tostring(code)
     end
 
-    if sink_file then
-        if os.rename(sink_file .. ".part", sink_file) then return true end
-        return nil, "cache write failed"
+    local data = table.concat(result_tbl)
+    if mode == "raw" then
+        if #data == 0 then return nil, "empty response" end
+        return data
     end
-    local decoded = rapidjson.decode(table.concat(result_tbl))
+    local decoded = rapidjson.decode(data)
     if decoded == nil then return nil, "invalid JSON from server" end
     return denull(decoded)
 end
@@ -172,7 +158,8 @@ function MangaApi:getJson(path) return self:_request("GET", path) end
 
 function MangaApi:patch(path, tbl) return self:_request("PATCH", path, tbl) end
 
-function MangaApi:downloadTo(path, dest_file) return self:_request("GET", path, nil, dest_file) end
+-- Returns raw image bytes (string) or nil, err.
+function MangaApi:getBytes(path) return self:_request("GET", path, nil, "raw") end
 
 local function urlencode(s) return socket_url.escape(s or "") end
 
@@ -189,6 +176,7 @@ local MangaReader = InputContainer:extend{
     total_pages = 0,
     prefetch_ahead = 1,
     page_width = nil,
+    on_close = nil,     -- function(last_chapter, last_page) called when reader closes
 }
 
 function MangaReader:init()
@@ -209,6 +197,11 @@ function MangaReader:init()
             TapMenu = { GestureRange:new{ ges = "tap",
                 range = Geom:new{ x = third, y = 0, w = w - 2 * third, h = h } } },
             SwipeNav = { GestureRange:new{ ges = "swipe",
+                range = Geom:new{ x = 0, y = 0, w = w, h = h } } },
+            -- Pinch/spread opens a zoomable view of the current page.
+            ZoomSpread = { GestureRange:new{ ges = "spread",
+                range = Geom:new{ x = 0, y = 0, w = w, h = h } } },
+            ZoomPinch = { GestureRange:new{ ges = "pinch",
                 range = Geom:new{ x = 0, y = 0, w = w, h = h } } },
         }
     end
@@ -239,125 +232,119 @@ function MangaReader:_messageFrame(text)
     }
 end
 
-function MangaReader:_chapterDir()
-    return CACHE_DIR .. "/" .. self.manga.id .. "/" .. self.chapter_index
-end
-
-function MangaReader:_chapterCacheDir()
-    mkdir_p(self:_chapterDir())
-end
-
-function MangaReader:_pageFile(n)
-    return self:_chapterDir() .. "/" .. n .. "_" .. self.page_width .. ".jpg"
-end
-
 function MangaReader:_pagePath(n)
     local fn = self.chapters[self.chapter_index]
     return T("/cbz/%1/%2/%3?w=%4", urlencode(self.manga.id), urlencode(fn), n, self.page_width)
 end
 
--- Ensure page n is on disk; returns local file path or nil.
-function MangaReader:_ensurePage(n)
-    if n < 1 or (self.total_pages > 0 and n > self.total_pages) then return nil end
-    local file = self:_pageFile(n)
-    if lfs.attributes(file, "mode") == "file" then return file end
-    local ok = self.api:downloadTo(self:_pagePath(n), file)
-    if ok then return file end
-    return nil
+-- Fetch page n's JPEG bytes (string), caching in memory. Returns data or nil, err.
+function MangaReader:_fetchPage(n)
+    if n < 1 or (self.total_pages > 0 and n > self.total_pages) then return nil, "out of range" end
+    self.page_data = self.page_data or {}
+    if self.page_data[n] then return self.page_data[n] end
+    local data, err = self.api:getBytes(self:_pagePath(n))
+    if not data then return nil, err end
+    self.page_data[n] = data
+    return data
 end
 
+-- Drop cached page bytes outside [keep_from, keep_to] to bound memory.
 function MangaReader:_evict(keep_from, keep_to)
-    local dir = self:_chapterDir()
-    for f in lfs.dir(dir) do
-        local n = tonumber(f:match("^(%d+)_"))
-        if n and (n < keep_from or n > keep_to) then
-            os.remove(dir .. "/" .. f)
-        end
+    if not self.page_data then return end
+    for k in pairs(self.page_data) do
+        if k < keep_from or k > keep_to then self.page_data[k] = nil end
     end
 end
 
 function MangaReader:loadChapter(idx, start_page)
     if idx < 1 or idx > #self.chapters then return end
     self.chapter_index = idx
-    self:_chapterCacheDir()
+    self.page_data = {}   -- page cache is per-chapter
     local fn = self.chapters[idx]
-    local info = self.api:getJson(T("/cbz/%1/%2/info", urlencode(self.manga.id), urlencode(fn)))
+    local info, ierr = self.api:getJson(T("/cbz/%1/%2/info", urlencode(self.manga.id), urlencode(fn)))
     self.total_pages = (info and info.page_count) or 0
     if self.total_pages == 0 then
-        self[1] = self:_messageFrame(_("Could not load this chapter."))
+        self[1] = self:_messageFrame(T(_("Could not load chapter.\n%1"), ierr or "?"))
         UIManager:setDirty(self, "ui")
-        UIManager:show(InfoMessage:new{ text = _("Could not load this chapter."), timeout = 3 })
         return
     end
     self:setPage(math.min(math.max(start_page or 1, 1), self.total_pages))
 end
 
 function MangaReader:setPage(n)
-    self.page = n
-    local loading
-    local file = self:_pageFile(n)
-    if lfs.attributes(file, "mode") ~= "file" then
-        loading = InfoMessage:new{ text = _("Loading…") }
-        UIManager:show(loading)
+    -- show a Loading frame immediately if this page isn't cached yet
+    if not (self.page_data and self.page_data[n]) then
+        self[1] = self:_messageFrame(T(_("Loading page %1…"), n))
+        UIManager:setDirty(self, "ui")
         UIManager:forceRePaint()
     end
-    file = self:_ensurePage(n)
-    if loading then UIManager:close(loading) end
-    if not file then
-        self.page = math.max(1, math.min(n, self.total_pages)) -- keep state consistent
-        self[1] = self:_messageFrame(T(_("Failed to load page %1."), n))
-        UIManager:setDirty(self, "ui")
-        UIManager:show(InfoMessage:new{
-            text = T(_("Failed to load page %1."), n), timeout = 3 })
+
+    local data, err = self:_fetchPage(n)
+    if not data then
+        self[1] = self:_messageFrame(T(_("Failed to load page %1.\n%2"), n, err or "?"))
+        UIManager:setDirty(self, "full")
         return
     end
 
+    -- Decode JPEG bytes straight from memory into a BlitBuffer (no temp file).
+    local bb = RenderImage:renderImageData(data, #data)
+    if not bb then
+        self.page_data[n] = nil
+        self[1] = self:_messageFrame(T(_("Could not decode page %1."), n))
+        UIManager:setDirty(self, "full")
+        return
+    end
+
+    self.page = n
+    local w, h = Screen:getWidth(), Screen:getHeight()
+    local bar_h = self:bar_height()
     if self.image_widget then self.image_widget:free() end
     self.image_widget = ImageWidget:new{
-        file = file,
-        width = Screen:getWidth(),
-        height = Screen:getHeight() - self.footer_height(),
-        scale_factor = 0,   -- scale to fit, keep aspect
+        image = bb,
+        image_disposable = true,   -- ImageWidget owns and frees this BlitBuffer
+        width = w,
+        height = h - bar_h,
+        scale_factor = 0,          -- scale to fit, keep aspect
         center = true,
     }
-    local footer = self:_buildFooter()
     self[1] = FrameContainer:new{
         background = Blitbuffer.COLOR_WHITE,
         bordersize = 0,
         VerticalGroup:new{
             CenterContainer:new{
-                dimen = Geom:new{ w = Screen:getWidth(), h = Screen:getHeight() - self.footer_height() },
+                dimen = Geom:new{ w = w, h = h - bar_h },
                 self.image_widget,
             },
-            footer,
+            self:_buildProgressBar(),
         },
     }
     UIManager:setDirty(self, "full")
     self:_scheduleProgress()
 
-    -- prefetch ahead, after this page paints
+    -- prefetch ahead into memory, after this page paints
     self:_evict(n - 1, n + self.prefetch_ahead + 1)
     if self.prefetch_ahead > 0 then
         UIManager:scheduleIn(0.15, function()
-            for i = 1, self.prefetch_ahead do self:_ensurePage(n + i) end
+            for i = 1, self.prefetch_ahead do self:_fetchPage(n + i) end
         end)
     end
 end
 
-function MangaReader.footer_height() return 34 end
+function MangaReader:bar_height() return Screen:scaleBySize(4) end
 
-function MangaReader:_buildFooter()
-    local label = T(_("%1   ·   p. %2 / %3"),
-        self.chapters[self.chapter_index]:gsub("%.cbz$", ""), self.page, self.total_pages)
-    return FrameContainer:new{
-        background = Blitbuffer.COLOR_WHITE,
-        bordersize = 0,
+-- A very thin bottom progress bar: fraction filled = current page / total.
+function MangaReader:_buildProgressBar()
+    local pct = (self.total_pages > 0) and (self.page / self.total_pages) or 0
+    return ProgressWidget:new{
         width = Screen:getWidth(),
-        height = self.footer_height(),
-        CenterContainer:new{
-            dimen = Geom:new{ w = Screen:getWidth(), h = self.footer_height() },
-            TextWidget:new{ text = label, face = Font:getFace("xx_smallinfofont") },
-        },
+        height = self:bar_height(),
+        percentage = pct,
+        margin_h = 0,
+        margin_v = 0,
+        radius = 0,
+        bordersize = 0,
+        bgcolor = Blitbuffer.COLOR_GRAY,
+        fillcolor = Blitbuffer.COLOR_BLACK,
     }
 end
 
@@ -374,6 +361,25 @@ function MangaReader:onSwipeNav(_arg, ges)
     elseif dir == "east" then
         self:prevPage()
     end
+    return true
+end
+
+-- Pinch or spread opens KOReader's ImageViewer on the current page, which provides
+-- pinch-zoom and panning. Closing it returns to the reader.
+function MangaReader:onZoomSpread() return self:_openZoom() end
+function MangaReader:onZoomPinch() return self:_openZoom() end
+
+function MangaReader:_openZoom()
+    local data = self.page_data and self.page_data[self.page]
+    if not data then return true end
+    local bb = RenderImage:renderImageData(data, #data)
+    if not bb then return true end
+    UIManager:show(ImageViewer:new{
+        image = bb,
+        image_disposable = true,   -- ImageViewer frees this BlitBuffer on close
+        fullscreen = true,
+        with_title_bar = false,
+    })
     return true
 end
 
@@ -452,7 +458,14 @@ function MangaReader:onClose()
         self:_flushProgress()
     end
     if self.image_widget then self.image_widget:free() end
+    self.page_data = nil
     UIManager:close(self)
+    -- Tell the chapter list our final position so it can refresh the resume option…
+    if self.on_close then
+        self.on_close(self.chapters[self.chapter_index], self.page)
+    end
+    -- …and force a repaint so the list is visible again after the full-screen reader.
+    UIManager:setDirty("all", "ui")
     return true
 end
 
@@ -614,7 +627,7 @@ function MangaLibrary:showFilterMenu(api)
         })
     end
     table.insert(items, {
-        text = _("\u{1F516} Browse by tag"),
+        text = _("Browse by tag"),
         callback = function() self:showTagMenu(api) end,
     })
     self:_showMenu(_("Manga Library"), items)
@@ -651,7 +664,7 @@ function MangaLibrary:showList(api, title, predicate)
             local name = m.alias or m.english_title or m.title
             local mandatory
             if m.last_read_chapter then
-                mandatory = T(_("\u{25B6} p.%1"), m.last_read_page or 1)
+                mandatory = T(_("p.%1"), m.last_read_page or 1)
             elseif m.last_chapter_on_disk then
                 mandatory = T(_("Ch.%1"), m.last_chapter_on_disk)
             end
@@ -676,45 +689,57 @@ function MangaLibrary:openManga(api, m)
         return
     end
     local chapters = detail.chapters  -- ascending order from backend
-    local items = {}
-    -- "Continue" shortcut at top if there is saved progress
-    if detail.last_read_chapter then
-        for idx, fn in ipairs(chapters) do
-            if fn == detail.last_read_chapter then
-                items[#items + 1] = {
-                    text = T(_("\u{25B6} Continue: %1 (p.%2)"),
-                        fn:gsub("%.cbz$", ""), detail.last_read_page or 1),
-                    callback = function() self:openReader(api, detail, chapters, idx, detail.last_read_page or 1) end,
-                }
-                break
+    local title = detail.alias or detail.english_title or detail.title
+    local menu
+
+    -- Build the chapter item list from detail's *current* progress, so it can be
+    -- rebuilt after reading to reflect the new resume point.
+    local function build_items()
+        local items = {}
+        if detail.last_read_chapter then
+            for idx, fn in ipairs(chapters) do
+                if fn == detail.last_read_chapter then
+                    items[#items + 1] = {
+                        text = T(_("Continue: %1 (p.%2)"),
+                            fn:gsub("%.cbz$", ""), detail.last_read_page or 1),
+                        callback = function()
+                            self:openReader(api, detail, chapters, idx, detail.last_read_page or 1, menu)
+                        end,
+                    }
+                    break
+                end
             end
         end
+        -- chapters newest first, like the webapp
+        for idx = #chapters, 1, -1 do
+            local fn = chapters[idx]
+            local mandatory
+            if fn == detail.last_read_chapter then mandatory = T(_("p.%1"), detail.last_read_page or 1) end
+            local resume_page = (fn == detail.last_read_chapter) and (detail.last_read_page or 1) or 1
+            items[#items + 1] = {
+                text = fn:gsub("%.cbz$", ""),
+                mandatory = mandatory,
+                callback = function()
+                    -- Only the last-read chapter has a saved page to resume from; any
+                    -- other chapter has nothing to resume, so start at page 1.
+                    if resume_page > 1 then
+                        self:_chooseStart(api, detail, chapters, idx, resume_page, menu)
+                    else
+                        self:openReader(api, detail, chapters, idx, 1, menu)
+                    end
+                end,
+            }
+        end
+        return items
     end
-    -- chapters newest first, like the webapp
-    for idx = #chapters, 1, -1 do
-        local fn = chapters[idx]
-        local mandatory
-        if fn == detail.last_read_chapter then mandatory = T(_("p.%1"), detail.last_read_page or 1) end
-        local resume_page = (fn == detail.last_read_chapter) and (detail.last_read_page or 1) or 1
-        items[#items + 1] = {
-            text = fn:gsub("%.cbz$", ""),
-            mandatory = mandatory,
-            callback = function()
-                -- Only the last-read chapter has a saved page to resume from; for any
-                -- other chapter there is nothing to resume, so just start at page 1.
-                if resume_page > 1 then
-                    self:_chooseStart(api, detail, chapters, idx, resume_page)
-                else
-                    self:openReader(api, detail, chapters, idx, 1)
-                end
-            end,
-        }
-    end
-    self:_showMenu(detail.alias or detail.english_title or detail.title, items)
+
+    menu = self:_showMenu(title, build_items())
+    -- Let the menu rebuild itself (used by the reader after progress changes).
+    menu._rebuild = function() menu:switchItemTable(title, build_items()) end
 end
 
 -- Ask whether to resume or restart a chapter that has a saved page.
-function MangaLibrary:_chooseStart(api, detail, chapters, idx, resume_page)
+function MangaLibrary:_chooseStart(api, detail, chapters, idx, resume_page, menu)
     local dialog
     dialog = ButtonDialog:new{
         title = T(_("%1\nSaved at page %2"), chapters[idx]:gsub("%.cbz$", ""), resume_page),
@@ -722,18 +747,18 @@ function MangaLibrary:_chooseStart(api, detail, chapters, idx, resume_page)
         buttons = {
             {{ text = T(_("Resume at page %1"), resume_page), callback = function()
                 UIManager:close(dialog)
-                self:openReader(api, detail, chapters, idx, resume_page)
+                self:openReader(api, detail, chapters, idx, resume_page, menu)
             end }},
             {{ text = _("Start from beginning"), callback = function()
                 UIManager:close(dialog)
-                self:openReader(api, detail, chapters, idx, 1)
+                self:openReader(api, detail, chapters, idx, 1, menu)
             end }},
         },
     }
     UIManager:show(dialog)
 end
 
-function MangaLibrary:openReader(api, manga, chapters, chapter_index, start_page)
+function MangaLibrary:openReader(api, manga, chapters, chapter_index, start_page, menu)
     local reader = MangaReader:new{
         api = api,
         manga = manga,
@@ -741,6 +766,14 @@ function MangaLibrary:openReader(api, manga, chapters, chapter_index, start_page
         chapter_index = chapter_index,
         page = start_page or 1,
         prefetch_ahead = self:getPrefetch(),
+        -- Called when the reader closes: sync caches and rebuild the chapter list so
+        -- the new resume point shows immediately.
+        on_close = function(last_chapter, last_page)
+            manga.last_read_chapter = last_chapter
+            manga.last_read_page = last_page
+            self:_syncLibrary(manga.id, last_chapter, last_page)
+            if menu and menu._rebuild then menu._rebuild() end
+        end,
     }
     UIManager:show(reader)
 end
@@ -760,6 +793,20 @@ function MangaLibrary:_showMenu(title, items)
         close_callback = function() end,
     }
     UIManager:show(menu)
+    return menu
+end
+
+-- Keep the in-memory library list in sync with progress written from the reader,
+-- so filter views (Reading, etc.) reflect it without a full reload.
+function MangaLibrary:_syncLibrary(id, chapter, page)
+    if not self._library then return end
+    for _i, m in ipairs(self._library) do
+        if m.id == id then
+            m.last_read_chapter = chapter
+            m.last_read_page = page
+            return
+        end
+    end
 end
 
 return MangaLibrary

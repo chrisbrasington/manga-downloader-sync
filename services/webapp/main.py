@@ -1186,8 +1186,9 @@ def read_chapter(manga_id: str, filename: str):
     }}
 
     function extractNum(f) {{
-        const m = f.match(/[\s\-]+(\d+(?:\.\d+)?)/);
-        return m ? parseFloat(m[1]) : Number.POSITIVE_INFINITY;
+        const name = f.replace(/\.cbz$/i, '');
+        const m = name.match(/ - (\d+(?:\.\d+)?)$/);
+        return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
     }}
 
     function updateNav() {{

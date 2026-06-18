@@ -44,7 +44,7 @@ local socket_url = require("socket.url")
 local rapidjson = require("rapidjson")
 
 local CACHE_DIR = DataStorage:getDataDir() .. "/cache/mangalibrary"
-local DEFAULT_BASE_URL = "https://manga-api.home.chrisincode.com"
+local DEFAULT_BASE_URL = "http://192.168.0.11:8684"
 
 -- The nine webapp library filters, plus tag browsing, mirrored here.
 local FILTERS = {
@@ -80,7 +80,11 @@ local MangaApi = {}
 MangaApi.__index = MangaApi
 
 function MangaApi.new(base_url)
-    return setmetatable({ base_url = (base_url or DEFAULT_BASE_URL):gsub("/+$", "") }, MangaApi)
+    local url = base_url or DEFAULT_BASE_URL
+    -- Keep only scheme://host:port — drop any path/query the user may have pasted
+    -- (e.g. ".../api/manga"), which would otherwise be doubled onto every request.
+    local root = url:match("^%s*(%a[%w+.%-]*://[^/]+)")
+    return setmetatable({ base_url = root or (url:gsub("/+$", "")) }, MangaApi)
 end
 
 function MangaApi:_request(method, path, body_tbl, sink_file)
@@ -104,23 +108,36 @@ function MangaApi:_request(method, path, body_tbl, sink_file)
         sink = ltn12.sink.table(result_tbl)
     end
 
-    socketutil:set_timeout(10, 30)
-    local code = socket.skip(1, requester{
-        url = url, method = method, headers = headers, source = source, sink = sink,
-    })
-    socketutil:reset_timeout()
-
-    if sink_file then
-        if code == 200 and os.rename(sink_file .. ".part", sink_file) then
-            return true
-        end
-        os.remove(sink_file .. ".part")
-        return nil, "http " .. tostring(code)
+    local req = { url = url, method = method, headers = headers, source = source, sink = sink }
+    if requester == https.request then
+        -- Be permissive so a self-hosted cert / modern TLS negotiates cleanly.
+        req.protocol = "any"
+        req.options = "all"
+        req.verify = "none"
     end
 
-    if code ~= 200 then return nil, "http " .. tostring(code) end
+    socketutil:set_timeout(10, 30)
+    -- table form returns (1, code, headers, status) on success, (nil, err) on failure
+    local ok, code = requester(req)
+    socketutil:reset_timeout()
+    if out_file then pcall(function() out_file:close() end) end
+
+    if ok == nil then
+        -- socket-level failure: DNS, connection refused, TLS handshake, timeout…
+        if sink_file then os.remove(sink_file .. ".part") end
+        return nil, tostring(code)
+    end
+    if code ~= 200 then
+        if sink_file then os.remove(sink_file .. ".part") end
+        return nil, "HTTP " .. tostring(code)
+    end
+
+    if sink_file then
+        if os.rename(sink_file .. ".part", sink_file) then return true end
+        return nil, "cache write failed"
+    end
     local decoded = rapidjson.decode(table.concat(result_tbl))
-    if decoded == nil then return nil, "bad json" end
+    if decoded == nil then return nil, "invalid JSON from server" end
     return decoded
 end
 
@@ -403,7 +420,12 @@ function MangaLibrary:addToMainMenu(menu_items)
                 callback = function() self:openLibrary() end,
             },
             {
-                text = _("Server address"),
+                text = _("Test connection"),
+                keep_menu_open = true,
+                callback = function() self:testConnection() end,
+            },
+            {
+                text_func = function() return T(_("Server: %1"), self:getBaseUrl()) end,
                 keep_menu_open = true,
                 callback = function() self:editServer() end,
             },
@@ -456,12 +478,53 @@ function MangaLibrary:_online(action)
     NetworkMgr:runWhenOnline(action)
 end
 
+function MangaLibrary:testConnection()
+    self:_online(function()
+        local url = self:getBaseUrl()
+        local api = MangaApi.new(url)
+        UIManager:show(InfoMessage:new{ text = _("Testing…"), timeout = 1 })
+        UIManager:forceRePaint()
+        local res, err = api:getJson("/api/manga")
+        local msg
+        if res then
+            msg = T(_("Connected.\n\nServer: %1\nTitles: %2"), url, #res)
+        else
+            msg = T(_("Could not reach the server.\n\nServer: %1\nError: %2\n\n%3"),
+                url, err or _("unknown"), self:_hint(err))
+        end
+        UIManager:show(InfoMessage:new{ text = msg })
+    end)
+end
+
+-- Translate a raw socket/HTTP error into a plain-language hint.
+function MangaLibrary:_hint(err)
+    err = tostring(err or "")
+    if err:find("HTTP 403") then
+        return _("403 = the Kobo's IP is blocked by the reverse proxy. Add its WiFi IP to the Caddy allow-list.")
+    elseif err:find("HTTP 404") then
+        return _("404 = reached the server but the path is wrong. Check the URL has no trailing path.")
+    elseif err:lower():find("host or service not provided") or err:lower():find("not found")
+        or err:lower():find("name or service") or err:lower():find("resolve") then
+        return _("Looks like DNS: the Kobo can't resolve the hostname. Try a plain IP, e.g. http://192.168.x.x:8684")
+    elseif err:lower():find("ssl") or err:lower():find("tls") or err:lower():find("handshake")
+        or err:lower():find("certificate") then
+        return _("Looks like TLS. Try the plain-HTTP LAN address instead, e.g. http://192.168.x.x:8684")
+    elseif err:lower():find("timeout") then
+        return _("Timed out — the Kobo may not be on the same network as the server.")
+    elseif err:lower():find("refused") then
+        return _("Connection refused — wrong port, or the backend isn't running.")
+    end
+    return _("Try the plain-HTTP LAN address to rule out DNS/TLS, e.g. http://192.168.x.x:8684")
+end
+
 function MangaLibrary:openLibrary()
     self:_online(function()
         local api = MangaApi.new(self:getBaseUrl())
-        local list = api:getJson("/api/manga")
+        local list, err = api:getJson("/api/manga")
         if not list then
-            UIManager:show(InfoMessage:new{ text = _("Could not reach the manga server.") })
+            UIManager:show(InfoMessage:new{ text = T(
+                _("Could not reach the manga server.\n\nServer: %1\nError: %2\n\n%3"),
+                self:getBaseUrl(), err or _("unknown"), self:_hint(err)) })
             return
         end
         self._library = list

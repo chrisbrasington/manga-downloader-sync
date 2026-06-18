@@ -1185,10 +1185,10 @@ def read_chapter(manga_id: str, filename: str):
       }}, 800);
     }}
 
-    function extractNum(f) {
+    function extractNum(f) {{
         const m = f.match(/[\s\-]+(\d+(?:\.\d+)?)/);
         return m ? parseFloat(m[1]) : Number.POSITIVE_INFINITY;
-    }
+    }}
 
     function updateNav() {{
       const prevEl = document.getElementById('prev-ch');

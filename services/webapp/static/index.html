@@ -315,8 +315,9 @@
       if (m.last_read_chapter) {
         const pageStr = m.last_read_page && m.last_read_page > 1 ? `?page=${m.last_read_page}` : '';
         const contUrl = `/read/${encodeURIComponent(m.id)}/${encodeURIComponent(m.last_read_chapter)}${pageStr}`;
-        const numMatch = m.last_read_chapter.match(/[\s\-]+(\d+(?:\.\d+)?)/);
-        const chLabel = numMatch ? `Ch.${numMatch[1]}` : 'chapter';
+        const matches = [...m.last_read_chapter.matchAll(/(\d+(?:\.\d+)?)/g)];
+        const last = matches.at(-1)?.[1];
+        const chLabel = last ? `Ch.${last}` : 'chapter';
         const pgLabel = m.last_read_page && m.last_read_page > 1 ? ` · p.${m.last_read_page}` : '';
         continueBtn = `<div class="card-continue"><a class="continue-btn" href="${contUrl}" onclick="event.stopPropagation()">▶ Continue ${chLabel}${pgLabel}</a></div>`;
       }

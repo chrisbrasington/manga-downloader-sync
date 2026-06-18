@@ -179,6 +179,7 @@ local MangaReader = InputContainer:extend{
     page = 1,
     total_pages = 0,
     prefetch_ahead = 1,
+    crop = true,        -- ask the backend to trim uniform page margins
     page_width = nil,
     on_close = nil,     -- function(last_chapter, last_page) called when reader closes
 }
@@ -238,7 +239,8 @@ end
 
 function MangaReader:_pagePath(n)
     local fn = self.chapters[self.chapter_index]
-    return T("/cbz/%1/%2/%3?w=%4", urlencode(self.manga.id), urlencode(fn), n, self.page_width)
+    return T("/cbz/%1/%2/%3?w=%4&crop=%5",
+        urlencode(self.manga.id), urlencode(fn), n, self.page_width, self.crop and 1 or 0)
 end
 
 -- Fetch page n's JPEG bytes (string), caching in memory. Returns data or nil, err.
@@ -260,22 +262,45 @@ function MangaReader:_evict(keep_from, keep_to)
     end
 end
 
-function MangaReader:loadChapter(idx, start_page)
+-- Kobo turns Wi-Fi off when it sleeps, so the first request after waking fails.
+-- Show a status frame, bring the network back up, and run retry() once online.
+function MangaReader:_reconnectThen(retry)
+    self[1] = self:_messageFrame(NetworkMgr:isOnline()
+        and _("Retrying…")
+        or _("Connection lost — reconnecting Wi-Fi…"))
+    UIManager:setDirty(self, "ui")
+    UIManager:forceRePaint()
+    NetworkMgr:runWhenOnline(function() retry() end)
+end
+
+function MangaReader:loadChapter(idx, start_page, attempt)
     if idx < 1 or idx > #self.chapters then return end
+    attempt = attempt or 1
     self.chapter_index = idx
     self.page_data = {}   -- page cache is per-chapter
     local fn = self.chapters[idx]
     local info, ierr = self.api:getJson(T("/cbz/%1/%2/info", urlencode(self.manga.id), urlencode(fn)))
-    self.total_pages = (info and info.page_count) or 0
-    if self.total_pages == 0 then
+    if not info then
+        -- request failed (likely Wi-Fi dropped on sleep): reconnect and retry once
+        if attempt == 1 then
+            self:_reconnectThen(function() self:loadChapter(idx, start_page, 2) end)
+            return
+        end
         self[1] = self:_messageFrame(T(_("Could not load chapter.\n%1"), ierr or "?"))
+        UIManager:setDirty(self, "ui")
+        return
+    end
+    self.total_pages = info.page_count or 0
+    if self.total_pages == 0 then
+        self[1] = self:_messageFrame(_("This chapter has no pages."))
         UIManager:setDirty(self, "ui")
         return
     end
     self:setPage(math.min(math.max(start_page or 1, 1), self.total_pages))
 end
 
-function MangaReader:setPage(n)
+function MangaReader:setPage(n, attempt)
+    attempt = attempt or 1
     -- show a Loading frame immediately if this page isn't cached yet
     if not (self.page_data and self.page_data[n]) then
         self[1] = self:_messageFrame(T(_("Loading page %1…"), n))
@@ -285,6 +310,11 @@ function MangaReader:setPage(n)
 
     local data, err = self:_fetchPage(n)
     if not data then
+        -- fetch failed (likely Wi-Fi dropped on sleep): reconnect and retry once
+        if attempt == 1 then
+            self:_reconnectThen(function() self:setPage(n, 2) end)
+            return
+        end
         self[1] = self:_messageFrame(T(_("Failed to load page %1.\n%2"), n, err or "?"))
         UIManager:setDirty(self, "full")
         return
@@ -499,6 +529,12 @@ function MangaLibrary:getPrefetch()
     return self.settings:readSetting("prefetch_ahead") or 1
 end
 
+function MangaLibrary:getCrop()
+    local v = self.settings:readSetting("crop_margins")
+    if v == nil then return true end   -- default on
+    return v
+end
+
 function MangaLibrary:addToMainMenu(menu_items)
     menu_items.manga_library = {
         text = _("Manga Library"),
@@ -527,6 +563,14 @@ function MangaLibrary:addToMainMenu(menu_items)
                     self:_prefetchOption(1),
                     self:_prefetchOption(2),
                 },
+            },
+            {
+                text = _("Crop page margins"),
+                checked_func = function() return self:getCrop() end,
+                callback = function()
+                    self.settings:saveSetting("crop_margins", not self:getCrop())
+                    self.settings:flush()
+                end,
             },
         },
     }
@@ -804,6 +848,7 @@ function MangaLibrary:openReader(api, manga, chapters, chapter_index, start_page
         chapter_index = chapter_index,
         page = start_page or 1,
         prefetch_ahead = self:getPrefetch(),
+        crop = self:getCrop(),
         -- Called when the reader closes: sync caches and rebuild the chapter list so
         -- the new resume point shows immediately.
         on_close = function(last_chapter, last_page)

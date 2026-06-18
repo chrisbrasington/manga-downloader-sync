@@ -13,7 +13,7 @@ import io, json, glob, os, re, sys, zipfile
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageChops
 import pillow_heif
 
 # Register the HEIF/AVIF opener so Pillow can decode AVIF pages (Kobo can't).
@@ -33,6 +33,8 @@ CACHE_DIR = os.environ.get('EREADER_CACHE', 'ereader_cache')
 PORT = int(os.environ.get('PORT', 8080))
 DEFAULT_WIDTH = int(os.environ.get('EREADER_DEFAULT_WIDTH', 1072))
 JPEG_QUALITY = int(os.environ.get('EREADER_JPEG_QUALITY', 82))
+# Pixels within this 0-255 distance of the corner/background color count as margin.
+AUTOCROP_THRESHOLD = int(os.environ.get('EREADER_AUTOCROP_THRESHOLD', 20))
 
 app = FastAPI()
 
@@ -215,11 +217,29 @@ def cbz_info(manga_id: str, filename: str):
         return {'page_count': len(_cbz_pages(zf))}
 
 
-def _transcode_to_cache(src_bytes, cache_file, width):
-    """Decode any source format, downscale to `width`, grayscale, save JPEG."""
+def _autocrop(img):
+    """Trim a uniform border (the page's white/black margin).
+
+    Builds a background image of the corner color and crops to the bounding box of
+    everything that differs from it by more than AUTOCROP_THRESHOLD. Because it only
+    removes margin matching the corner color, art that reaches the edge is untouched
+    (its bounding box is the full page).
+    """
+    bg = Image.new(img.mode, img.size, img.getpixel((0, 0)))
+    diff = ImageChops.difference(img, bg)
+    if AUTOCROP_THRESHOLD:
+        diff = diff.point(lambda p: 255 if p > AUTOCROP_THRESHOLD else 0)
+    bbox = diff.getbbox()
+    return img.crop(bbox) if bbox else img
+
+
+def _transcode_to_cache(src_bytes, cache_file, width, crop):
+    """Decode any source format, optionally trim margins, downscale, grayscale, save JPEG."""
     with Image.open(io.BytesIO(src_bytes)) as img:
         img = ImageOps.exif_transpose(img)
         img = img.convert('L')
+        if crop:
+            img = _autocrop(img)
         if width and img.width > width:
             img.thumbnail((width, width * 8), Image.LANCZOS)
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
@@ -229,10 +249,11 @@ def _transcode_to_cache(src_bytes, cache_file, width):
 
 
 @app.get('/cbz/{manga_id}/{filename}/{page_num}')
-def cbz_page(manga_id: str, filename: str, page_num: int, w: int = DEFAULT_WIDTH):
+def cbz_page(manga_id: str, filename: str, page_num: int, w: int = DEFAULT_WIDTH, crop: int = 1):
     path, safe_name = _cbz_resolve(manga_id, filename)
     width = max(0, min(int(w or 0), 4096))
-    cache_file = os.path.join(CACHE_DIR, manga_id, safe_name, f'{page_num}_{width}.jpg')
+    crop = 1 if crop else 0
+    cache_file = os.path.join(CACHE_DIR, manga_id, safe_name, f'{page_num}_{width}_c{crop}.jpg')
     if os.path.exists(cache_file):
         return FileResponse(cache_file, media_type='image/jpeg')
 
@@ -243,7 +264,7 @@ def cbz_page(manga_id: str, filename: str, page_num: int, w: int = DEFAULT_WIDTH
         data = zf.read(pages[page_num - 1])
 
     try:
-        _transcode_to_cache(data, cache_file, width)
+        _transcode_to_cache(data, cache_file, width, crop)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'Decode failed: {e}')
     return FileResponse(cache_file, media_type='image/jpeg')

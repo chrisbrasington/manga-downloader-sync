@@ -8,7 +8,7 @@ Scheduled manga downloader with a web library and a native KOReader reader. Thre
 
 **Webapp** (`manga-webapp`) provides a browsable library with cover art, reading filters, and admin tools — all in a browser. Port `8681`.
 
-**E-reader backend** (`manga-ereader-backend`) is a small device-facing API for the KOReader plugin: it transcodes pages to downscaled grayscale JPEG for e-ink and shares reading progress with the webapp through `manga.db`. Port `8684`. See [`koreader-plugin/README.md`](koreader-plugin/README.md).
+**E-reader backend** (`manga-ereader-backend`) is a small device-facing API for the KOReader plugin: it transcodes pages to downscaled grayscale JPEG for e-ink and shares reading progress with the webapp through `manga.db`. Port `8684`. The plugin's server address is set on the device; see [`koreader-plugin/README.md`](koreader-plugin/README.md) and `.env.example`.
 
 ## Sources
 
@@ -105,8 +105,8 @@ The downloader and webapp mount `manga.db`, `tmp/`, and `thumbnails/`. The e-rea
 backend mounts `manga.db` (read-write, for progress) plus `tmp/` and `thumbnails/`
 read-only, and its own `ereader_cache/`.
 
-Caddy routes `manga-api.home.chrisincode.com` → `127.0.0.1:8684` for the e-reader backend
-(alongside `manga.home.chrisincode.com` → `:8681` for the webapp).
+The e-reader backend publishes port `8684`. Point the KOReader plugin at it using the
+server's LAN address (set on the device); record your value in `.env` (see `.env.example`).
 
 ---
 

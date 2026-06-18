@@ -1,11 +1,13 @@
 --[[
 Manga Library — KOReader plugin
 
-Browses and reads manga served by the manga-ereader-backend container
-(manga-api.home.chrisincode.com). All content is fetched over WiFi; pages
-arrive as pre-rendered grayscale JPEGs sized for the device. Reading progress
-is written back to the shared manga.db so the browser webapp and the Kobo
-stay in sync.
+Browses and reads manga served by the manga-ereader-backend container. All content
+is fetched over WiFi; pages arrive as pre-rendered grayscale JPEGs sized for the
+device. Reading progress is written back to the shared manga.db so the browser
+webapp and the Kobo stay in sync.
+
+The server address is set on the device (Manga Library → Server); there is no
+hardcoded default. Point it at the backend's LAN address, e.g. http://<host>:8684.
 ]]
 
 local Device = require("device")
@@ -44,7 +46,9 @@ local socketutil = require("socketutil")
 local socket_url = require("socket.url")
 local rapidjson = require("rapidjson")
 
-local DEFAULT_BASE_URL = "http://192.168.0.11:8684"
+-- No hardcoded server: the user sets the address on the device (Manga Library →
+-- Server). Until then getBaseUrl() returns "" and actions prompt for it.
+local DEFAULT_BASE_URL = ""
 
 -- rapidjson decodes JSON null to a sentinel (rapidjson.null), not Lua nil, which
 -- is truthy and breaks `x or default` and `x ~= nil` checks. Convert it to real nil.
@@ -563,7 +567,18 @@ function MangaLibrary:_online(action)
     NetworkMgr:runWhenOnline(action)
 end
 
+-- Ensure a server address is configured; if not, prompt for it and return false.
+function MangaLibrary:_haveServer()
+    local url = self:getBaseUrl()
+    if url and url ~= "" then return true end
+    UIManager:show(InfoMessage:new{
+        text = _("No server set yet.\nEnter your manga server address (e.g. http://192.168.0.x:8684).") })
+    self:editServer()
+    return false
+end
+
 function MangaLibrary:testConnection()
+    if not self:_haveServer() then return end
     self:_online(function()
         local url = self:getBaseUrl()
         local api = MangaApi.new(url)
@@ -603,6 +618,7 @@ function MangaLibrary:_hint(err)
 end
 
 function MangaLibrary:openLibrary()
+    if not self:_haveServer() then return end
     self:_online(function()
         local api = MangaApi.new(self:getBaseUrl())
         local list, err = api:getJson("/api/manga")

@@ -1,12 +1,12 @@
 # Manga Library — KOReader plugin
 
 Browse and read your self-hosted manga on a Kobo running KOReader. Talks to the
-`manga-ereader-backend` container. Default server is the plain-IP LAN address
-`http://192.168.0.11:8684` (avoids internal-DNS/TLS issues on the Kobo); change it
-under **Server** in the menu — e.g. to `https://manga-api.home.chrisincode.com`.
-Pages arrive as pre-rendered, downscaled grayscale JPEGs (the backend transcodes
-from the source PNG/JPG/WebP/AVIF), and reading progress is written back to the
-shared `manga.db`, so the browser webapp and the Kobo stay in sync.
+`manga-ereader-backend` container. There is no built-in server address — set it on
+the device under **Server** in the menu, using your backend's LAN address, e.g.
+`http://192.168.0.x:8684` (a plain-IP LAN address avoids internal-DNS/TLS issues on
+the Kobo). Pages arrive as pre-rendered, downscaled grayscale JPEGs (the backend
+transcodes from the source PNG/JPG/WebP/AVIF), and reading progress is written back
+to the shared `manga.db`, so the browser webapp and the Kobo stay in sync.
 
 ## Features
 - Library browser mirroring the webapp's filters: All, Favorites, Reading,
@@ -43,8 +43,9 @@ shared `manga.db`, so the browser webapp and the Kobo stay in sync.
 1. In KOReader, open the top menu → **Tools** (wrench icon) → **Manga Library**.
    - If it doesn't appear, fully restart KOReader (top menu → exit/restart);
      plugins are loaded at startup.
-2. First time: **Manga Library → Server** — confirm it is `http://192.168.0.11:8684`
-   (change if your setup differs). Use **Test connection** to verify reachability.
+2. First time: **Manga Library → Server** — enter your backend's address, e.g.
+   `http://192.168.0.x:8684`. Use **Test connection** to verify reachability.
+   (Opening the library before a server is set will prompt for it.)
 3. Optionally set **Preload pages ahead** (0, 1, or 2; default 1).
 4. **Manga Library → Open library**, pick a filter or tag, choose a title, then a
    chapter. Tap the center of a page for the menu (close is there); swipe or tap the

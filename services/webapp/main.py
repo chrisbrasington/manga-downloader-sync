@@ -27,6 +27,15 @@ app.mount('/static', StaticFiles(directory='static'), name='static')
 async def startup():
     threading.Thread(target=_run_scan, daemon=True).start()
 
+def chapter_sort_key(filename):
+    name = os.path.splitext(os.path.basename(filename))[0]
+
+    # Match chapter number at end of filename
+    m = re.search(r' - (\d+(?:\.\d+)?)$', name)
+    if m:
+        return float(m.group(1))
+
+    return float('inf')
 
 def get_db():
     return Database(MANGA_DB)
@@ -47,12 +56,17 @@ def has_thumbnail(manga_id):
 def list_chapter_files(title):
     if not title:
         return []
+
     manga_dir = os.path.join(MANGA_STORAGE, title)
     if not os.path.isdir(manga_dir):
         return []
-    cbzs = glob.glob(os.path.join(manga_dir, '*.cbz'))
-    return sorted([os.path.basename(c) for c in cbzs])
 
+    cbzs = glob.glob(os.path.join(manga_dir, '*.cbz'))
+
+    return [
+        os.path.basename(c)
+        for c in sorted(cbzs, key=chapter_sort_key)
+    ]
 
 def extract_chapter_num(filename):
     match = re.search(r'[\s\-]+(\d+(?:\.\d+)?)', filename)

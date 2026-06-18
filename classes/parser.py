@@ -873,6 +873,10 @@ class Utility:
         for d in dupes:
             print(colorama.Fore.YELLOW + f'     ⚠ duplicate entry: "{d["title"]}" (id: {d["id"]}, status: {d["status"]}) — run dedupe in admin' + colorama.Style.RESET_ALL)
 
+        if did_work and db_row and db_row.get('read'):
+            self.db.update_manga_metadata(manga.id, source, read=0)
+            print(colorama.Fore.CYAN + f'     new chapter — reset to unread' + colorama.Style.RESET_ALL)
+
         if manga.status == 'completed':
             self.db.set_manga_status(manga.id, 'completed')
             self.db.set_download_enabled(manga.id, 0)

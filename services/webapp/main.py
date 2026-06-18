@@ -1114,7 +1114,8 @@ def read_chapter(manga_id: str, filename: str):
     .hit-zone {{ position:absolute; top:0; bottom:0; width:35%; cursor:pointer; z-index:25; }}
     #hz-prev {{ left:0; }}
     #hz-next {{ right:0; }}
-    .page-info {{ position:absolute; bottom:12px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.55); color:#999; font-size:11px; padding:3px 9px; border-radius:8px; pointer-events:none; transition:opacity .3s; }}
+    .page-info {{ text-align:center; background:#1a1a2e; color:#666; font-size:11px; padding:4px 0; flex-shrink:0; pointer-events:none; }}
+    body.fs .page-info {{ display:none; }}
     #end-screen {{ position:absolute; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; flex-direction:column; gap:18px; z-index:20; }}
     #end-screen.show {{ display:flex; }}
     #end-screen .msg {{ color:#ccc; font-size:15px; }}
@@ -1146,13 +1147,13 @@ def read_chapter(manga_id: str, filename: str):
     <img id="page-img" alt="">
     <div class="hit-zone" id="hz-prev"></div>
     <div class="hit-zone" id="hz-next"></div>
-    <div class="page-info" id="page-info"></div>
     <div id="end-screen">
       <div class="msg" id="end-msg">End of chapter</div>
       <a id="next-ch-btn" href="#">Continue to next chapter →</a>
       <a id="back-btn-end" href="javascript:history.back()">← Back to library</a>
     </div>
   </div>
+  <div class="page-info" id="page-info"></div>
   <script>
     const MANGA_ID = {manga_id_js};
     const FILENAME = {filename_js};
@@ -1302,7 +1303,7 @@ def read_chapter(manga_id: str, filename: str):
       }} catch(e) {{}}
     }}
 
-    async function loadChapter(filename) {{
+    async function loadChapter(filename, startAtEnd = false) {{
       if (prefetchImg) {{ prefetchImg.img.src = ''; prefetchImg = null; }}
       activeFilename = filename;
       currentChIdx = chapters.indexOf(filename);
@@ -1313,7 +1314,7 @@ def read_chapter(manga_id: str, filename: str):
       try {{
         const info = await fetch(`/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(filename)}}/info`).then(r => r.json());
         totalPages = info.page_count;
-        renderPage(1);
+        renderPage(startAtEnd ? totalPages : 1);
       }} catch(e) {{
         document.getElementById('loading').textContent = 'Failed to load chapter.';
       }}
@@ -1346,6 +1347,8 @@ def read_chapter(manga_id: str, filename: str):
         document.getElementById('end-screen').classList.remove('show');
       }} else if (currentPage > 1) {{
         renderPage(currentPage - 1);
+      }} else if (currentChIdx > 0) {{
+        loadChapter(chapters[currentChIdx - 1], true);
       }}
     }}
 
@@ -1426,16 +1429,43 @@ def read_chapter(manga_id: str, filename: str):
       }}
     }}
 
+    function updateUIRotation() {{
+      const bar = document.querySelector('.bar');
+      const endScreen = document.getElementById('end-screen');
+      const barH = bar.offsetHeight || 50;
+      // reset
+      bar.style.cssText = '';
+      Array.from(bar.children).forEach(c => {{ c.style.transform = ''; c.style.display = ''; }});
+      endScreen.style.transform = '';
+      if (!currentRot) return;
+      // end screen rotates to match image; page counter is outside viewer so always upright
+      endScreen.style.transform = `rotate(${{currentRot}}deg)`;
+      // bar: move to side for ±90°, flip in place for 180°
+      if (currentRot === 90 || currentRot === 270) {{
+        const side = currentRot === 90 ? 'right' : 'left';
+        const deg = currentRot === 90 ? -90 : 90;
+        bar.style.cssText = `position:fixed;${{side}}:0;top:0;bottom:0;width:${{barH}}px;height:100vh;flex-direction:column;justify-content:space-around;padding:8px 0;gap:0`;
+        Array.from(bar.children).forEach(c => {{
+          if (c.classList.contains('bar-m-hide')) {{ c.style.display = 'none'; return; }}
+          c.style.transform = `rotate(${{deg}}deg)`;
+        }});
+      }} else if (currentRot === 180) {{
+        bar.style.transform = 'rotate(180deg)';
+      }}
+    }}
+
     function rotate(delta) {{
       currentRot = ((currentRot + delta) % 360 + 360) % 360;
       applyImageSizing();
       zReset();
       updateHitZones();
+      updateUIRotation();
       const p = new URLSearchParams(window.location.search);
       if (currentRot) p.set('rotation', currentRot); else p.delete('rotation');
       history.replaceState(null, '', window.location.pathname + (p.toString() ? '?' + p : ''));
     }}
     updateHitZones();
+    updateUIRotation();
 
     // Pinch zoom + single-finger pan
     let zSc = 1, zTx = 0, zTy = 0;

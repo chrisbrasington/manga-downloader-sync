@@ -389,6 +389,8 @@ function MangaReader:nextPage()
     elseif self.chapter_index < #self.chapters then
         self:loadChapter(self.chapter_index + 1, 1)
     else
+        -- Past the last page of the last chapter: leave the reader and return to the list.
+        self:onClose()
         UIManager:show(InfoMessage:new{ text = _("End of manga."), timeout = 2 })
     end
 end
@@ -404,6 +406,9 @@ end
 function MangaReader:onTapMenu()
     local dialog
     dialog = ButtonDialog:new{
+        title = T(_("%1\nPage %2 / %3"),
+            self.chapters[self.chapter_index]:gsub("%.cbz$", ""), self.page, self.total_pages),
+        title_align = "center",
         buttons = {
             {{ text = _("Previous chapter"), enabled = self.chapter_index > 1, callback = function()
                 UIManager:close(dialog); self:loadChapter(self.chapter_index - 1, 1) end }},
@@ -613,24 +618,41 @@ function MangaLibrary:openLibrary()
 end
 
 function MangaLibrary:showFilterMenu(api)
-    local items = {}
-    for _i, f in ipairs(FILTERS) do
-        local key = f.key
-        local count = 0
-        for _j, m in ipairs(self._library) do
-            if matchesFilter(m, key) then count = count + 1 end
+    local menu
+    local function build()
+        local items = {
+            -- The library is a per-session snapshot; this re-pulls it so external
+            -- changes (e.g. marked read / progress cleared in the webapp) show up.
+            { text = _("Reload from server"), callback = function()
+                local list, err = api:getJson("/api/manga")
+                if list then
+                    self._library = list
+                    menu:switchItemTable(_("Manga Library"), build())
+                else
+                    UIManager:show(InfoMessage:new{
+                        text = T(_("Reload failed: %1"), err or "?"), timeout = 3 })
+                end
+            end },
+        }
+        for _i, f in ipairs(FILTERS) do
+            local key = f.key
+            local count = 0
+            for _j, m in ipairs(self._library) do
+                if matchesFilter(m, key) then count = count + 1 end
+            end
+            table.insert(items, {
+                text = f.text,
+                mandatory = tostring(count),
+                callback = function() self:showList(api, f.text, function(m) return matchesFilter(m, key) end) end,
+            })
         end
         table.insert(items, {
-            text = f.text,
-            mandatory = tostring(count),
-            callback = function() self:showList(api, f.text, function(m) return matchesFilter(m, key) end) end,
+            text = _("Browse by tag"),
+            callback = function() self:showTagMenu(api) end,
         })
+        return items
     end
-    table.insert(items, {
-        text = _("Browse by tag"),
-        callback = function() self:showTagMenu(api) end,
-    })
-    self:_showMenu(_("Manga Library"), items)
+    menu = self:_showMenu(_("Manga Library"), build())
 end
 
 function MangaLibrary:showTagMenu(api)

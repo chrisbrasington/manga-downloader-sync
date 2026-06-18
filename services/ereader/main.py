@@ -56,7 +56,10 @@ def has_thumbnail(manga_id):
 
 
 def extract_chapter_num(filename):
-    match = re.search(r'[\s\-]+(\d+(?:\.\d+)?)', filename)
+    # Chapter number is the trailing number in the filename (e.g. "Title - 13.5.cbz").
+    # Match the END so numbers inside the title (e.g. "...in Her 30s...") are ignored.
+    name = filename[:-4] if filename.lower().endswith('.cbz') else filename
+    match = re.search(r'(\d+(?:\.\d+)?)\s*$', name)
     if match:
         try:
             return float(match.group(1))

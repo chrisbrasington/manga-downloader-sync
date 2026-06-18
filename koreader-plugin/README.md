@@ -11,11 +11,20 @@ shared `manga.db`, so the browser webapp and the Kobo stay in sync.
 ## Features
 - Library browser mirroring the webapp's filters: All, Favorites, Reading,
   Downloading, Completed, Hiatus, Archived, Read, Hidden — plus **Browse by tag**.
-- Chapter list per title with a "Continue" shortcut at your saved page.
-- Tap-zone reader: left third = previous page, right third = next page, center =
-  menu (previous/next chapter, go to page, close). Physical page-turn keys work on
-  devices that have them.
-- Automatic chapter-to-chapter advance at the end of a chapter.
+  A **Reload from server** item re-pulls the library so changes made elsewhere
+  (e.g. marked read / progress cleared in the webapp) show up.
+- Chapter list per title (numeric order), with a **Continue** shortcut at your saved
+  page. Tapping the in-progress chapter offers **Resume** or **Start from beginning**.
+- Reader controls:
+  - **Tap** left third = previous page, right third = next page.
+  - **Swipe** left = next, right = previous.
+  - **Pinch / spread** = open a zoomable view (pinch-zoom + pan) of the page.
+  - **Center tap** = menu showing the chapter and page count, with previous/next
+    chapter, go to page, and close.
+  - Physical page-turn keys work on devices that have them.
+- Thin progress bar along the bottom of each page.
+- Automatic chapter-to-chapter advance; reaching the end returns you to the list.
+- Reading progress is saved per page turn and on close, and synced to `manga.db`.
 - Configurable **preload-ahead** (0/1/2 pages, default 1) for snappy page turns.
 
 ## Install
@@ -38,7 +47,8 @@ shared `manga.db`, so the browser webapp and the Kobo stay in sync.
    (change if your setup differs). Use **Test connection** to verify reachability.
 3. Optionally set **Preload pages ahead** (0, 1, or 2; default 1).
 4. **Manga Library → Open library**, pick a filter or tag, choose a title, then a
-   chapter. The reader resumes at your last-read page when there is saved progress.
+   chapter. Tap the center of a page for the menu (close is there); swipe or tap the
+   edges to turn pages; pinch to zoom.
 
 WiFi is brought up automatically when you open the library. The device must be on a
 network allowed by the Caddy admin/LAN IP rules (home WiFi is covered).

@@ -1,12 +1,14 @@
 # manga-kobo
 
-Scheduled manga downloader with a web library. Two Docker containers share a SQLite database and a mounted volume of downloaded files.
+Scheduled manga downloader with a web library and a native KOReader reader. Three Docker containers share a SQLite database and a mounted volume of downloaded files.
 
 ## What it does
 
-**Downloader** runs on a schedule, fetches new chapters from MangaDex and danke.moe, converts them to PDF, and optionally syncs to a Kobo e-reader.
+**Downloader** (`manga-downloader`) runs on a schedule, fetches new chapters from MangaDex and danke.moe, converts them to PDF, and optionally syncs to a Kobo e-reader.
 
-**Webapp** provides a browsable library with cover art, reading filters, and admin tools — all in a browser.
+**Webapp** (`manga-webapp`) provides a browsable library with cover art, reading filters, and admin tools — all in a browser. Port `8681`.
+
+**E-reader backend** (`manga-ereader-backend`) is a small device-facing API for the KOReader plugin: it transcodes pages to downscaled grayscale JPEG for e-ink and shares reading progress with the webapp through `manga.db`. Port `8684`. See [`koreader-plugin/README.md`](koreader-plugin/README.md).
 
 ## Sources
 
@@ -89,15 +91,22 @@ manga-kobo/
   manga.db          # shared database
   tmp/              # downloaded manga (one folder per series)
   thumbnails/       # cover art cache (manga_id.jpg)
+  ereader_cache/    # transcoded grayscale page cache (e-reader backend)
 ```
 
 ```yaml
 services:
-  manga:      # downloader — runs python program.py on a schedule
-  webapp:     # FastAPI app — port 8681
+  manga:              # container_name: manga-downloader — runs python program.py on a schedule
+  webapp:             # container_name: manga-webapp — FastAPI app, port 8681
+  ereader-backend:    # container_name: manga-ereader-backend — KOReader API, port 8684
 ```
 
-Both containers mount `manga.db`, `tmp/`, and `thumbnails/` from the host.
+The downloader and webapp mount `manga.db`, `tmp/`, and `thumbnails/`. The e-reader
+backend mounts `manga.db` (read-write, for progress) plus `tmp/` and `thumbnails/`
+read-only, and its own `ereader_cache/`.
+
+Caddy routes `manga-api.home.chrisincode.com` → `127.0.0.1:8684` for the e-reader backend
+(alongside `manga.home.chrisincode.com` → `:8681` for the webapp).
 
 ---
 

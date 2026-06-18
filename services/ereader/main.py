@@ -272,6 +272,25 @@ def healthz():
     return {'ok': True}
 
 
+@app.get('/')
+def root():
+    """Friendly status page — this is a JSON API for the KOReader plugin, not a website."""
+    try:
+        count = len(get_db().get_all_manga())
+    except Exception:
+        count = None
+    return {
+        'service': 'manga-ereader-backend',
+        'ok': True,
+        'manga_count': count,
+        'note': 'JSON API for the KOReader Manga Library plugin. No web UI here — '
+                'use the browser webapp for browsing.',
+        'endpoints': ['/api/manga', '/api/manga/{id}', '/api/tags',
+                      '/cbz/{id}/{filename}/info', '/cbz/{id}/{filename}/{page}?w=',
+                      '/thumbnail/{id}', '/cover/{id}', '/healthz'],
+    }
+
+
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run('main:app', host='0.0.0.0', port=PORT, reload=False)

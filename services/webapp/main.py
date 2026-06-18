@@ -48,7 +48,6 @@ def large_cover_path(manga_id):
 def has_thumbnail(manga_id):
     return os.path.exists(thumbnail_path(manga_id))
 
-
 def list_chapter_files(title):
     if not title:
         return []
@@ -59,10 +58,13 @@ def list_chapter_files(title):
 
     cbzs = glob.glob(os.path.join(manga_dir, '*.cbz'))
 
-    return [
-        os.path.basename(c)
-        for c in sorted(cbzs, key=chapter_sort_key, reverse=True)
-    ]
+    sorted_cbzs = sorted(cbzs, key=chapter_sort_key, reverse=True)
+
+    print(f"\n=== {title} ===")
+    for c in sorted_cbzs:
+        print(f"{chapter_sort_key(c):6}  {os.path.basename(c)}")
+
+    return [os.path.basename(c) for c in sorted_cbzs]
 
 def extract_chapter_num(filename):
     match = re.search(r'[\s\-]+(\d+(?:\.\d+)?)', filename)
@@ -294,7 +296,7 @@ def api_manga_detail(manga_id: str):
     payload = manga_to_payload(row)
     title = row.get('title')
     chapters = list_chapter_files(title)
-    payload['chapters'] = chapters
+    payload['chapters'] = sorted(chapters, key=extract_chapter_num)
     return payload
 
 

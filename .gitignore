@@ -19,3 +19,4 @@ config
 config_backup*
 *backup/thumbnails/
 *.bak
+ereader_cache

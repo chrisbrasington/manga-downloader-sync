@@ -2,7 +2,7 @@ services:
   manga:
     build: .
     image: valhalla:5000/manga:latest
-    container_name: manga
+    container_name: manga-downloader
     restart: always
     environment:
       TZ: America/Denver
@@ -55,3 +55,30 @@ services:
       homepage.widget.mappings.2.field: last_run
       homepage.widget.mappings.2.label: Last Run
       homepage.widget.mappings.2.format: relativeDate
+
+  ereader-backend:
+    build:
+      context: .
+      dockerfile: services/ereader/Dockerfile
+    image: valhalla:5000/manga-ereader-backend:latest
+    container_name: manga-ereader-backend
+    restart: always
+    environment:
+      TZ: America/Denver
+      MANGA_DB: /app/manga.db
+      MANGA_STORAGE: /app/tmp
+      THUMBNAILS_DIR: /app/thumbnails
+      EREADER_CACHE: /app/ereader_cache
+      PORT: "8080"
+    ports:
+      - "8684:8080"
+    volumes:
+      - ./manga.db:/app/manga.db
+      - ./tmp:/app/tmp:ro
+      - ./thumbnails:/app/thumbnails:ro
+      - ./ereader_cache:/app/ereader_cache
+    labels:
+      homepage.group: Media
+      homepage.name: Manga E-Reader API
+      homepage.icon: mdi-book-open-page-variant
+      homepage.description: KOReader backend

@@ -869,7 +869,7 @@ def api_dedupe_merge(body: DedupeMergeRequest):
 # --- downloader container control ---
 
 DOCKER_SOCKET = '/var/run/docker.sock'
-DOWNLOADER_CONTAINER = 'manga'
+DOWNLOADER_CONTAINER = 'manga-downloader'
 
 
 class _UnixConn(http.client.HTTPConnection):

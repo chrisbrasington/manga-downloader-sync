@@ -66,16 +66,6 @@ def list_chapter_files(title):
 
     return [os.path.basename(c) for c in sorted_cbzs]
 
-def extract_chapter_num(filename):
-    match = re.search(r'[\s\-]+(\d+(?:\.\d+)?)', filename)
-    if match:
-        try:
-            return float(match.group(1))
-        except ValueError:
-            pass
-    return 0.0
-
-
 def manga_to_payload(row):
     tags = row.get('tags')
     if tags and isinstance(tags, str):
@@ -296,7 +286,7 @@ def api_manga_detail(manga_id: str):
     payload = manga_to_payload(row)
     title = row.get('title')
     chapters = list_chapter_files(title)
-    payload['chapters'] = sorted(chapters, key=extract_chapter_num)
+    payload['chapters'] = chapters
     return payload
 
 

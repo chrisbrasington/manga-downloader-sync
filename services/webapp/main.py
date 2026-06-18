@@ -30,12 +30,8 @@ async def startup():
 def chapter_sort_key(filename):
     name = os.path.splitext(os.path.basename(filename))[0]
 
-    # Match chapter number at end of filename
     m = re.search(r' - (\d+(?:\.\d+)?)$', name)
-    if m:
-        return float(m.group(1))
-
-    return float('inf')
+    return float(m.group(1)) if m else -1
 
 def get_db():
     return Database(MANGA_DB)
@@ -65,7 +61,7 @@ def list_chapter_files(title):
 
     return [
         os.path.basename(c)
-        for c in sorted(cbzs, key=chapter_sort_key)
+        for c in sorted(cbzs, key=chapter_sort_key, reverse=True)
     ]
 
 def extract_chapter_num(filename):

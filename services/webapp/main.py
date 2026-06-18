@@ -60,9 +60,9 @@ def list_chapter_files(title):
 
     sorted_cbzs = sorted(cbzs, key=chapter_sort_key, reverse=True)
 
-    print(f"\n=== {title} ===")
-    for c in sorted_cbzs:
-        print(f"{chapter_sort_key(c):6}  {os.path.basename(c)}")
+    # print(f"\n=== {title} ===")
+    # for c in sorted_cbzs:
+    #     print(f"{chapter_sort_key(c):6}  {os.path.basename(c)}")
 
     return [os.path.basename(c) for c in sorted_cbzs]
 

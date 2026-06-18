@@ -294,7 +294,7 @@ def api_manga_detail(manga_id: str):
     payload = manga_to_payload(row)
     title = row.get('title')
     chapters = list_chapter_files(title)
-    payload['chapters'] = sorted(chapters, key=extract_chapter_num)
+    payload['chapters'] = chapters
     return payload
 
 

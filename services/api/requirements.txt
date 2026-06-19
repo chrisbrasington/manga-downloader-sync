@@ -1,4 +1,5 @@
 fastapi
 uvicorn[standard]
+requests
 pillow
 pillow-heif

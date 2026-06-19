@@ -1,7 +1,7 @@
 # Manga Library — KOReader plugin
 
 Browse and read your self-hosted manga on a Kobo running KOReader. Talks to the
-`manga-ereader-backend` container. There is no built-in server address — set it on
+`manga-api` container (KOReader port `8684`). There is no built-in server address — set it on
 the device under **Server** in the menu, using your backend's LAN address, e.g.
 `http://192.168.0.x:8684` (a plain-IP LAN address avoids internal-DNS/TLS issues on
 the Kobo). Pages arrive as pre-rendered, downscaled grayscale JPEGs (the backend

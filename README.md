@@ -1,14 +1,16 @@
 # manga-kobo
 
-Scheduled manga downloader with a web library and a native KOReader reader. Three Docker containers share a SQLite database and a mounted volume of downloaded files.
+Scheduled manga downloader with a web library and a native KOReader reader. Two Docker containers share a SQLite database and a mounted volume of downloaded files.
 
 ## What it does
 
 **Downloader** (`manga-downloader`) runs on a schedule, fetches new chapters from MangaDex and danke.moe, converts them to PDF, and optionally syncs to a Kobo e-reader.
 
-**Webapp** (`manga-webapp`) provides a browsable library with cover art, reading filters, and admin tools — all in a browser. Port `8681`.
+**API** (`manga-api`) is the single backend for both clients, served from one process:
+- **Browser webapp** on port `8681` — a browsable library with cover art, reading filters, a built-in reader, and admin tools. Pages are served full-color.
+- **KOReader API** on port `8684` — the device-facing endpoints the KOReader plugin uses. The same page endpoint transcodes to downscaled grayscale JPEG for e-ink (it kicks in when the plugin requests a width). Reading progress is shared between the browser and the Kobo through `manga.db`.
 
-**E-reader backend** (`manga-ereader-backend`) is a small device-facing API for the KOReader plugin: it transcodes pages to downscaled grayscale JPEG for e-ink and shares reading progress with the webapp through `manga.db`. Port `8684`. The plugin's server address is set on the device; see [`koreader-plugin/README.md`](koreader-plugin/README.md) and `.env.example`.
+The plugin's server address is set on the device; see [`koreader-plugin/README.md`](koreader-plugin/README.md) and `.env.example`.
 
 ## Sources
 
@@ -91,22 +93,22 @@ manga-kobo/
   manga.db          # shared database
   tmp/              # downloaded manga (one folder per series)
   thumbnails/       # cover art cache (manga_id.jpg)
-  ereader_cache/    # transcoded grayscale page cache (e-reader backend)
+  ereader_cache/    # transcoded grayscale page cache (manga-api)
 ```
 
 ```yaml
 services:
-  manga:              # container_name: manga-downloader — runs python program.py on a schedule
-  webapp:             # container_name: manga-webapp — FastAPI app, port 8681
-  ereader-backend:    # container_name: manga-ereader-backend — KOReader API, port 8684
+  manga-downloader:   # runs python program.py on a schedule
+  manga-api:          # FastAPI app — browser on 8681, KOReader API on 8684
 ```
 
-The downloader and webapp mount `manga.db`, `tmp/`, and `thumbnails/`. The e-reader
-backend mounts `manga.db` (read-write, for progress) plus `tmp/` and `thumbnails/`
-read-only, and its own `ereader_cache/`.
+Both services mount `manga.db`, `tmp/`, and `thumbnails/`. `manga-api` also mounts its
+own `ereader_cache/` (transcoded grayscale pages) and the Docker socket read-only (so the
+admin panel can read/restart the downloader container).
 
-The e-reader backend publishes port `8684`. Point the KOReader plugin at it using the
-server's LAN address (set on the device); record your value in `.env` (see `.env.example`).
+`manga-api` publishes the same app on two ports: `8681` for the browser and `8684` for the
+KOReader plugin. Point the plugin at the `8684` address using the server's LAN address (set
+on the device); record your value in `.env` (see `.env.example`).
 
 ---
 

@@ -1,7 +1,7 @@
 --[[
 Manga Library — KOReader plugin
 
-Browses and reads manga served by the manga-ereader-backend container. All content
+Browses and reads manga served by the manga-api container. All content
 is fetched over WiFi; pages arrive as pre-rendered grayscale JPEGs sized for the
 device. Reading progress is written back to the shared manga.db so the browser
 webapp and the Kobo stay in sync.

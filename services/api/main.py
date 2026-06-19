@@ -1,9 +1,14 @@
-import asyncio, difflib, glob, http.client, json, os, re, shutil, socket, struct, sys, time, threading, zipfile
+import asyncio, difflib, glob, http.client, io, json, os, re, shutil, socket, struct, sys, time, threading, zipfile
 import requests as http_requests
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from PIL import Image, ImageOps, ImageChops
+import pillow_heif
+
+# Register the HEIF/AVIF opener so Pillow can decode AVIF pages (Kobo can't).
+pillow_heif.register_heif_opener()
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, '/app')
@@ -18,6 +23,13 @@ THUMBNAILS_DIR = os.environ.get('THUMBNAILS_DIR', 'thumbnails')
 PICKER_CACHE_DIR = os.path.join(THUMBNAILS_DIR, '_picker')
 LARGE_COVERS_DIR = os.path.join(THUMBNAILS_DIR, '_large')
 WEBAPP_PORT = int(os.environ.get('WEBAPP_PORT', 8080))
+
+# E-ink page transcode (used when the KOReader plugin requests a width).
+CACHE_DIR = os.environ.get('EREADER_CACHE', 'ereader_cache')
+DEFAULT_WIDTH = int(os.environ.get('EREADER_DEFAULT_WIDTH', 1072))
+JPEG_QUALITY = int(os.environ.get('EREADER_JPEG_QUALITY', 82))
+# Pixels within this 0-255 distance of the corner/background color count as margin.
+AUTOCROP_THRESHOLD = int(os.environ.get('EREADER_AUTOCROP_THRESHOLD', 20))
 
 app = FastAPI()
 app.mount('/static', StaticFiles(directory='static'), name='static')
@@ -209,6 +221,24 @@ def api_manga_list():
     return [manga_to_payload(r) for r in rows]
 
 
+@app.get('/api/tags')
+def api_tags():
+    """Distinct tags across the library with title counts, for tag browsing (KOReader plugin)."""
+    db = get_db()
+    counts = {}
+    for r in db.get_all_manga():
+        tags = r.get('tags')
+        if tags and isinstance(tags, str):
+            try:
+                tags = json.loads(tags)
+            except Exception:
+                tags = []
+        for t in (tags or []):
+            counts[t] = counts.get(t, 0) + 1
+    return [{'tag': t, 'count': c}
+            for t, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].lower()))]
+
+
 def _fetch_titles_row(manga_id, url, db_path):
     """Fetch EN/JA titles + description from MangaDex and write to DB. Returns (en, ja, status, error)."""
     md_uuid = Database._extract_id(url)
@@ -288,6 +318,14 @@ def api_manga_detail(manga_id: str):
     chapters = list_chapter_files(title)
     chapters.reverse()
     payload['chapters'] = chapters
+    # Guard against stale progress: if the saved chapter file no longer exists on
+    # disk (e.g. the series folder/files were renamed after it was read), don't
+    # advertise it — the client would otherwise try to resume into a dead filename
+    # and spin on a 404. Payload-only; the stored value is left intact in case the
+    # file returns.
+    if payload.get('last_read_chapter') and payload['last_read_chapter'] not in chapters:
+        payload['last_read_chapter'] = None
+        payload['last_read_page'] = None
     return payload
 
 
@@ -1056,28 +1094,87 @@ def _cbz_resolve(manga_id, filename):
     return path, safe_name
 
 
+def _cbz_pages(zf):
+    return sorted(n for n in zf.namelist()
+                  if _cbz_ext(n) in _CBZ_IMAGE_EXTS
+                  and not os.path.basename(n).startswith('.'))
+
+
+def _autocrop(img):
+    """Trim a uniform border (the page's white/black margin).
+
+    Builds a background image of the corner color and crops to the bounding box of
+    everything that differs from it by more than AUTOCROP_THRESHOLD. Because it only
+    removes margin matching the corner color, art that reaches the edge is untouched
+    (its bounding box is the full page).
+    """
+    bg = Image.new(img.mode, img.size, img.getpixel((0, 0)))
+    diff = ImageChops.difference(img, bg)
+    if AUTOCROP_THRESHOLD:
+        diff = diff.point(lambda p: 255 if p > AUTOCROP_THRESHOLD else 0)
+    bbox = diff.getbbox()
+    return img.crop(bbox) if bbox else img
+
+
+def _transcode_to_cache(src_bytes, cache_file, width, crop):
+    """Decode any source format, optionally trim margins, downscale, grayscale, save JPEG."""
+    with Image.open(io.BytesIO(src_bytes)) as img:
+        img = ImageOps.exif_transpose(img)
+        img = img.convert('L')
+        if crop:
+            img = _autocrop(img)
+        if width and img.width > width:
+            img.thumbnail((width, width * 8), Image.LANCZOS)
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        tmp = cache_file + '.tmp'
+        img.save(tmp, 'JPEG', quality=JPEG_QUALITY, optimize=True)
+        os.replace(tmp, cache_file)
+
+
 @app.get('/cbz/{manga_id}/{filename}/info')
 def cbz_info(manga_id: str, filename: str):
     path, _ = _cbz_resolve(manga_id, filename)
     with zipfile.ZipFile(path) as zf:
-        pages = sorted(n for n in zf.namelist()
-                       if _cbz_ext(n) in _CBZ_IMAGE_EXTS
-                       and not os.path.basename(n).startswith('.'))
-    return {'page_count': len(pages)}
+        return {'page_count': len(_cbz_pages(zf))}
 
 
 @app.get('/cbz/{manga_id}/{filename}/{page_num}')
-def cbz_page(manga_id: str, filename: str, page_num: int):
-    path, _ = _cbz_resolve(manga_id, filename)
+def cbz_page(manga_id: str, filename: str, page_num: int, w: int | None = None, crop: int = 1):
+    """Serve a single page.
+
+    No `w` query param (the browser) -> raw passthrough: original bytes and
+    content-type, full color. A `w` param (the KOReader plugin always sends one)
+    -> grayscale, optionally autocropped, downscaled JPEG, disk-cached for cheap
+    repeat/prefetch hits.
+    """
+    path, safe_name = _cbz_resolve(manga_id, filename)
+
+    if w is None:
+        with zipfile.ZipFile(path) as zf:
+            pages = _cbz_pages(zf)
+            if page_num < 1 or page_num > len(pages):
+                raise HTTPException(status_code=404, detail='Page not found')
+            data = zf.read(pages[page_num - 1])
+            ext = _cbz_ext(pages[page_num - 1])
+        return Response(content=data, media_type=_CBZ_MEDIA_TYPES.get(ext, 'image/jpeg'))
+
+    width = max(0, min(int(w), 4096))
+    crop = 1 if crop else 0
+    cache_file = os.path.join(CACHE_DIR, manga_id, safe_name, f'{page_num}_{width}_c{crop}.jpg')
+    if os.path.exists(cache_file):
+        return FileResponse(cache_file, media_type='image/jpeg')
+
     with zipfile.ZipFile(path) as zf:
-        pages = sorted(n for n in zf.namelist()
-                       if _cbz_ext(n) in _CBZ_IMAGE_EXTS
-                       and not os.path.basename(n).startswith('.'))
+        pages = _cbz_pages(zf)
         if page_num < 1 or page_num > len(pages):
             raise HTTPException(status_code=404, detail='Page not found')
         data = zf.read(pages[page_num - 1])
-    ext = _cbz_ext(pages[page_num - 1])
-    return Response(content=data, media_type=_CBZ_MEDIA_TYPES.get(ext, 'image/jpeg'))
+
+    try:
+        _transcode_to_cache(data, cache_file, width, crop)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Decode failed: {e}')
+    return FileResponse(cache_file, media_type='image/jpeg')
 
 
 @app.get('/cbz/{manga_id}/{filename}')
@@ -1551,6 +1648,11 @@ def read_chapter(manga_id: str, filename: str):
   </script>
 </body>
 </html>'''
+
+
+@app.get('/healthz')
+def healthz():
+    return {'ok': True}
 
 
 if __name__ == '__main__':

@@ -3,9 +3,10 @@ WORKDIR /app
 # libheif is needed for pillow-heif to decode AVIF pages
 RUN apt-get update && apt-get install -y --no-install-recommends libheif1 \
     && rm -rf /var/lib/apt/lists/*
-COPY services/ereader/requirements.txt .
+COPY services/api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY classes/database.py ./classes/database.py
-COPY services/ereader/main.py .
+COPY services/api/main.py .
+COPY services/api/static ./static
 EXPOSE 8080
 CMD ["python", "main.py"]

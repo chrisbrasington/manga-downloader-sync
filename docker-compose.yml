@@ -1,7 +1,7 @@
 services:
-  manga:
+  manga-downloader:
     build: .
-    image: valhalla:5000/manga:latest
+    image: valhalla:5000/manga-downloader:latest
     container_name: manga-downloader
     restart: always
     environment:
@@ -19,31 +19,36 @@ services:
       homepage.description: Manga worker
       homepage.href: https://manga.home.chrisincode.com/admin
 
-  webapp:
+  # Single unified API. Serves the browser webapp (8681) and the KOReader
+  # plugin (8684) from one process; both hit the same container port.
+  manga-api:
     build:
       context: .
-      dockerfile: services/webapp/Dockerfile
-    image: valhalla:5000/manga-webapp:latest
-    container_name: manga-webapp
+      dockerfile: services/api/Dockerfile
+    image: valhalla:5000/manga-api:latest
+    container_name: manga-api
     restart: always
     environment:
       TZ: America/Denver
       MANGA_DB: /app/manga.db
       MANGA_STORAGE: /app/tmp
       THUMBNAILS_DIR: /app/thumbnails
+      EREADER_CACHE: /app/ereader_cache
       WEBAPP_PORT: "8080"
     ports:
       - "8681:8080"
+      - "8684:8080"
     volumes:
       - ./manga.db:/app/manga.db
       - ./tmp:/app/tmp
       - ./thumbnails:/app/thumbnails
+      - ./ereader_cache:/app/ereader_cache
       - /var/run/docker.sock:/var/run/docker.sock:ro
     labels:
       homepage.group: Media
       homepage.name: Manga Library
       homepage.icon: mdi-book-open-page-variant
-      homepage.description: Browse and read manga
+      homepage.description: Browse and read manga (browser + KOReader API)
       homepage.href: https://manga.home.chrisincode.com/?filter=reading
       homepage.widget.type: customapi
       homepage.widget.url: https://manga.home.chrisincode.com/api/stats
@@ -55,30 +60,3 @@ services:
       homepage.widget.mappings.2.field: last_run
       homepage.widget.mappings.2.label: Last Run
       homepage.widget.mappings.2.format: relativeDate
-
-  ereader-backend:
-    build:
-      context: .
-      dockerfile: services/ereader/Dockerfile
-    image: valhalla:5000/manga-ereader-backend:latest
-    container_name: manga-ereader-backend
-    restart: always
-    environment:
-      TZ: America/Denver
-      MANGA_DB: /app/manga.db
-      MANGA_STORAGE: /app/tmp
-      THUMBNAILS_DIR: /app/thumbnails
-      EREADER_CACHE: /app/ereader_cache
-      PORT: "8080"
-    ports:
-      - "8684:8080"
-    volumes:
-      - ./manga.db:/app/manga.db
-      - ./tmp:/app/tmp:ro
-      - ./thumbnails:/app/thumbnails:ro
-      - ./ereader_cache:/app/ereader_cache
-    labels:
-      homepage.group: Media
-      homepage.name: Manga E-Reader API
-      homepage.icon: mdi-book-open-page-variant
-      homepage.description: KOReader backend

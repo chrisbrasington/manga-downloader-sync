@@ -589,6 +589,12 @@ function MangaLibrary:getCrop()
     return v
 end
 
+function MangaLibrary:getSleepCover()
+    local v = self.settings:readSetting("sleep_cover")
+    if v == nil then return true end   -- default on
+    return v
+end
+
 function MangaLibrary:addToMainMenu(menu_items)
     menu_items.manga_library = {
         text = _("Manga Library"),
@@ -624,6 +630,18 @@ function MangaLibrary:addToMainMenu(menu_items)
                 callback = function()
                     self.settings:saveSetting("crop_margins", not self:getCrop())
                     self.settings:flush()
+                end,
+            },
+            {
+                text = _("Use manga cover as sleep screen"),
+                checked_func = function() return self:getSleepCover() end,
+                callback = function()
+                    local on = not self:getSleepCover()
+                    self.settings:saveSetting("sleep_cover", on)
+                    self.settings:flush()
+                    -- If turned off while a reader set a cover, put the user's
+                    -- screensaver back right away.
+                    if not on then self:_restoreScreensaver() end
                 end,
             },
         },
@@ -935,10 +953,50 @@ function MangaLibrary:openReader(api, manga, chapters, chapter_index, start_page
             manga.last_read_page = last_page
             self:_syncLibrary(manga.id, last_chapter, last_page)
             self:_recordLastRead(manga, last_chapter, last_page)
+            self:_restoreScreensaver()
             if menu and menu._rebuild then menu._rebuild() end
         end,
     }
     UIManager:show(reader)
+    -- Use the manga's overall cover as the device sleep screen while reading it.
+    -- Done after show() (and on nextTick) so fetching the cover never delays the
+    -- reader appearing; set once per title, so it persists across chapter advances.
+    if self:getSleepCover() then
+        UIManager:nextTick(function() self:_setCoverScreensaver(api, manga) end)
+    end
+end
+
+-- Download the manga's overall cover, save it to a file, and point KOReader's
+-- screensaver at it (saving the user's previous setting so we can restore it).
+-- KOReader's own "book cover" screensaver reads the open *document*; this plugin
+-- renders pages itself with no document open, so we set an explicit image file.
+function MangaLibrary:_setCoverScreensaver(api, manga)
+    if not manga or not manga.id then return end
+    local data = api:getBytes("/cover/" .. urlencode(manga.id))
+    if not data or #data == 0 then return end   -- no cover; leave sleep screen alone
+    local path = DataStorage:getSettingsDir() .. "/mangalibrary_sleep_cover.jpg"
+    local f = io.open(path, "wb")
+    if not f then return end
+    f:write(data)
+    f:close()
+    -- Capture the user's real setting once (guard against re-capturing our own value
+    -- if a reader is opened again before the previous one restored).
+    if not self._saved_ss then
+        self._saved_ss = {
+            type = G_reader_settings:readSetting("screensaver_type"),
+            image = G_reader_settings:readSetting("screensaver_image"),
+        }
+    end
+    G_reader_settings:saveSetting("screensaver_type", "image_file")
+    G_reader_settings:saveSetting("screensaver_image", path)
+end
+
+-- Put the user's pre-reading screensaver settings back.
+function MangaLibrary:_restoreScreensaver()
+    if not self._saved_ss then return end
+    G_reader_settings:saveSetting("screensaver_type", self._saved_ss.type)
+    G_reader_settings:saveSetting("screensaver_image", self._saved_ss.image)
+    self._saved_ss = nil
 end
 
 -- Remember the most recently read manga/chapter/page on the device, for the

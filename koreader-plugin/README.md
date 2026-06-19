@@ -26,6 +26,10 @@ to the shared `manga.db`, so the browser webapp and the Kobo stay in sync.
 - **Crop page margins** (default on): the backend trims uniform white/black borders so
   the artwork fills more of the screen. Pages whose art reaches the edge are left as-is
   (nothing is cut). Toggle under Manga Library.
+- **Use manga cover as sleep screen** (default on): while you're reading a title, the
+  device's sleep/screensaver image is set to that manga's overall cover. Your previous
+  screensaver setting is saved and restored when you leave the reader. Toggle under
+  Manga Library.
 - Automatic chapter-to-chapter advance; reaching the end returns you to the list.
 - Reading progress is saved per page turn and on close, and synced to `manga.db`.
 - Configurable **preload-ahead** (0/1/2 pages, default 1) for snappy page turns.

@@ -183,6 +183,7 @@ local MangaReader = InputContainer:extend{
     crop = true,        -- ask the backend to trim uniform page margins
     page_width = nil,
     on_close = nil,     -- function(last_chapter, last_page) called when reader closes
+    plugin = nil,       -- the MangaLibrary instance, for Main Menu / Close app
 }
 
 function MangaReader:init()
@@ -497,8 +498,14 @@ function MangaReader:onTapMenu()
                 UIManager:close(dialog); self:loadChapter(self.chapter_index + 1, 1) end }},
             {{ text = _("Go to page…"), callback = function()
                 UIManager:close(dialog); self:_goToPage() end }},
-            {{ text = _("Close reader"), callback = function()
+            {{ text = _("Close Chapter"), callback = function()
                 UIManager:close(dialog); self:onClose() end }},
+            {{ text = _("Main Menu"), callback = function()
+                UIManager:close(dialog); self:onClose()
+                if self.plugin then self.plugin:_goMainMenu(self.api) end end }},
+            {{ text = _("Close app"), callback = function()
+                UIManager:close(dialog); self:onClose()
+                if self.plugin then self.plugin:_closeAll() end end }},
         },
     }
     UIManager:show(dialog)
@@ -920,6 +927,7 @@ function MangaLibrary:openReader(api, manga, chapters, chapter_index, start_page
         page = start_page or 1,
         prefetch_ahead = self:getPrefetch(),
         crop = self:getCrop(),
+        plugin = self,
         -- Called when the reader closes: sync caches and rebuild the chapter list so
         -- the new resume point shows immediately.
         on_close = function(last_chapter, last_page)
@@ -963,6 +971,7 @@ function MangaLibrary:continueReading(api, last)
 end
 
 function MangaLibrary:_showMenu(title, items)
+    self._menus = self._menus or {}
     local menu
     menu = Menu:new{
         title = title,
@@ -974,10 +983,31 @@ function MangaLibrary:_showMenu(title, items)
         onMenuSelect = function(_self, item)
             if item.callback then item.callback() end
         end,
-        close_callback = function() end,
+        -- drop ourselves from the tracked stack when closed (e.g. via Back)
+        close_callback = function()
+            for i, m in ipairs(self._menus) do
+                if m == menu then table.remove(self._menus, i); break end
+            end
+        end,
     }
     UIManager:show(menu)
+    table.insert(self._menus, menu)
     return menu
+end
+
+-- Close every plugin menu we've opened (used by "Close app" and "Main Menu").
+function MangaLibrary:_closeAll()
+    local menus = self._menus or {}
+    self._menus = {}   -- reset first so each close_callback is a no-op during teardown
+    for i = #menus, 1, -1 do
+        UIManager:close(menus[i])
+    end
+end
+
+-- Tear down to a single fresh categories menu.
+function MangaLibrary:_goMainMenu(api)
+    self:_closeAll()
+    self:showFilterMenu(api)
 end
 
 -- Keep the in-memory library list in sync with progress written from the reader,

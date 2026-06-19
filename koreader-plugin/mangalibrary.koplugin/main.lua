@@ -25,6 +25,7 @@ local ProgressWidget = require("ui/widget/progresswidget")
 local TextWidget = require("ui/widget/textwidget")
 local Menu = require("ui/widget/menu")
 local InfoMessage = require("ui/widget/infomessage")
+local Notification = require("ui/widget/notification")
 local InputDialog = require("ui/widget/inputdialog")
 local ButtonDialog = require("ui/widget/buttondialog")
 local GestureRange = require("ui/gesturerange")
@@ -387,15 +388,61 @@ function MangaReader:onTapPrev() self:prevPage(); return true end
 function MangaReader:onKeyNext() self:nextPage(); return true end
 function MangaReader:onKeyPrev() self:prevPage(); return true end
 
--- Swipe to page; consume every swipe so the modal reader doesn't leak gestures.
+-- All swipes are consumed (the reader is modal). Mapping:
+--   left/right (west/east)         -> next/previous page
+--   down from the top edge         -> the page menu (same as a centre tap)
+--   up/down in the LEFT third      -> frontlight brightness
+--   up/down in the RIGHT third     -> warmth (red/night light)
 function MangaReader:onSwipeNav(_arg, ges)
     local dir = ges and ges.direction
+    local pos = ges and ges.pos
+    local x = (pos and pos.x) or 0
+    local y = (pos and pos.y) or 0
+    local w, h = Screen:getWidth(), Screen:getHeight()
+
     if dir == "west" then
         self:nextPage()
     elseif dir == "east" then
         self:prevPage()
+    elseif dir == "north" or dir == "south" then
+        local up = (dir == "north")                  -- "north" = finger moved upward
+        if dir == "south" and y < h * 0.15 then
+            self:onTapMenu()                          -- swipe down from the top edge -> menu
+        elseif x < w / 3 then
+            self:_adjustBrightness(up and 1 or -1)
+        elseif x > w * 2 / 3 then
+            self:_adjustWarmth(up and 1 or -1)
+        end
     end
     return true
+end
+
+function MangaReader:_notify(text)
+    UIManager:show(Notification:new{ text = text })
+end
+
+-- Step the frontlight up/down (delta = +1 / -1). No-op on devices without a frontlight.
+function MangaReader:_adjustBrightness(delta)
+    if not Device:hasFrontlight() then return end
+    local p = Device.powerd
+    local lo, hi = p.fl_min or 0, p.fl_max or 100
+    local step = math.max(1, math.floor((hi - lo) / 10))
+    local cur = p:frontlightIntensity() or lo
+    local v = math.max(lo, math.min(hi, cur + delta * step))
+    pcall(function() p:setIntensity(v) end)
+    self:_notify(T(_("Brightness: %1"), v))
+end
+
+-- Step the warmth (red/night light) up/down. No-op without a natural-light frontlight.
+function MangaReader:_adjustWarmth(delta)
+    if not Device:hasNaturalLight() then return end
+    local p = Device.powerd
+    local hi = p.fl_warmth_max or 100
+    local step = math.max(1, math.floor(hi / 10))
+    local cur = (p.frontlightWarmth and p:frontlightWarmth()) or p.fl_warmth or 0
+    local v = math.max(0, math.min(hi, cur + delta * step))
+    pcall(function() p:setWarmth(v) end)
+    self:_notify(T(_("Warmth: %1"), v))
 end
 
 -- Pinch or spread opens KOReader's ImageViewer on the current page, which provides
@@ -680,20 +727,31 @@ end
 function MangaLibrary:showFilterMenu(api)
     local menu
     local function build()
-        local items = {
-            -- The library is a per-session snapshot; this re-pulls it so external
-            -- changes (e.g. marked read / progress cleared in the webapp) show up.
-            { text = _("Reload from server"), callback = function()
-                local list, err = api:getJson("/api/manga")
-                if list then
-                    self._library = list
-                    menu:switchItemTable(_("Manga Library"), build())
-                else
-                    UIManager:show(InfoMessage:new{
-                        text = T(_("Reload failed: %1"), err or "?"), timeout = 3 })
-                end
-            end },
-        }
+        local items = {}
+
+        -- Jump straight back into the most recently read page (tracked on the device).
+        local last = self.settings:readSetting("last_read")
+        if last and last.id then
+            table.insert(items, {
+                text = T(_("Continue: %1 — %2 (p.%3)"),
+                    last.title or "?", (last.chapter or ""):gsub("%.cbz$", ""), last.page or 1),
+                callback = function() self:continueReading(api, last) end,
+            })
+        end
+
+        -- The library is a per-session snapshot; this re-pulls it so external
+        -- changes (e.g. marked read / progress cleared in the webapp) show up.
+        table.insert(items, { text = _("Reload from server"), callback = function()
+            local list, err = api:getJson("/api/manga")
+            if list then
+                self._library = list
+                menu:switchItemTable(_("Manga Library"), build())
+            else
+                UIManager:show(InfoMessage:new{
+                    text = T(_("Reload failed: %1"), err or "?"), timeout = 3 })
+            end
+        end })
+
         for _i, f in ipairs(FILTERS) do
             local key = f.key
             local count = 0
@@ -709,6 +767,19 @@ function MangaLibrary:showFilterMenu(api)
         table.insert(items, {
             text = _("Browse by tag"),
             callback = function() self:showTagMenu(api) end,
+        })
+        table.insert(items, {
+            text = _("Connect Wi-Fi"),
+            callback = function()
+                if NetworkMgr:isOnline() then
+                    UIManager:show(InfoMessage:new{ text = _("Wi-Fi is connected."), timeout = 2 })
+                else
+                    UIManager:show(InfoMessage:new{ text = _("Connecting Wi-Fi…"), timeout = 2 })
+                    NetworkMgr:runWhenOnline(function()
+                        UIManager:show(InfoMessage:new{ text = _("Wi-Fi connected."), timeout = 2 })
+                    end)
+                end
+            end,
         })
         return items
     end
@@ -855,10 +926,40 @@ function MangaLibrary:openReader(api, manga, chapters, chapter_index, start_page
             manga.last_read_chapter = last_chapter
             manga.last_read_page = last_page
             self:_syncLibrary(manga.id, last_chapter, last_page)
+            self:_recordLastRead(manga, last_chapter, last_page)
             if menu and menu._rebuild then menu._rebuild() end
         end,
     }
     UIManager:show(reader)
+end
+
+-- Remember the most recently read manga/chapter/page on the device, for the
+-- "Continue" shortcut on the categories menu.
+function MangaLibrary:_recordLastRead(manga, chapter, page)
+    self.settings:saveSetting("last_read", {
+        id = manga.id,
+        title = manga.alias or manga.english_title or manga.title,
+        chapter = chapter,
+        page = page,
+    })
+    self.settings:flush()
+end
+
+-- Open the reader directly on the saved last-read manga/chapter/page.
+function MangaLibrary:continueReading(api, last)
+    self:_online(function()
+        local detail = api:getJson("/api/manga/" .. urlencode(last.id))
+        if not detail or not detail.chapters or #detail.chapters == 0 then
+            UIManager:show(InfoMessage:new{ text = _("Could not open last read."), timeout = 3 })
+            return
+        end
+        local chapters = detail.chapters
+        local idx = 1
+        for i, fn in ipairs(chapters) do
+            if fn == last.chapter then idx = i; break end
+        end
+        self:openReader(api, detail, chapters, idx, last.page or 1, nil)
+    end)
 end
 
 function MangaLibrary:_showMenu(title, items)

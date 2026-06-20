@@ -495,6 +495,12 @@ function MangaReader:prevPage()
 end
 
 function MangaReader:onTapMenu()
+    -- Opening the in-reader menu is a natural moment to get back online: the
+    -- next/prev chapter buttons need the server. Kick off a Wi-Fi connect in the
+    -- background if we're offline; it won't block the menu from showing.
+    if not NetworkMgr:isOnline() then
+        NetworkMgr:runWhenOnline(function() end)
+    end
     local dialog
     dialog = ButtonDialog:new{
         title = T(_("%1\nPage %2 / %3"),

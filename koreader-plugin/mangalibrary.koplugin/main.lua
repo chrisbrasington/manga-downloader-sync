@@ -495,29 +495,30 @@ function MangaReader:prevPage()
 end
 
 function MangaReader:onTapMenu()
-    -- Opening the in-reader menu is a natural moment to get back online: the
-    -- next/prev chapter buttons need the server. Kick off a Wi-Fi connect in the
-    -- background if we're offline; it won't block the menu from showing.
-    if not NetworkMgr:isOnline() then
-        NetworkMgr:runWhenOnline(function() end)
-    end
     local dialog
     dialog = ButtonDialog:new{
         title = T(_("%1\nPage %2 / %3"),
             self.chapters[self.chapter_index]:gsub("%.cbz$", ""), self.page, self.total_pages),
         title_align = "center",
         buttons = {
+            -- Actions that hit the server (chapter load, Main Menu) ensure Wi-Fi
+            -- is up first — runWhenOnline connects when offline, runs immediately
+            -- when already online. "Close app" deliberately skips this.
             {{ text = _("Previous chapter"), enabled = self.chapter_index > 1, callback = function()
-                UIManager:close(dialog); self:loadChapter(self.chapter_index - 1, 1) end }},
+                UIManager:close(dialog)
+                NetworkMgr:runWhenOnline(function() self:loadChapter(self.chapter_index - 1, 1) end) end }},
             {{ text = _("Next chapter"), enabled = self.chapter_index < #self.chapters, callback = function()
-                UIManager:close(dialog); self:loadChapter(self.chapter_index + 1, 1) end }},
+                UIManager:close(dialog)
+                NetworkMgr:runWhenOnline(function() self:loadChapter(self.chapter_index + 1, 1) end) end }},
             {{ text = _("Go to page…"), callback = function()
                 UIManager:close(dialog); self:_goToPage() end }},
             {{ text = _("Close Chapter"), callback = function()
                 UIManager:close(dialog); self:onClose() end }},
             {{ text = _("Main Menu"), callback = function()
                 UIManager:close(dialog); self:onClose()
-                if self.plugin then self.plugin:_goMainMenu(self.api) end end }},
+                if self.plugin then
+                    NetworkMgr:runWhenOnline(function() self.plugin:_goMainMenu(self.api) end)
+                end end }},
             {{ text = _("Close app"), callback = function()
                 UIManager:close(dialog); self:onClose()
                 if self.plugin then self.plugin:_closeAll() end end }},

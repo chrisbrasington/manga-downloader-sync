@@ -26,6 +26,8 @@ WEBAPP_PORT = int(os.environ.get('WEBAPP_PORT', 8080))
 
 # E-ink page transcode (used when the KOReader plugin requests a width).
 CACHE_DIR = os.environ.get('EREADER_CACHE', 'ereader_cache')
+# Small grayscale cover thumbnails for the KOReader cover-grid view.
+COVERS_CACHE_DIR = os.path.join(CACHE_DIR, '_covers')
 DEFAULT_WIDTH = int(os.environ.get('EREADER_DEFAULT_WIDTH', 1072))
 JPEG_QUALITY = int(os.environ.get('EREADER_JPEG_QUALITY', 82))
 # Pixels within this 0-255 distance of the corner/background color count as margin.
@@ -1075,6 +1077,90 @@ def serve_cover(manga_id: str):
         return FileResponse(thumb, media_type='image/jpeg')
 
     raise HTTPException(status_code=404, detail='No cover')
+
+
+def _source_cover_bytes(manga_id):
+    """Cover bytes from local cache only: 512px large, then 256px thumbnail.
+
+    No remote MangaDex fetch — callers that batch many covers must never block on
+    upstream. Returns bytes or None.
+    """
+    for path in (large_cover_path(manga_id), thumbnail_path(manga_id)):
+        if os.path.exists(path):
+            try:
+                with open(path, 'rb') as f:
+                    return f.read()
+            except OSError:
+                pass
+    return None
+
+
+def _cover_card_bytes(manga_id, width):
+    """Small grayscale cover JPEG for the grid, disk-cached per width.
+
+    Sourced from local cover files only (see _source_cover_bytes) so a batch
+    request never stalls on MangaDex. No autocrop — that would trim real cover
+    art. Returns JPEG bytes, or None if there's no producible cover.
+    """
+    cache_file = os.path.join(COVERS_CACHE_DIR, f'{manga_id}_{width}.jpg')
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'rb') as f:
+                return f.read()
+        except OSError:
+            pass
+    src = _source_cover_bytes(manga_id)
+    if src is None:
+        return None
+    try:
+        with Image.open(io.BytesIO(src)) as img:
+            img = ImageOps.exif_transpose(img)
+            img = img.convert('L')
+            if width and img.width > width:
+                img.thumbnail((width, width * 4), Image.LANCZOS)
+            os.makedirs(COVERS_CACHE_DIR, exist_ok=True)
+            tmp = cache_file + '.tmp'
+            img.save(tmp, 'JPEG', quality=JPEG_QUALITY, optimize=True)
+            os.replace(tmp, cache_file)
+        with open(cache_file, 'rb') as f:
+            return f.read()
+    except Exception:
+        return None
+
+
+@app.get('/api/covers')
+def api_covers(ids: str, w: int = 300):
+    """Batch grayscale cover thumbnails for the KOReader cover-grid view.
+
+    ids: comma-separated manga ids (the client sends one page's worth, ~9-12).
+    w:   target card width in px (clamped).
+
+    Returns a length-prefixed binary stream so the whole grid page loads in one
+    request (the plugin's HTTP is synchronous and blocks its UI loop):
+
+        [u8 count]
+        repeat count times:
+            [u8 id_len][id bytes][u32 big-endian img_len][jpeg bytes]
+
+    Covers that can't be produced from local files are omitted; the client draws
+    a text placeholder for those.
+    """
+    width = max(64, min(int(w), 1024))
+    id_list = [i for i in ids.split(',') if i][:64]
+    items = []
+    for mid in id_list:
+        data = _cover_card_bytes(mid, width)
+        if data is not None:
+            items.append((mid.encode('utf-8'), data))
+
+    out = bytearray()
+    out.append(len(items) & 0xFF)
+    for id_bytes, data in items:
+        out.append(len(id_bytes) & 0xFF)
+        out += id_bytes
+        out += struct.pack('>I', len(data))
+        out += data
+    return Response(content=bytes(out), media_type='application/octet-stream')
 
 
 _CBZ_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'}

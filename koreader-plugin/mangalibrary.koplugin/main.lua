@@ -17,12 +17,16 @@ local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local CenterContainer = require("ui/widget/container/centercontainer")
+local RightContainer = require("ui/widget/container/rightcontainer")
+local OverlapGroup = require("ui/widget/overlapgroup")
 local VerticalGroup = require("ui/widget/verticalgroup")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
 local ImageWidget = require("ui/widget/imagewidget")
 local ImageViewer = require("ui/widget/imageviewer")
 local RenderImage = require("ui/renderimage")
 local ProgressWidget = require("ui/widget/progresswidget")
 local TextWidget = require("ui/widget/textwidget")
+local TextBoxWidget = require("ui/widget/textboxwidget")
 local Menu = require("ui/widget/menu")
 local InfoMessage = require("ui/widget/infomessage")
 local Notification = require("ui/widget/notification")
@@ -173,6 +177,41 @@ function MangaApi:patch(path, tbl) return self:_request("PATCH", path, tbl) end
 function MangaApi:getBytes(path) return self:_request("GET", path, nil, "raw") end
 
 local function urlencode(s) return socket_url.escape(s or "") end
+
+-- Parse the /api/covers binary stream into { [id] = jpeg_bytes }.
+-- Format: [u8 count] then per item [u8 id_len][id bytes][u32 big-endian img_len][jpeg].
+-- Every read is bounds-checked: a truncated stream (Wi-Fi dropped mid-transfer)
+-- yields a partial table rather than crashing the parser.
+local function parse_cover_stream(data)
+    local out = {}
+    local n = #data
+    if n < 1 then return out end
+    local count = data:byte(1)
+    local cur = 2
+    for _ = 1, count do
+        if cur > n then break end
+        local id_len = data:byte(cur); cur = cur + 1
+        if cur + id_len - 1 > n then break end
+        local id = data:sub(cur, cur + id_len - 1); cur = cur + id_len
+        if cur + 3 > n then break end
+        local b1, b2, b3, b4 = data:byte(cur, cur + 3); cur = cur + 4
+        local img_len = b1 * 16777216 + b2 * 65536 + b3 * 256 + b4
+        if img_len <= 0 or cur + img_len - 1 > n then break end
+        out[id] = data:sub(cur, cur + img_len - 1); cur = cur + img_len
+    end
+    return out
+end
+
+-- Fetch many small grayscale covers in one request (the grid loads a whole page
+-- with one blocking call instead of N). ids: array of manga ids; w: card width.
+-- Returns { [id] = jpeg_bytes } (ids the server can't produce a cover for are
+-- simply absent), or nil, err on a transport failure.
+function MangaApi:getCovers(ids, w)
+    local joined = urlencode(table.concat(ids, ","))
+    local data, err = self:getBytes(T("/api/covers?w=%1&ids=%2", w, joined))
+    if not data then return nil, err end
+    return parse_cover_stream(data)
+end
 
 -------------------------------------------------------------------------------
 -- Reader widget: one page image at a time, tap zones, prefetch, chapter flow
@@ -579,6 +618,330 @@ function MangaReader:onClose()
 end
 
 -------------------------------------------------------------------------------
+-- Cover grid: a paged grid of cover cards for the manga-selection lists.
+-- One batch cover fetch per page (HTTP blocks the UI loop), one page of decoded
+-- BlitBuffers held at a time. Tapping a card opens that manga's chapter list.
+-------------------------------------------------------------------------------
+
+local MangaGrid = InputContainer:extend{
+    api = nil,
+    manga_list = nil,   -- the matched + sorted array from showList
+    title = nil,        -- category name, shown in the top bar
+    plugin = nil,       -- MangaLibrary instance (openManga, _untrack)
+    page = 1,
+    _cards = nil,       -- cover ImageWidgets currently on screen, for :free()
+}
+
+function MangaGrid:init()
+    self:_computeGeometry()
+    local w, h = Screen:getWidth(), Screen:getHeight()
+    self.dimen = Geom:new{ x = 0, y = 0, w = w, h = h }
+    if Device:isTouchDevice() then
+        self.ges_events = {
+            TapGrid = { GestureRange:new{ ges = "tap",
+                range = Geom:new{ x = 0, y = 0, w = w, h = h } } },
+            SwipeNav = { GestureRange:new{ ges = "swipe",
+                range = Geom:new{ x = 0, y = 0, w = w, h = h } } },
+        }
+    end
+    if Device:hasKeys() then
+        self.key_events = {
+            KeyNext = { { Device.input.group.PgFwd } },
+            KeyPrev = { { Device.input.group.PgBack } },
+            Close = { { "Back" } },
+        }
+    end
+    self._cards = {}
+    self[1] = self:_messageFrame(_("Loading covers…"))
+    self:_buildPage()
+end
+
+-- Derive columns/rows/card size from the screen. Recomputed on every build so
+-- rotation is self-correcting. Card width targets a portrait 3-column layout and
+-- widens the column count in landscape to keep covers a roughly constant size.
+function MangaGrid:_computeGeometry()
+    local w, h = Screen:getWidth(), Screen:getHeight()
+    self._title_h = Screen:scaleBySize(42)
+    self._footer_h = Screen:scaleBySize(28)
+    -- Top-right "X" tap target (close to the main categories menu), like other
+    -- KOReader menus. Generous hit box so it's easy to land on e-ink.
+    self._x_box_w = Screen:scaleBySize(72)
+    self._x_box_h = self._title_h + Screen:scaleBySize(8)
+    local grid_h = h - self._title_h - self._footer_h
+    -- Target a fixed 3x2 grid in portrait (6 cards) for larger covers. Cards fill
+    -- the available space and the cover takes whatever height is left after the
+    -- text, rather than deriving the row count from a fixed cover ratio.
+    local portrait = h >= w
+    self.cols = portrait and 3 or 4
+    self.rows = 2
+    self.per_page = self.cols * self.rows
+    self._card_w = math.floor(w / self.cols)
+    self._card_h = math.floor(grid_h / self.rows)
+    self._cover_w = self._card_w - Screen:scaleBySize(8)  -- small gutter
+    -- Titles are long, so use a small font and reserve room for the title to wrap
+    -- to two lines (plus one progress line). Measure the real line height of the
+    -- chosen face so the reserved block matches and nothing overlaps the next row.
+    self._title_face = Font:getFace("xx_smallinfofont")
+    local probe = TextWidget:new{ text = "Ag", face = self._title_face }
+    local line_h = probe:getSize().h
+    probe:free()
+    self._title_box_h = line_h * 2                        -- title: up to two lines
+    self._progress_h = line_h                             -- progress: one line
+    local text_h = self._title_box_h + self._progress_h + Screen:scaleBySize(6)
+    -- Cover fills the rest of the card; clamp so it stays positive on short screens.
+    self._cover_h = math.max(Screen:scaleBySize(40), self._card_h - text_h)
+    -- offsets of the centered grid block, shared with tap-mapping
+    self._grid_x0 = math.floor((w - self.cols * self._card_w) / 2)
+    self._grid_y0 = self._title_h + math.floor((grid_h - self.rows * self._card_h) / 2)
+end
+
+function MangaGrid:total_pages()
+    return math.max(1, math.ceil(#self.manga_list / self.per_page))
+end
+
+-- Same full-screen centred-text frame the reader uses (loading / error states).
+function MangaGrid:_messageFrame(text)
+    local w, h = Screen:getWidth(), Screen:getHeight()
+    return FrameContainer:new{
+        background = Blitbuffer.COLOR_WHITE, bordersize = 0,
+        CenterContainer:new{
+            dimen = Geom:new{ w = w, h = h },
+            TextWidget:new{ text = text, face = Font:getFace("infofont") },
+        },
+    }
+end
+
+function MangaGrid:_reconnectThen(retry)
+    self[1] = self:_messageFrame(NetworkMgr:isOnline()
+        and _("Retrying…")
+        or _("Connection lost — reconnecting Wi-Fi…"))
+    UIManager:setDirty(self, "ui")
+    UIManager:forceRePaint()
+    NetworkMgr:runWhenOnline(function() retry() end)
+end
+
+-- Free the current page's decoded covers so only one page lives in RAM at a time.
+function MangaGrid:_freeCards()
+    if self._cards then
+        for _i, iw in ipairs(self._cards) do
+            if iw.free then iw:free() end
+        end
+    end
+    self._cards = {}
+end
+
+local function gridName(m) return m.alias or m.english_title or m.title end
+
+-- Pull the chapter number out of a chapter filename like "Series - 5.cbz" (the
+-- trailing number, allowing decimals like 5.5). Returns a string, or nil.
+local function chapterNum(fn)
+    if not fn then return nil end
+    return fn:gsub("%.cbz$", ""):match("(%d+%.?%d*)%s*$")
+end
+
+local function gridProgress(m)
+    if m.last_read_chapter then
+        local ch = chapterNum(m.last_read_chapter)
+        if ch then return T(_("Ch.%1, p.%2"), ch, m.last_read_page or 1) end
+        return T(_("p.%1"), m.last_read_page or 1)
+    end
+    if m.last_chapter_on_disk then return T(_("Ch.%1"), m.last_chapter_on_disk) end
+    return ""
+end
+
+-- Build one card: cover (or a bordered text placeholder) + title + progress.
+function MangaGrid:_buildCard(m, jpeg)
+    local cover
+    if jpeg then
+        local bb = RenderImage:renderImageData(jpeg, #jpeg)
+        if bb then
+            local iw = ImageWidget:new{
+                image = bb,
+                image_disposable = true,
+                width = self._cover_w,
+                height = self._cover_h,
+                scale_factor = 0,   -- scale to fit, keep aspect
+                center = true,
+            }
+            self._cards[#self._cards + 1] = iw
+            cover = iw
+        end
+    end
+    if not cover then
+        -- No cover (missing or undecodable): a bordered box with the wrapped title.
+        cover = FrameContainer:new{
+            bordersize = Screen:scaleBySize(1),
+            margin = 0, padding = 0,
+            CenterContainer:new{
+                dimen = Geom:new{ w = self._cover_w - Screen:scaleBySize(2),
+                                  h = self._cover_h - Screen:scaleBySize(2) },
+                TextBoxWidget:new{ text = gridName(m), face = self._title_face,
+                                   alignment = "center",
+                                   width = self._cover_w - Screen:scaleBySize(10),
+                                   height = self._cover_h - Screen:scaleBySize(8) },
+            },
+        }
+    end
+    return CenterContainer:new{
+        dimen = Geom:new{ w = self._card_w, h = self._card_h },
+        VerticalGroup:new{
+            align = "center",
+            cover,
+            -- Title wraps to two lines (clipped beyond), centred, at a fixed height
+            -- so a long title can never spill into the row below.
+            TextBoxWidget:new{ text = gridName(m), face = self._title_face,
+                               alignment = "center",
+                               width = self._card_w - Screen:scaleBySize(6),
+                               height = self._title_box_h },
+            TextWidget:new{ text = gridProgress(m), face = self._title_face,
+                            max_width = self._cover_w },
+        },
+    }
+end
+
+function MangaGrid:_buildPage(attempt)
+    attempt = attempt or 1
+    self:_computeGeometry()
+    self:_freeCards()
+
+    local first = (self.page - 1) * self.per_page + 1
+    local last = math.min(first + self.per_page - 1, #self.manga_list)
+
+    -- Collect ids worth fetching (skip ones we already know have no thumbnail).
+    local ids = {}
+    for i = first, last do
+        local m = self.manga_list[i]
+        if m and m.has_thumbnail then ids[#ids + 1] = m.id end
+    end
+
+    local covers = {}
+    if #ids > 0 then
+        -- Paint a loading frame before the blocking batch fetch so it doesn't look frozen.
+        self[1] = self:_messageFrame(_("Loading covers…"))
+        UIManager:setDirty(self, "ui")
+        UIManager:forceRePaint()
+        local got, err = self.api:getCovers(ids, self._cover_w)
+        if not got then
+            -- Likely Wi-Fi dropped on sleep: reconnect and retry once.
+            if attempt == 1 then
+                self:_reconnectThen(function() self:_buildPage(2) end)
+                return
+            end
+            -- Still failed: fall through with no covers (text placeholders).
+        else
+            covers = got
+        end
+    end
+
+    -- Build cards for the slice, then lay them into fixed rows/cols. The last row
+    -- is padded with blanks so the tap-to-cell arithmetic stays a regular grid.
+    local cards = {}
+    for i = first, last do
+        local m = self.manga_list[i]
+        cards[#cards + 1] = self:_buildCard(m, covers[m.id])
+    end
+
+    local rows_group = VerticalGroup:new{ align = "center" }
+    local idx = 1
+    for _r = 1, self.rows do
+        local row = HorizontalGroup:new{}
+        for _c = 1, self.cols do
+            if cards[idx] then
+                table.insert(row, cards[idx])
+            else
+                table.insert(row, WidgetContainer:new{
+                    dimen = Geom:new{ w = self._card_w, h = self._card_h } })
+            end
+            idx = idx + 1
+        end
+        table.insert(rows_group, row)
+    end
+
+    local w, h = Screen:getWidth(), Screen:getHeight()
+    local grid_h = h - self._title_h - self._footer_h
+    self[1] = FrameContainer:new{
+        background = Blitbuffer.COLOR_WHITE, bordersize = 0,
+        VerticalGroup:new{
+            align = "center",
+            OverlapGroup:new{
+                dimen = Geom:new{ w = w, h = self._title_h },
+                CenterContainer:new{
+                    dimen = Geom:new{ w = w, h = self._title_h },
+                    TextWidget:new{ text = self.title or _("Manga"),
+                                    face = Font:getFace("tfont"),
+                                    max_width = w - 2 * self._x_box_w },
+                },
+                RightContainer:new{
+                    dimen = Geom:new{ w = w - Screen:scaleBySize(16), h = self._title_h },
+                    TextWidget:new{ text = "X", face = Font:getFace("tfont") },
+                },
+            },
+            CenterContainer:new{
+                dimen = Geom:new{ w = w, h = grid_h },
+                rows_group,
+            },
+            CenterContainer:new{
+                dimen = Geom:new{ w = w, h = self._footer_h },
+                TextWidget:new{
+                    text = T(_("Page %1 / %2"), self.page, self:total_pages()),
+                    face = Font:getFace("x_smallinfofont") },
+            },
+        },
+    }
+    UIManager:setDirty(self, "full")   -- full refresh clears e-ink ghosting between pages
+end
+
+function MangaGrid:_goPage(n)
+    n = math.min(math.max(n, 1), self:total_pages())
+    if n == self.page then return end
+    self.page = n
+    self:_buildPage()
+end
+
+function MangaGrid:onTapGrid(_arg, ges)
+    local x = (ges and ges.pos and ges.pos.x) or 0
+    local y = (ges and ges.pos and ges.pos.y) or 0
+    local w = Screen:getWidth()
+    -- Top-right "X" → back to the main categories menu.
+    if x >= w - self._x_box_w and y < self._x_box_h then
+        self.plugin:_goMainMenu(self.api)
+        return true
+    end
+    -- Outside the centered grid block (title bar, footer, side margins) → ignore.
+    if x < self._grid_x0 or x >= self._grid_x0 + self.cols * self._card_w then return true end
+    if y < self._grid_y0 or y >= self._grid_y0 + self.rows * self._card_h then return true end
+    local col = math.floor((x - self._grid_x0) / self._card_w)
+    local row = math.floor((y - self._grid_y0) / self._card_h)
+    local in_page = row * self.cols + col
+    local m = self.manga_list[(self.page - 1) * self.per_page + in_page + 1]
+    if m then self.plugin:openManga(self.api, m) end
+    return true
+end
+
+function MangaGrid:onSwipeNav(_arg, ges)
+    local dir = ges and ges.direction
+    if dir == "west" then self:_goPage(self.page + 1)
+    elseif dir == "east" then self:_goPage(self.page - 1) end
+    return true
+end
+
+function MangaGrid:onKeyNext() self:_goPage(self.page + 1); return true end
+function MangaGrid:onKeyPrev() self:_goPage(self.page - 1); return true end
+
+-- Cleanup runs here so it covers both the Back key (onClose) and a teardown via
+-- _closeAll (which calls UIManager:close directly).
+function MangaGrid:onCloseWidget()
+    self:_freeCards()
+    if self.plugin then self.plugin:_untrack(self) end
+end
+
+function MangaGrid:onClose()
+    UIManager:close(self)
+    UIManager:setDirty("all", "ui")   -- repaint the category menu beneath
+    return true
+end
+
+-------------------------------------------------------------------------------
 -- Plugin
 -------------------------------------------------------------------------------
 
@@ -601,6 +964,14 @@ end
 
 function MangaLibrary:getCrop()
     local v = self.settings:readSetting("crop_margins")
+    if v == nil then return true end   -- default on
+    return v
+end
+
+-- Cover-grid view for the manga lists (categories/tags). Default on; off falls
+-- back to the original text-row list.
+function MangaLibrary:getGridEnabled()
+    local v = self.settings:readSetting("cover_grid")
     if v == nil then return true end   -- default on
     return v
 end
@@ -656,6 +1027,14 @@ function MangaLibrary:addToMainMenu(menu_items)
                 checked_func = function() return self:getCrop() end,
                 callback = function()
                     self.settings:saveSetting("crop_margins", not self:getCrop())
+                    self.settings:flush()
+                end,
+            },
+            {
+                text = _("Cover grid (off: text list)"),
+                checked_func = function() return self:getGridEnabled() end,
+                callback = function()
+                    self.settings:saveSetting("cover_grid", not self:getGridEnabled())
                     self.settings:flush()
                 end,
             },
@@ -881,6 +1260,20 @@ function MangaLibrary:showList(api, title, predicate, sort_fn)
         if predicate(m) then matched[#matched + 1] = m end
     end
     if sort_fn then table.sort(matched, sort_fn) end
+    if #matched == 0 then
+        UIManager:show(InfoMessage:new{ text = _("Nothing here yet.") })
+        return
+    end
+    if self:getGridEnabled() then
+        self:_showGrid(api, title, matched)
+    else
+        self:_showListRows(api, title, matched)
+    end
+end
+
+-- The original text-row view, kept verbatim as the fallback when the cover grid
+-- is turned off.
+function MangaLibrary:_showListRows(api, title, matched)
     local items = {}
     for _i, m in ipairs(matched) do
         local name = m.alias or m.english_title or m.title
@@ -896,11 +1289,18 @@ function MangaLibrary:showList(api, title, predicate, sort_fn)
             callback = function() self:openManga(api, m) end,
         })
     end
-    if #items == 0 then
-        UIManager:show(InfoMessage:new{ text = _("Nothing here yet.") })
-        return
-    end
     self:_showMenu(title, items)
+end
+
+-- Cover-grid view. Tracked in self._menus like a menu so _closeAll tears it down.
+function MangaLibrary:_showGrid(api, title, matched)
+    self._menus = self._menus or {}
+    local grid = MangaGrid:new{
+        api = api, title = title, manga_list = matched, plugin = self,
+    }
+    UIManager:show(grid)
+    table.insert(self._menus, grid)
+    return grid
 end
 
 function MangaLibrary:openManga(api, m)
@@ -1115,6 +1515,14 @@ function MangaLibrary:_showMenu(title, items)
     UIManager:show(menu)
     table.insert(self._menus, menu)
     return menu
+end
+
+-- Drop a tracked widget (menu or grid) from the stack. Tolerant: a no-op if it's
+-- already gone, so it's safe to call during _closeAll teardown.
+function MangaLibrary:_untrack(widget)
+    for i, m in ipairs(self._menus or {}) do
+        if m == widget then table.remove(self._menus, i); break end
+    end
 end
 
 -- Close every plugin menu we've opened (used by "Close app" and "Main Menu").

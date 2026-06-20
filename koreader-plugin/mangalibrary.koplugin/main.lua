@@ -975,9 +975,9 @@ end
 function MangaLibrary:openReader(api, manga, chapters, chapter_index, start_page, menu)
     -- Reset per-title screensaver state before the reader renders its first page.
     -- As pages render the reader calls onReaderPage(), which sets the cover (once)
-    -- or the current page per the two screensaver toggles. Nothing is touched
-    -- unless the master toggle is on.
-    self._ss_cover_set = false
+    -- or the current page per the two screensaver toggles. Nothing is touched unless
+    -- the master toggle is on.
+    self._ss_cover_done = false
     local reader = MangaReader:new{
         api = api,
         manga = manga,
@@ -1009,9 +1009,10 @@ end
 function MangaLibrary:onReaderPage(api, manga, page_data)
     if not self:getScreensaverEnabled() then return end
     if self:getScreensaverUseCover() then
-        -- Selected cover: fetch once per title, on nextTick so it never delays paint.
-        if self._ss_cover_set then return end
-        self._ss_cover_set = true
+        -- Selected cover: set it ONCE per title (on nextTick so it never delays the
+        -- first paint) and leave it. Page images are never written in this mode.
+        if self._ss_cover_done then return end
+        self._ss_cover_done = true
         UIManager:nextTick(function()
             if manga and manga.id then
                 self:_useImageScreensaver(api:getBytes("/cover/" .. urlencode(manga.id)))
@@ -1025,7 +1026,9 @@ end
 
 -- Write JPEG bytes to our sleep-screen file and point KOReader's screensaver at it,
 -- remembering the user's real screensaver settings the first time so we can restore
--- them when reading ends.
+-- them when reading ends. KOReader has no "image file" screensaver type; the way to
+-- show an arbitrary image is type "document_cover" with screensaver_document_cover
+-- pointing at it (KOReader detects it's an image file and shows it directly).
 function MangaLibrary:_useImageScreensaver(data)
     if not data or #data == 0 then return end   -- nothing to show; leave sleep screen alone
     local path = DataStorage:getSettingsDir() .. "/mangalibrary_sleep_cover.jpg"
@@ -1038,18 +1041,18 @@ function MangaLibrary:_useImageScreensaver(data)
     if not self._saved_ss then
         self._saved_ss = {
             type = G_reader_settings:readSetting("screensaver_type"),
-            image = G_reader_settings:readSetting("screensaver_image"),
+            cover = G_reader_settings:readSetting("screensaver_document_cover"),
         }
     end
-    G_reader_settings:saveSetting("screensaver_type", "image_file")
-    G_reader_settings:saveSetting("screensaver_image", path)
+    G_reader_settings:saveSetting("screensaver_type", "document_cover")
+    G_reader_settings:saveSetting("screensaver_document_cover", path)
 end
 
 -- Put the user's pre-reading screensaver settings back.
 function MangaLibrary:_restoreScreensaver()
     if not self._saved_ss then return end
     G_reader_settings:saveSetting("screensaver_type", self._saved_ss.type)
-    G_reader_settings:saveSetting("screensaver_image", self._saved_ss.image)
+    G_reader_settings:saveSetting("screensaver_document_cover", self._saved_ss.cover)
     self._saved_ss = nil
 end
 

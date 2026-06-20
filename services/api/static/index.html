@@ -203,6 +203,7 @@
   <button class="filter-btn active" data-filter="all">All</button>
   <button class="filter-btn" data-filter="favorites">⭐ Favorites</button>
   <button class="filter-btn" data-filter="reading">📖 Reading</button>
+  <button class="filter-btn" data-filter="lastread">🕘 Last Read</button>
   <button class="filter-btn" data-filter="active">Downloading</button>
   <button class="filter-btn" data-filter="completed">Completed</button>
   <button class="filter-btn" data-filter="hiatus">Hiatus</button>
@@ -251,7 +252,7 @@
   let visibleManga = [];
   let currentPanelIndex = -1;
   let currentSearch = '';
-  const _validFilters = new Set(['all','favorites','reading','active','completed','hiatus','archived','read','hidden']);
+  const _validFilters = new Set(['all','favorites','reading','lastread','active','completed','hiatus','archived','read','hidden']);
   const _urlFilter = new URLSearchParams(location.search).get('filter');
   let currentFilter = _validFilters.has(_urlFilter) ? _urlFilter : 'all';
 
@@ -281,6 +282,7 @@
     let manga = currentFilter === 'hidden' ? allManga.filter(m => m.hidden)
       : currentFilter === 'read' ? allManga.filter(m => m.read)
       : currentFilter === 'reading' ? allManga.filter(m => m.last_read_chapter && !m.read && !m.hidden)
+      : currentFilter === 'lastread' ? allManga.filter(m => m.last_read_at && !m.hidden)
       : currentFilter === 'all' ? allManga.filter(visible)
       : currentFilter === 'favorites' ? allManga.filter(m => m.favorited)
       : allManga.filter(m => m.status === currentFilter && visible(m));
@@ -289,6 +291,8 @@
       const searchIn = [displayTitle(m), m.english_title, m.japanese_title, m.title].filter(Boolean).join(' ').toLowerCase();
       return searchIn.includes(q);
     });
+    // Last Read is a recency view: most recently read first (timestamps are UTC strings, so lexical sort works).
+    if (currentFilter === 'lastread') manga = manga.slice().sort((a, b) => (b.last_read_at || '').localeCompare(a.last_read_at || ''));
     const active = allManga.filter(m => m.status === 'active').length;
     const archived = allManga.filter(m => m.status === 'archived').length;
     document.getElementById('stats').textContent = `${allManga.length} series · ${active} active · ${archived} archived`;

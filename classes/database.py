@@ -55,6 +55,7 @@ class Database:
             "ALTER TABLE manga ADD COLUMN read INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE manga ADD COLUMN last_read_chapter TEXT",
             "ALTER TABLE manga ADD COLUMN last_read_page INTEGER",
+            "ALTER TABLE manga ADD COLUMN last_read_at TEXT",
             "ALTER TABLE manga ADD COLUMN alias TEXT",
             "ALTER TABLE manga ADD COLUMN english_title TEXT",
             "ALTER TABLE manga ADD COLUMN japanese_title TEXT",
@@ -140,7 +141,7 @@ class Database:
         allowed = {
             'title', 'cover_url', 'description', 'author', 'demographic', 'tags',
             'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type',
-            'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page', 'download_enabled',
+            'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page', 'last_read_at', 'download_enabled',
             'alias', 'english_title', 'japanese_title',
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
@@ -160,7 +161,7 @@ class Database:
 
     def clear_reading_progress(self, manga_id):
         conn = self._connect()
-        conn.execute("UPDATE manga SET last_read_chapter = NULL, last_read_page = NULL WHERE id = ?", (manga_id,))
+        conn.execute("UPDATE manga SET last_read_chapter = NULL, last_read_page = NULL, last_read_at = NULL WHERE id = ?", (manga_id,))
         conn.commit()
         conn.close()
 

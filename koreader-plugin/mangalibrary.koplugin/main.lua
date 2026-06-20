@@ -73,6 +73,7 @@ local FILTERS = {
     { key = "all",         text = _("All") },
     { key = "favorites",   text = _("Favorites") },
     { key = "reading",     text = _("Reading") },
+    { key = "lastread",    text = _("Last Read"), recent = true },
     { key = "downloading", text = _("Downloading") },
     { key = "completed",   text = _("Completed") },
     { key = "hiatus",      text = _("Hiatus") },
@@ -85,6 +86,7 @@ local function matchesFilter(m, key)
     if key == "all" then return not m.hidden end
     if key == "favorites" then return m.favorited and not m.hidden end
     if key == "reading" then return m.last_read_chapter ~= nil and not m.hidden end
+    if key == "lastread" then return m.last_read_at ~= nil and not m.hidden end
     if key == "downloading" then return m.download_enabled and not m.hidden end
     if key == "completed" then return m.status == "completed" and not m.hidden end
     if key == "hiatus" then return m.status == "hiatus" and not m.hidden end
@@ -93,6 +95,10 @@ local function matchesFilter(m, key)
     if key == "hidden" then return m.hidden end
     return true
 end
+
+-- Sort most-recently-read first. Timestamps are UTC strings (YYYY-MM-DD HH:MM:SS),
+-- so a plain string comparison orders them correctly.
+local function byRecent(a, b) return (a.last_read_at or "") > (b.last_read_at or "") end
 
 -------------------------------------------------------------------------------
 -- API client
@@ -357,6 +363,9 @@ function MangaReader:setPage(n, attempt)
     UIManager:setDirty(self, "full")
     self:_scheduleProgress()
 
+    -- Let the plugin update the device sleep screen with the cover or this page.
+    if self.plugin then self.plugin:onReaderPage(self.api, self.manga, data) end
+
     -- prefetch ahead into memory, after this page paints
     self:_evict(n - 1, n + self.prefetch_ahead + 1)
     if self.prefetch_ahead > 0 then
@@ -589,10 +598,21 @@ function MangaLibrary:getCrop()
     return v
 end
 
-function MangaLibrary:getSleepCover()
-    local v = self.settings:readSetting("sleep_cover")
-    if v == nil then return true end   -- default on
-    return v
+-- Screensaver toggles. The master switch must be on for the plugin to touch the
+-- device sleep screen at all; the second chooses the manga's selected cover vs. the
+-- current page. Both migrate from the old single "sleep_cover" setting.
+function MangaLibrary:getScreensaverEnabled()
+    local v = self.settings:readSetting("screensaver_enabled")
+    if v ~= nil then return v end
+    local old = self.settings:readSetting("sleep_cover")
+    if old == nil then return true end   -- preserve the old default (on)
+    return old
+end
+
+function MangaLibrary:getScreensaverUseCover()
+    local v = self.settings:readSetting("screensaver_use_cover")
+    if v ~= nil then return v end
+    return true   -- when enabled, default to the selected cover
 end
 
 function MangaLibrary:addToMainMenu(menu_items)
@@ -633,15 +653,24 @@ function MangaLibrary:addToMainMenu(menu_items)
                 end,
             },
             {
-                text = _("Use manga cover as sleep screen"),
-                checked_func = function() return self:getSleepCover() end,
+                text = _("Use as screensaver"),
+                checked_func = function() return self:getScreensaverEnabled() end,
                 callback = function()
-                    local on = not self:getSleepCover()
-                    self.settings:saveSetting("sleep_cover", on)
+                    local on = not self:getScreensaverEnabled()
+                    self.settings:saveSetting("screensaver_enabled", on)
                     self.settings:flush()
-                    -- If turned off while a reader set a cover, put the user's
-                    -- screensaver back right away.
+                    -- Turning the master switch off restores the user's own
+                    -- screensaver right away if a reader had overridden it.
                     if not on then self:_restoreScreensaver() end
+                end,
+            },
+            {
+                text = _("Use cover as screensaver (off: use current page)"),
+                enabled_func = function() return self:getScreensaverEnabled() end,
+                checked_func = function() return self:getScreensaverUseCover() end,
+                callback = function()
+                    self.settings:saveSetting("screensaver_use_cover", not self:getScreensaverUseCover())
+                    self.settings:flush()
                 end,
             },
         },
@@ -767,14 +796,17 @@ function MangaLibrary:showFilterMenu(api)
         -- The library is a per-session snapshot; this re-pulls it so external
         -- changes (e.g. marked read / progress cleared in the webapp) show up.
         table.insert(items, { text = _("Reload from server"), callback = function()
-            local list, err = api:getJson("/api/manga")
-            if list then
-                self._library = list
-                menu:switchItemTable(_("Manga Library"), build())
-            else
-                UIManager:show(InfoMessage:new{
-                    text = T(_("Reload failed: %1"), err or "?"), timeout = 3 })
-            end
+            -- Connect Wi-Fi first if the device is offline, then re-pull.
+            self:_online(function()
+                local list, err = api:getJson("/api/manga")
+                if list then
+                    self._library = list
+                    menu:switchItemTable(_("Manga Library"), build())
+                else
+                    UIManager:show(InfoMessage:new{
+                        text = T(_("Reload failed: %1"), err or "?"), timeout = 3 })
+                end
+            end)
         end })
 
         for _i, f in ipairs(FILTERS) do
@@ -783,10 +815,11 @@ function MangaLibrary:showFilterMenu(api)
             for _j, m in ipairs(self._library) do
                 if matchesFilter(m, key) then count = count + 1 end
             end
+            local sort_fn = f.recent and byRecent or nil
             table.insert(items, {
                 text = f.text,
                 mandatory = tostring(count),
-                callback = function() self:showList(api, f.text, function(m) return matchesFilter(m, key) end) end,
+                callback = function() self:showList(api, f.text, function(m) return matchesFilter(m, key) end, sort_fn) end,
             })
         end
         table.insert(items, {
@@ -835,23 +868,26 @@ function MangaLibrary:showTagMenu(api)
     self:_showMenu(_("Browse by tag"), items)
 end
 
-function MangaLibrary:showList(api, title, predicate)
-    local items = {}
+function MangaLibrary:showList(api, title, predicate, sort_fn)
+    local matched = {}
     for _i, m in ipairs(self._library) do
-        if predicate(m) then
-            local name = m.alias or m.english_title or m.title
-            local mandatory
-            if m.last_read_chapter then
-                mandatory = T(_("p.%1"), m.last_read_page or 1)
-            elseif m.last_chapter_on_disk then
-                mandatory = T(_("Ch.%1"), m.last_chapter_on_disk)
-            end
-            table.insert(items, {
-                text = name,
-                mandatory = mandatory,
-                callback = function() self:openManga(api, m) end,
-            })
+        if predicate(m) then matched[#matched + 1] = m end
+    end
+    if sort_fn then table.sort(matched, sort_fn) end
+    local items = {}
+    for _i, m in ipairs(matched) do
+        local name = m.alias or m.english_title or m.title
+        local mandatory
+        if m.last_read_chapter then
+            mandatory = T(_("p.%1"), m.last_read_page or 1)
+        elseif m.last_chapter_on_disk then
+            mandatory = T(_("Ch.%1"), m.last_chapter_on_disk)
         end
+        table.insert(items, {
+            text = name,
+            mandatory = mandatory,
+            callback = function() self:openManga(api, m) end,
+        })
     end
     if #items == 0 then
         UIManager:show(InfoMessage:new{ text = _("Nothing here yet.") })
@@ -937,6 +973,11 @@ function MangaLibrary:_chooseStart(api, detail, chapters, idx, resume_page, menu
 end
 
 function MangaLibrary:openReader(api, manga, chapters, chapter_index, start_page, menu)
+    -- Reset per-title screensaver state before the reader renders its first page.
+    -- As pages render the reader calls onReaderPage(), which sets the cover (once)
+    -- or the current page per the two screensaver toggles. Nothing is touched
+    -- unless the master toggle is on.
+    self._ss_cover_set = false
     local reader = MangaReader:new{
         api = api,
         manga = manga,
@@ -958,22 +999,35 @@ function MangaLibrary:openReader(api, manga, chapters, chapter_index, start_page
         end,
     }
     UIManager:show(reader)
-    -- Use the manga's overall cover as the device sleep screen while reading it.
-    -- Done after show() (and on nextTick) so fetching the cover never delays the
-    -- reader appearing; set once per title, so it persists across chapter advances.
-    if self:getSleepCover() then
-        UIManager:nextTick(function() self:_setCoverScreensaver(api, manga) end)
+end
+
+-- Called by the reader as each page renders. Points the device sleep screen at
+-- either the manga's selected cover (once per title) or the current page, per the
+-- two screensaver toggles. KOReader's own "book cover" screensaver reads the open
+-- *document*; this plugin renders pages itself with no document open, so we set an
+-- explicit image file instead.
+function MangaLibrary:onReaderPage(api, manga, page_data)
+    if not self:getScreensaverEnabled() then return end
+    if self:getScreensaverUseCover() then
+        -- Selected cover: fetch once per title, on nextTick so it never delays paint.
+        if self._ss_cover_set then return end
+        self._ss_cover_set = true
+        UIManager:nextTick(function()
+            if manga and manga.id then
+                self:_useImageScreensaver(api:getBytes("/cover/" .. urlencode(manga.id)))
+            end
+        end)
+    else
+        -- Current page: the already-rendered JPEG bytes, refreshed on each turn.
+        self:_useImageScreensaver(page_data)
     end
 end
 
--- Download the manga's overall cover, save it to a file, and point KOReader's
--- screensaver at it (saving the user's previous setting so we can restore it).
--- KOReader's own "book cover" screensaver reads the open *document*; this plugin
--- renders pages itself with no document open, so we set an explicit image file.
-function MangaLibrary:_setCoverScreensaver(api, manga)
-    if not manga or not manga.id then return end
-    local data = api:getBytes("/cover/" .. urlencode(manga.id))
-    if not data or #data == 0 then return end   -- no cover; leave sleep screen alone
+-- Write JPEG bytes to our sleep-screen file and point KOReader's screensaver at it,
+-- remembering the user's real screensaver settings the first time so we can restore
+-- them when reading ends.
+function MangaLibrary:_useImageScreensaver(data)
+    if not data or #data == 0 then return end   -- nothing to show; leave sleep screen alone
     local path = DataStorage:getSettingsDir() .. "/mangalibrary_sleep_cover.jpg"
     local f = io.open(path, "wb")
     if not f then return end
@@ -1076,6 +1130,9 @@ function MangaLibrary:_syncLibrary(id, chapter, page)
         if m.id == id then
             m.last_read_chapter = chapter
             m.last_read_page = page
+            -- Stamp locally (UTC, matching the server) so the Last Read view orders
+            -- this title to the top without waiting for a reload.
+            m.last_read_at = os.date("!%Y-%m-%d %H:%M:%S")
             return
         end
     end

@@ -109,6 +109,7 @@ def manga_to_payload(row):
         'read': bool(row.get('read', 0)),
         'last_read_chapter': row.get('last_read_chapter'),
         'last_read_page': row.get('last_read_page'),
+        'last_read_at': row.get('last_read_at'),
         'download_enabled': bool(row.get('download_enabled', 0)),
         'alias': row.get('alias') or None,
         'folder_path': folder,
@@ -413,6 +414,12 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.update_manga_metadata(manga_id, manga['url'], last_read_chapter=body.last_read_chapter)
     if body.last_read_page is not None:
         db.update_manga_metadata(manga_id, manga['url'], last_read_page=body.last_read_page)
+    # Stamp when reading progress was last written (UTC, matching the DB's datetime('now')
+    # format) so clients can offer a most-recently-read view. Both the webapp reader and
+    # the KOReader plugin PATCH progress, so stamping here covers both.
+    if body.last_read_chapter is not None or body.last_read_page is not None:
+        db.update_manga_metadata(manga_id, manga['url'],
+                                 last_read_at=time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime()))
     if body.alias is not None:
         db.set_alias(manga_id, body.alias.strip() or None)
     if body.last_chapter_on_disk is not None:

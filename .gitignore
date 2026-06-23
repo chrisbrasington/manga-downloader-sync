@@ -12,6 +12,9 @@ convert
 sample
 temp.txt
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 dev
 pythondev
 markdown

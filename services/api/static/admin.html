@@ -173,6 +173,13 @@
         <option value="0">No</option>
       </select>
     </div>
+    <div class="form-group">
+      <label>Mode</label>
+      <select id="add-mode">
+        <option value="full">Download all</option>
+        <option value="on_demand">As you read</option>
+      </select>
+    </div>
     <div class="form-group" style="justify-content:flex-end">
       <button class="btn btn-primary" id="add-btn">Add</button>
     </div>
@@ -207,6 +214,7 @@
           <th>URL</th>
           <th>Status</th>
           <th>DL</th>
+          <th>Mode</th>
           <th>Last Ch.</th>
           <th>Actions</th>
         </tr>
@@ -294,13 +302,13 @@
       allManga = await fetch('/api/manga').then(r => r.json());
       renderTable();
     } catch(e) {
-      document.getElementById('manga-rows').innerHTML = '<tr><td colspan="7" class="empty">Failed to load.</td></tr>';
+      document.getElementById('manga-rows').innerHTML = '<tr><td colspan="8" class="empty">Failed to load.</td></tr>';
     }
   }
 
   function renderTable() {
     if (!allManga.length) {
-      document.getElementById('manga-rows').innerHTML = '<tr><td colspan="7" class="empty">No manga yet.</td></tr>';
+      document.getElementById('manga-rows').innerHTML = '<tr><td colspan="8" class="empty">No manga yet.</td></tr>';
       return;
     }
     document.getElementById('manga-rows').innerHTML = allManga.map(m => {
@@ -310,11 +318,16 @@
         `<option value="${s}"${m.status===s?' selected':''}>${s}</option>`
       ).join('');
       const ch = m.last_chapter_on_disk != null ? m.last_chapter_on_disk : '';
+      const mode = m.download_mode || 'full';
+      const modeOpts = [['full','Download all'],['on_demand','As you read']].map(([v,lbl]) =>
+        `<option value="${v}"${mode===v?' selected':''}>${lbl}</option>`
+      ).join('');
       return `<tr data-id="${esc(m.id)}">
         <td class="title-cell" title="${esc(m.title)}">${title}</td>
         <td class="url-cell"><a href="${esc(m.url)}" target="_blank">${esc(shortUrl)}</a></td>
         <td><select class="inline-select status-sel">${statOpts}</select></td>
         <td><input type="checkbox" class="dl-toggle dl-chk" ${m.download_enabled ? 'checked' : ''}></td>
+        <td><select class="inline-select mode-sel">${modeOpts}</select></td>
         <td><input type="number" class="inline-select ch-input" value="${esc(ch)}" placeholder="—" step="any" style="width:60px"></td>
         <td class="actions">
           <button class="btn-sm btn-thumb thumb-btn">🖼 Thumb</button>
@@ -334,6 +347,13 @@
       chk.addEventListener('change', async e => {
         const id = e.target.closest('tr').dataset.id;
         await patchManga(id, { download_enabled: e.target.checked ? 1 : 0 });
+      });
+    });
+
+    document.querySelectorAll('.mode-sel').forEach(sel => {
+      sel.addEventListener('change', async e => {
+        const id = e.target.closest('tr').dataset.id;
+        await patchManga(id, { download_mode: e.target.value });
       });
     });
 
@@ -386,7 +406,8 @@
     const body = {
       url,
       status: document.getElementById('add-status').value,
-      download_enabled: parseInt(document.getElementById('add-dl').value)
+      download_enabled: parseInt(document.getElementById('add-dl').value),
+      download_mode: document.getElementById('add-mode').value
     };
     const resp = await fetch('/api/manga', {
       method: 'POST',

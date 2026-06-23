@@ -51,8 +51,10 @@ def main(args):
             return
 
     _write_heartbeat()
-    source = db.get_active_manga()
-    print(f'Found {len(source)} active manga in database')
+    # On-demand ("download as you read") manga are handled by queue_worker.py, not the
+    # daily bulk run — exclude them here so the cron only fully downloads full-mode manga.
+    source = db.get_full_download_manga()
+    print(f'Found {len(source)} full-download manga in database')
 
     util.process_collection(source, sync_destination, sync_only)
     util.print_summary()

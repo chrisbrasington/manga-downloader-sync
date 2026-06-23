@@ -560,11 +560,52 @@ function MangaReader:nextPage()
         self:setPage(self.page + 1)
     elseif self.chapter_index < #self.chapters then
         self:loadChapter(self.chapter_index + 1, 1)
+    elseif (self.manga.download_mode or "full") == "on_demand" then
+        -- On-demand: the next chapter may still be downloading server-side. Check.
+        NetworkMgr:runWhenOnline(function() self:_checkNextChapter() end)
     else
         -- Past the last page of the last chapter: leave the reader and return to the list.
         self:onClose()
         UIManager:show(InfoMessage:new{ text = _("End of manga."), timeout = 2 })
     end
+end
+
+-- On-demand boundary: re-fetch the chapter list. If a newer chapter has landed,
+-- continue into it; otherwise report that it's still downloading and offer a retry.
+function MangaReader:_checkNextChapter()
+    local detail = self.api:getJson("/api/manga/" .. urlencode(self.manga.id))
+    if detail and detail.chapters and #detail.chapters > #self.chapters then
+        self.chapters = detail.chapters
+        self.manga.next_pending = detail.next_pending
+        self:loadChapter(self.chapter_index + 1, 1)  -- it landed — read on
+        return
+    end
+    if detail then self.manga.next_pending = detail.next_pending end
+
+    local np = self.manga.next_pending
+    local msg
+    if np then
+        local label = np.chapter_raw or tostring(np.chapter_number)
+        msg = (np.status == "error")
+            and T(_("Chapter %1 failed to download."), label)
+            or  T(_("Chapter %1 is still downloading."), label)
+    else
+        msg = _("No newer chapters downloaded yet.")
+    end
+
+    local dialog
+    dialog = ButtonDialog:new{
+        title = msg,
+        title_align = "center",
+        buttons = {
+            {{ text = _("Check again"), callback = function()
+                UIManager:close(dialog)
+                NetworkMgr:runWhenOnline(function() self:_checkNextChapter() end) end }},
+            {{ text = _("Close"), callback = function()
+                UIManager:close(dialog); self:onClose() end }},
+        },
+    }
+    UIManager:show(dialog)
 end
 
 function MangaReader:prevPage()

@@ -19,6 +19,30 @@ services:
       homepage.description: Manga worker
       homepage.href: https://manga.home.chrisincode.com/admin
 
+  # On-demand ("download as you read") queue worker. Same image as the downloader
+  # (has parser.py + deps), but instead of the daily bulk run it polls the chapters
+  # manifest and downloads queued chapters one at a time. Handles download_mode=on_demand
+  # manga; the daily downloader handles full-mode manga.
+  manga-queue-worker:
+    build: .
+    image: valhalla:5000/manga-downloader:latest
+    container_name: manga-queue-worker
+    restart: always
+    command: ["python", "queue_worker.py"]
+    environment:
+      TZ: America/Denver
+      MANGA_DB: /app/manga.db
+      MANGA_STORAGE: /app/tmp
+    volumes:
+      - ./manga.db:/app/manga.db
+      - ./tmp:/app/tmp
+      - ./thumbnails:/app/thumbnails
+    labels:
+      homepage.group: Bots
+      homepage.name: Manga Queue Worker
+      homepage.icon: mdi-book-clock
+      homepage.description: On-demand chapter downloader
+
   # Single unified API. Serves the browser webapp (8681) and the KOReader
   # plugin (8684) from one process; both hit the same container port.
   manga-api:

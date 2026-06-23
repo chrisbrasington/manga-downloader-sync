@@ -45,8 +45,26 @@ class Database:
                 url TEXT PRIMARY KEY
             );
 
+            -- Per-chapter manifest for on-demand ("download as you read") manga.
+            -- Doubles as the download work queue via the status column. The
+            -- downloader/worker owns all writes; the API only reads it. Chapters
+            -- are matched to on-disk CBZ files by chapter_number (never filename,
+            -- which can drift if MangaDex renames a series).
+            CREATE TABLE IF NOT EXISTS chapters (
+                manga_id       TEXT NOT NULL,
+                chapter_number REAL NOT NULL,
+                chapter_raw    TEXT,
+                chapter_id     TEXT,
+                status         TEXT NOT NULL DEFAULT 'remote',
+                requested_at   TEXT,
+                updated_at     TEXT,
+                error          TEXT,
+                PRIMARY KEY (manga_id, chapter_number)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_manga_status ON manga(status);
             CREATE INDEX IF NOT EXISTS idx_manga_kobo_sync ON manga(kobo_sync);
+            CREATE INDEX IF NOT EXISTS idx_chapters_status ON chapters(manga_id, status);
         ''')
         # Add columns introduced after initial schema creation
         for stmt in [
@@ -59,6 +77,7 @@ class Database:
             "ALTER TABLE manga ADD COLUMN alias TEXT",
             "ALTER TABLE manga ADD COLUMN english_title TEXT",
             "ALTER TABLE manga ADD COLUMN japanese_title TEXT",
+            "ALTER TABLE manga ADD COLUMN download_mode TEXT NOT NULL DEFAULT 'full'",
         ]:
             try:
                 conn.execute(stmt)
@@ -88,6 +107,25 @@ class Database:
         conn = self._connect()
         c = conn.cursor()
         c.execute("SELECT * FROM manga WHERE download_enabled = 1 ORDER BY added_at")
+        rows = [self._row_to_dict(c, r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    def get_full_download_manga(self):
+        """Manga handled by the daily bulk downloader: enabled and full-download mode.
+        On-demand manga are deliberately excluded — the queue worker handles those."""
+        conn = self._connect()
+        c = conn.cursor()
+        c.execute("SELECT * FROM manga WHERE download_enabled = 1 AND download_mode = 'full' ORDER BY added_at")
+        rows = [self._row_to_dict(c, r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    def get_on_demand_manga(self):
+        """Manga read in 'download as you read' mode, handled by the queue worker."""
+        conn = self._connect()
+        c = conn.cursor()
+        c.execute("SELECT * FROM manga WHERE download_mode = 'on_demand' ORDER BY added_at")
         rows = [self._row_to_dict(c, r) for r in c.fetchall()]
         conn.close()
         return rows
@@ -124,13 +162,13 @@ class Database:
         conn.close()
         return row
 
-    def add_manga(self, url, status='active', kobo_sync=1, download_enabled=1):
+    def add_manga(self, url, status='active', kobo_sync=1, download_enabled=1, download_mode='full'):
         manga_id = self._extract_id(url)
         source_type = 'danke' if 'danke.moe' in url else 'mangadex'
         conn = self._connect()
         conn.execute(
-            "INSERT OR IGNORE INTO manga (id, url, status, kobo_sync, source_type, download_enabled) VALUES (?, ?, ?, ?, ?, ?)",
-            (manga_id, url, status, kobo_sync, source_type, download_enabled)
+            "INSERT OR IGNORE INTO manga (id, url, status, kobo_sync, source_type, download_enabled, download_mode) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (manga_id, url, status, kobo_sync, source_type, download_enabled, download_mode)
         )
         conn.commit()
         conn.close()
@@ -142,7 +180,7 @@ class Database:
             'title', 'cover_url', 'description', 'author', 'demographic', 'tags',
             'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type',
             'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page', 'last_read_at', 'download_enabled',
-            'alias', 'english_title', 'japanese_title',
+            'alias', 'english_title', 'japanese_title', 'download_mode',
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
 
@@ -183,6 +221,106 @@ class Database:
         conn.commit()
         conn.close()
 
+    # --- chapters manifest / download queue (on-demand mode) ---
+
+    def get_manifest(self, manga_id):
+        """All known chapters for a manga, ordered by chapter number ascending."""
+        conn = self._connect()
+        c = conn.cursor()
+        c.execute("SELECT * FROM chapters WHERE manga_id = ? ORDER BY chapter_number", (manga_id,))
+        rows = [self._row_to_dict(c, r) for r in c.fetchall()]
+        conn.close()
+        return rows
+
+    def manifest_count(self, manga_id):
+        conn = self._connect()
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM chapters WHERE manga_id = ?", (manga_id,))
+        n = c.fetchone()[0]
+        conn.close()
+        return n
+
+    def upsert_chapter(self, manga_id, chapter_number, chapter_raw=None, chapter_id=None):
+        """Insert a manifest row if absent (keeps existing status on re-runs); refresh
+        the raw/id fields. Status is only advanced via set_chapter_status / queue_*."""
+        conn = self._connect()
+        conn.execute(
+            "INSERT OR IGNORE INTO chapters (manga_id, chapter_number, chapter_raw, chapter_id, updated_at) "
+            "VALUES (?, ?, ?, ?, datetime('now'))",
+            (manga_id, chapter_number, chapter_raw, chapter_id)
+        )
+        conn.execute(
+            "UPDATE chapters SET chapter_raw = COALESCE(?, chapter_raw), chapter_id = COALESCE(?, chapter_id) "
+            "WHERE manga_id = ? AND chapter_number = ?",
+            (chapter_raw, chapter_id, manga_id, chapter_number)
+        )
+        conn.commit()
+        conn.close()
+
+    def set_chapter_status(self, manga_id, chapter_number, status, error=None):
+        conn = self._connect()
+        conn.execute(
+            "UPDATE chapters SET status = ?, error = ?, updated_at = datetime('now') "
+            "WHERE manga_id = ? AND chapter_number = ?",
+            (status, error, manga_id, chapter_number)
+        )
+        conn.commit()
+        conn.close()
+
+    def get_first_chapter_number(self, manga_id):
+        """Lowest chapter number in the manifest, or None if empty."""
+        conn = self._connect()
+        c = conn.cursor()
+        c.execute("SELECT MIN(chapter_number) FROM chapters WHERE manga_id = ?", (manga_id,))
+        row = c.fetchone()
+        conn.close()
+        return row[0] if row and row[0] is not None else None
+
+    def queue_chapter(self, manga_id, chapter_number):
+        """Flip a single 'remote' chapter to 'queued'. No-op if already past remote."""
+        conn = self._connect()
+        conn.execute(
+            "UPDATE chapters SET status = 'queued', requested_at = datetime('now'), updated_at = datetime('now') "
+            "WHERE manga_id = ? AND chapter_number = ? AND status = 'remote'",
+            (manga_id, chapter_number)
+        )
+        conn.commit()
+        conn.close()
+
+    def queue_next_chapters(self, manga_id, after_number, count=2):
+        """Queue up to `count` not-yet-downloaded chapters with the smallest chapter
+        numbers strictly greater than after_number. Only 'remote' rows are touched, so
+        already-queued/downloading/available chapters are left alone."""
+        conn = self._connect()
+        c = conn.cursor()
+        c.execute(
+            "SELECT chapter_number FROM chapters "
+            "WHERE manga_id = ? AND chapter_number > ? AND status = 'remote' "
+            "ORDER BY chapter_number LIMIT ?",
+            (manga_id, after_number, count)
+        )
+        nums = [r[0] for r in c.fetchall()]
+        for n in nums:
+            c.execute(
+                "UPDATE chapters SET status = 'queued', requested_at = datetime('now'), updated_at = datetime('now') "
+                "WHERE manga_id = ? AND chapter_number = ?",
+                (manga_id, n)
+            )
+        conn.commit()
+        conn.close()
+        return nums
+
+    def get_queued_chapter(self):
+        """Oldest queued chapter across all manga (FIFO), or None."""
+        conn = self._connect()
+        c = conn.cursor()
+        c.execute(
+            "SELECT * FROM chapters WHERE status = 'queued' ORDER BY requested_at LIMIT 1"
+        )
+        row = self._row_to_dict(c, c.fetchone())
+        conn.close()
+        return row
+
     def update_url(self, manga_id, new_url):
         conn = self._connect()
         conn.execute("UPDATE manga SET url = ? WHERE id = ?", (new_url, manga_id))
@@ -198,6 +336,7 @@ class Database:
     def remove_manga(self, manga_id):
         conn = self._connect()
         conn.execute("DELETE FROM manga WHERE id = ?", (manga_id,))
+        conn.execute("DELETE FROM chapters WHERE manga_id = ?", (manga_id,))
         conn.commit()
         conn.close()
 

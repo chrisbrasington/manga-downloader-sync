@@ -384,6 +384,71 @@ class Utility:
         shutil.move(f'{tmp_chapter}.zip', f'{tmp_chapter}.cbz')
         shutil.rmtree(tmp_chapter)
 
+    # Resolve the on-disk folder name for a manga, pinning to the title already
+    # stored/on disk so a MangaDex rename doesn't create a second folder.
+    def resolve_folder_title(self, manga):
+        db_row = self.db.get_manga_by_id(manga.id)
+        stored_title = db_row.get('title') if db_row else None
+        if stored_title and os.path.isdir(f"tmp/{stored_title}"):
+            return stored_title
+        return manga.title
+
+    # download a single chapter's images into a CBZ; return the basename written.
+    # Shared by the bulk downloader (parse_mangadex) and the on-demand queue worker
+    # so there is one definition of how a downloaded chapter looks on disk.
+    # folder_title pins the destination folder (to survive MangaDex title renames);
+    # the CBZ filename uses manga.title to match historical naming and the API's
+    # list_chapter_files glob.
+    def download_single_chapter(self, manga, chapter, folder_title=None):
+        folder_title = folder_title or manga.title
+        tmp_dir = f"tmp/{folder_title}"
+        if not os.path.exists(tmp_dir):
+            os.makedirs(tmp_dir)
+
+        tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}"  # chapter number not volume
+        basename = f"{manga.title} - {chapter.chapter}.cbz"
+
+        # already on disk — nothing to do
+        if os.path.exists(f'{tmp_chapter}.cbz'):
+            return basename
+
+        if not os.path.exists(tmp_chapter):
+            os.makedirs(tmp_chapter)
+
+        i = 0
+        for url in tqdm(chapter.images):
+            i += 1
+            response = requests.get(url)
+            _, file_extension = os.path.splitext(url)
+            # pad page number (001 002 ...) so the cbz stays naturally sorted
+            path = f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}"
+            open(path, "wb").write(response.content)
+
+        self.create_cbz(tmp_chapter)
+        return basename
+
+    # build/refresh the on-demand chapter manifest for a manga from the MangaDex feed.
+    # Reuses get_chapters (dedup + ignored filtering). Idempotent: existing rows keep
+    # their status, new chapters are inserted as 'remote'. Returns the count of rows seen.
+    def build_manifest(self, manga):
+        chapters = self.get_chapters(manga)
+        seen = 0
+        for chapter in chapters:
+            # extract_number(Chapter) yields the canonical number used by the bulk
+            # sort and normalises letter suffixes (12a -> 12.1), matching the filename
+            # the downloader will write and the number the API parses back from it.
+            try:
+                num = self.extract_number(chapter)
+            except Exception:
+                continue
+            if num is None or num < 0:
+                continue
+            if num == int(num):
+                num = int(num)
+            self.db.upsert_chapter(manga.id, num, chapter_raw=str(chapter.chapter), chapter_id=chapter.id)
+            seen += 1
+        return seen
+
     # create kobo collection
     def create_kobo_collection(self, sync_dir, title):
 
@@ -709,11 +774,7 @@ class Utility:
         # Use the title already stored in DB (and on disk) to avoid creating a second
         # folder if MangaDex has changed the title since first download.
         db_row = self.db.get_manga_by_id(manga.id)
-        stored_title = db_row.get('title') if db_row else None
-        if stored_title and os.path.isdir(f"tmp/{stored_title}"):
-            folder_title = stored_title
-        else:
-            folder_title = manga.title
+        folder_title = self.resolve_folder_title(manga)
         tmp_dir = f"tmp/{folder_title}"
 
         # print truncated description
@@ -815,39 +876,8 @@ class Utility:
                         download_print_once = True
 
                     
-                    if not os.path.exists(tmp_chapter):
-                        os.makedirs(tmp_chapter)
-
                     print(chapter_num)
-                    path = ''
-                    i = 0
-
-                    # print(chapter.url)
-                    # print('abort')
-                    # sys.exit()
-
-                    for url in tqdm(chapter.images):
-                        i += 1
-                        response = requests.get(url)
-                        _, file_extension = os.path.splitext(url)
-                        # to keep cbz sorted, works well to pad the page number 1 as 001
-                        # keeps 001 002 003 004 005 006 007 008 009 010 011 etc. well sorted 
-                        path = f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}"
-                        open(path, "wb").write(response.content)
-                        pass
-
-                    # is_manga, percent = is_comic_book(path)
-
-                    # if not is_manga:
-                    #     print('MEME DETECTED!!!')
-                    #     # os.remove(path)              
-                    # else:
-                    #     print('keeping all images')  
-
-                    if chapter_num == int(chapter_num):
-                        chapter_num = int(chapter_num)
-
-                    self.create_cbz(tmp_chapter)
+                    self.download_single_chapter(manga, chapter, folder_title)
                     did_work = True
 
             # convert entire dir to pdf (where pdfs do not exist)

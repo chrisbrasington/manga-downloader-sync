@@ -113,6 +113,7 @@ def manga_to_payload(row):
         'last_read_page': row.get('last_read_page'),
         'last_read_at': row.get('last_read_at'),
         'download_enabled': bool(row.get('download_enabled', 0)),
+        'download_mode': row.get('download_mode') or 'full',
         'alias': row.get('alias') or None,
         'folder_path': folder,
         'folder_exists': bool(folder and os.path.isdir(folder)),
@@ -329,6 +330,23 @@ def api_manga_detail(manga_id: str):
     if payload.get('last_read_chapter') and payload['last_read_chapter'] not in chapters:
         payload['last_read_chapter'] = None
         payload['last_read_page'] = None
+    # For on-demand manga, tell the client whether the next chapter (just past what's on
+    # disk) is still being fetched, so the reader can show a "downloading… [refresh]"
+    # prompt instead of "end of manga". Matched by chapter NUMBER, never filename.
+    payload['next_pending'] = None
+    if payload['download_mode'] == 'on_demand':
+        highest = max((chapter_sort_key(c) for c in chapters), default=-1)
+        nxt = None
+        for ch in db.get_manifest(manga_id):  # ordered by chapter_number ascending
+            if ch['chapter_number'] > highest:
+                nxt = ch
+                break
+        if nxt and nxt['status'] != 'available':
+            payload['next_pending'] = {
+                'chapter_raw': nxt.get('chapter_raw') or str(nxt['chapter_number']),
+                'chapter_number': nxt['chapter_number'],
+                'status': nxt['status'],
+            }
     return payload
 
 
@@ -361,12 +379,14 @@ class AddMangaRequest(BaseModel):
     status: str = 'active'
     kobo_sync: int = 1
     download_enabled: int = 1
+    download_mode: str = 'full'
 
 
 class UpdateMangaRequest(BaseModel):
     status: str | None = None
     kobo_sync: int | None = None
     download_enabled: int | None = None
+    download_mode: str | None = None
     favorited: int | None = None
     url: str | None = None
     hidden: int | None = None
@@ -383,7 +403,9 @@ def api_add_manga(body: AddMangaRequest, background_tasks: BackgroundTasks):
     db = get_db()
     if db.get_manga_by_url(body.url):
         raise HTTPException(status_code=409, detail='URL already exists')
-    manga_id = db.add_manga(body.url, status=body.status, kobo_sync=body.kobo_sync, download_enabled=body.download_enabled)
+    mode = body.download_mode if body.download_mode in ('full', 'on_demand') else 'full'
+    manga_id = db.add_manga(body.url, status=body.status, kobo_sync=body.kobo_sync,
+                            download_enabled=body.download_enabled, download_mode=mode)
     if 'mangadex' in body.url:
         background_tasks.add_task(fetch_and_save_thumbnail, manga_id)
         background_tasks.add_task(fetch_and_save_titles, manga_id)
@@ -404,6 +426,10 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.set_kobo_sync(manga_id, body.kobo_sync)
     if body.download_enabled is not None:
         db.set_download_enabled(manga_id, body.download_enabled)
+    if body.download_mode is not None:
+        if body.download_mode not in ('full', 'on_demand'):
+            raise HTTPException(status_code=400, detail='Invalid download_mode')
+        db.update_manga_metadata(manga_id, manga['url'], download_mode=body.download_mode)
     if body.favorited is not None:
         db.update_manga_metadata(manga_id, manga['url'], favorited=body.favorited)
     if body.hidden is not None:
@@ -422,6 +448,13 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
     if body.last_read_chapter is not None or body.last_read_page is not None:
         db.update_manga_metadata(manga_id, manga['url'],
                                  last_read_at=time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime()))
+    # Read-ahead for on-demand manga: when the reader reports progress on a chapter,
+    # queue the next chapters (lookahead 2) for the worker. Just flips manifest rows to
+    # 'queued' — a fast DB write, no downloading in the request path.
+    if body.last_read_chapter is not None and (manga.get('download_mode') or 'full') == 'on_demand':
+        num = chapter_sort_key(body.last_read_chapter)
+        if num >= 0:
+            db.queue_next_chapters(manga_id, num, count=2)
     if body.alias is not None:
         db.set_alias(manga_id, body.alias.strip() or None)
     if body.last_chapter_on_disk is not None:
@@ -1343,6 +1376,7 @@ def read_chapter(manga_id: str, filename: str):
     <div id="end-screen">
       <div class="msg" id="end-msg">End of chapter</div>
       <a id="next-ch-btn" href="#">Continue to next chapter →</a>
+      <a id="refresh-ch-btn" href="#" style="display:none">↻ Check again</a>
       <a id="back-btn-end" href="javascript:history.back()">← Back to library</a>
     </div>
   </div>
@@ -1355,6 +1389,8 @@ def read_chapter(manga_id: str, filename: str):
 
     let currentPage = 1, totalPages = 0;
     let chapters = [], currentChIdx = -1;
+    let nextPending = null;  // on-demand: next chapter still downloading, or null
+    let downloadMode = 'full';
     let saveTimer = null;
     let activeFilename = FILENAME;
     let prefetchImg = null;  // {{ img: Image, page: number }}
@@ -1473,6 +1509,8 @@ def read_chapter(manga_id: str, filename: str):
       try {{
         const data = await fetch(`/api/manga/${{encodeURIComponent(MANGA_ID)}}`).then(r => r.json());
         chapters = (data.chapters || []).slice().sort((a, b) => extractNum(a) - extractNum(b));
+        nextPending = data.next_pending || null;
+        downloadMode = data.download_mode || 'full';
         currentChIdx = chapters.indexOf(FILENAME);
         updateNav();
       }} catch(e) {{}}
@@ -1520,6 +1558,8 @@ def read_chapter(manga_id: str, filename: str):
         const nextBtn = document.getElementById('next-ch-btn');
         if (nextBtn.style.display === 'inline-block') {{
           loadChapter(chapters[currentChIdx + 1]);
+        }} else if (document.getElementById('refresh-ch-btn').style.display === 'inline-block') {{
+          refreshChapters();
         }} else {{
           window.location.href = '/';
         }}
@@ -1530,11 +1570,49 @@ def read_chapter(manga_id: str, filename: str):
       }} else {{
         endScreen.classList.add('show');
         if (chapters.length > 0 && currentChIdx === chapters.length - 1) {{
-          markRead();
-          document.getElementById('end-msg').textContent = 'End of manga';
-          document.getElementById('back-btn-end').href = '/';
+          if (downloadMode === 'on_demand') {{
+            showBoundary();  // next chapter may be downloading, or this may be the end
+          }} else {{
+            markRead();
+            document.getElementById('end-msg').textContent = 'End of manga';
+            document.getElementById('back-btn-end').href = '/';
+          }}
         }}
       }}
+    }}
+
+    // On-demand boundary: at the end of the last downloaded chapter. The next chapter
+    // may still be downloading (nextPending set), or this may genuinely be the latest
+    // published chapter (nextPending null) — either way offer a manual re-check.
+    function showBoundary() {{
+      const msg = document.getElementById('end-msg');
+      const refreshBtn = document.getElementById('refresh-ch-btn');
+      document.getElementById('next-ch-btn').style.display = 'none';
+      if (nextPending) {{
+        const label = nextPending.chapter_raw || nextPending.chapter_number;
+        msg.textContent = nextPending.status === 'error'
+          ? `Chapter ${{label}} failed to download`
+          : `Chapter ${{label}} is downloading…`;
+      }} else {{
+        msg.textContent = 'No newer chapters downloaded yet';
+      }}
+      refreshBtn.style.display = 'inline-block';
+    }}
+
+    async function refreshChapters() {{
+      try {{
+        const data = await fetch(`/api/manga/${{encodeURIComponent(MANGA_ID)}}`).then(r => r.json());
+        chapters = (data.chapters || []).slice().sort((a, b) => extractNum(a) - extractNum(b));
+        nextPending = data.next_pending || null;
+        downloadMode = data.download_mode || 'full';
+        currentChIdx = chapters.indexOf(activeFilename);
+        updateNav();
+        if (currentChIdx >= 0 && currentChIdx < chapters.length - 1) {{
+          loadChapter(chapters[currentChIdx + 1]);  // it landed — read on
+        }} else {{
+          showBoundary();
+        }}
+      }} catch(e) {{}}
     }}
     function goPrev() {{
       if (document.getElementById('end-screen').classList.contains('show')) {{
@@ -1562,6 +1640,10 @@ def read_chapter(manga_id: str, filename: str):
       if (this.style.display !== 'inline-block') return;
       e.preventDefault();
       loadChapter(chapters[currentChIdx + 1]);
+    }});
+    document.getElementById('refresh-ch-btn').addEventListener('click', function(e) {{
+      e.preventDefault();
+      refreshChapters();
     }});
     document.addEventListener('keydown', e => {{
       if (e.key === 'Escape' && !document.fullscreenElement) {{ history.back(); return; }}

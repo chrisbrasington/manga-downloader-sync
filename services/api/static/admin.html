@@ -167,13 +167,6 @@
       </select>
     </div>
     <div class="form-group">
-      <label>Kobo Sync</label>
-      <select id="add-sync">
-        <option value="1">Yes</option>
-        <option value="0">No</option>
-      </select>
-    </div>
-    <div class="form-group">
       <label>Download</label>
       <select id="add-dl">
         <option value="1">Yes</option>
@@ -213,7 +206,6 @@
           <th>Title</th>
           <th>URL</th>
           <th>Status</th>
-          <th>Kobo</th>
           <th>DL</th>
           <th>Last Ch.</th>
           <th>Actions</th>
@@ -255,9 +247,6 @@
       </div>
     </div>
     <div class="modal-row" style="display:flex;gap:24px;margin-top:4px">
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-        <input type="checkbox" id="merge-kobo"> Kobo sync
-      </label>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
         <input type="checkbox" id="merge-download"> Download enabled
       </label>
@@ -325,7 +314,6 @@
         <td class="title-cell" title="${esc(m.title)}">${title}</td>
         <td class="url-cell"><a href="${esc(m.url)}" target="_blank">${esc(shortUrl)}</a></td>
         <td><select class="inline-select status-sel">${statOpts}</select></td>
-        <td><input type="checkbox" class="sync-toggle sync-chk" ${m.kobo_sync ? 'checked' : ''}></td>
         <td><input type="checkbox" class="dl-toggle dl-chk" ${m.download_enabled ? 'checked' : ''}></td>
         <td><input type="number" class="inline-select ch-input" value="${esc(ch)}" placeholder="—" step="any" style="width:60px"></td>
         <td class="actions">
@@ -339,13 +327,6 @@
       sel.addEventListener('change', async e => {
         const id = e.target.closest('tr').dataset.id;
         await patchManga(id, { status: e.target.value });
-      });
-    });
-
-    document.querySelectorAll('.sync-chk').forEach(chk => {
-      chk.addEventListener('change', async e => {
-        const id = e.target.closest('tr').dataset.id;
-        await patchManga(id, { kobo_sync: e.target.checked ? 1 : 0 });
       });
     });
 
@@ -405,7 +386,6 @@
     const body = {
       url,
       status: document.getElementById('add-status').value,
-      kobo_sync: parseInt(document.getElementById('add-sync').value),
       download_enabled: parseInt(document.getElementById('add-dl').value)
     };
     const resp = await fetch('/api/manga', {
@@ -700,7 +680,6 @@
     document.getElementById('merge-title-keep-radio').checked = true;
     document.getElementById('merge-title-custom-input').value = keep.title;
 
-    document.getElementById('merge-kobo').checked = !!(keep.kobo_sync || drop.kobo_sync);
     document.getElementById('merge-download').checked = !!(keep.download_enabled || drop.download_enabled);
 
     const maxCh = Math.max(keep.last_chapter_on_disk || 0, drop.last_chapter_on_disk || 0);
@@ -736,7 +715,6 @@
     }
     if (!title) { toast('Title cannot be empty', 'err'); return; }
 
-    const kobo_sync = document.getElementById('merge-kobo').checked ? 1 : 0;
     const download_enabled = document.getElementById('merge-download').checked ? 1 : 0;
 
     const btn = document.getElementById('merge-confirm');
@@ -746,7 +724,7 @@
       const resp = await fetch('/api/dedupe/merge', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ ...pendingMerge, title, kobo_sync, download_enabled })
+        body: JSON.stringify({ ...pendingMerge, title, download_enabled })
       });
       if (resp.ok) {
         const r = await resp.json();

@@ -225,6 +225,7 @@ local MangaReader = InputContainer:extend{
     page = 1,
     total_pages = 0,
     prefetch_ahead = 1,
+    next_prefetch = nil, -- { fn, info, data } first page of the next chapter, preloaded at a chapter's end
     crop = true,        -- ask the backend to trim uniform page margins
     page_width = nil,
     on_close = nil,     -- function(last_chapter, last_page) called when reader closes
@@ -284,10 +285,13 @@ function MangaReader:_messageFrame(text)
     }
 end
 
-function MangaReader:_pagePath(n)
-    local fn = self.chapters[self.chapter_index]
+function MangaReader:_pagePathFor(fn, n)
     return T("/cbz/%1/%2/%3?w=%4&crop=%5",
         urlencode(self.manga.id), urlencode(fn), n, self.page_width, self.crop and 1 or 0)
+end
+
+function MangaReader:_pagePath(n)
+    return self:_pagePathFor(self.chapters[self.chapter_index], n)
 end
 
 -- Fetch page n's JPEG bytes (string), caching in memory. Returns data or nil, err.
@@ -309,6 +313,23 @@ function MangaReader:_evict(keep_from, keep_to)
     end
 end
 
+-- Preload the next chapter's first page (and its info) so turning past the last
+-- page is seamless. Best-effort: any failure just leaves next_prefetch unset and
+-- loadChapter falls back to its normal fetch. No-op at the end of the manga.
+function MangaReader:_prefetchNextChapter()
+    local nidx = self.chapter_index + 1
+    if nidx > #self.chapters then return end   -- last chapter: nothing ahead
+    local fn = self.chapters[nidx]
+    if self.next_prefetch and self.next_prefetch.fn == fn and self.next_prefetch.data then
+        return  -- already preloaded
+    end
+    local info = self.api:getJson(T("/cbz/%1/%2/info", urlencode(self.manga.id), urlencode(fn)))
+    if not info then return end
+    local data = self.api:getBytes(self:_pagePathFor(fn, 1))
+    if not data then return end
+    self.next_prefetch = { fn = fn, info = info, data = data }
+end
+
 -- Kobo turns Wi-Fi off when it sleeps, so the first request after waking fails.
 -- Show a status frame, bring the network back up, and run retry() once online.
 function MangaReader:_reconnectThen(retry)
@@ -326,6 +347,24 @@ function MangaReader:loadChapter(idx, start_page, attempt)
     self.chapter_index = idx
     self.page_data = {}   -- page cache is per-chapter
     local fn = self.chapters[idx]
+
+    -- Seamless forward turn: if we preloaded this chapter's first page while sitting
+    -- on the previous chapter's last page, use it and skip both network round-trips.
+    -- Only for a fresh start (page 1); going back into a chapter falls through.
+    local pf = self.next_prefetch
+    self.next_prefetch = nil
+    if pf and pf.fn == fn and pf.info and (start_page == nil or start_page == 1) then
+        self.total_pages = pf.info.page_count or 0
+        if self.total_pages == 0 then
+            self[1] = self:_messageFrame(_("This chapter has no pages."))
+            UIManager:setDirty(self, "ui")
+            return
+        end
+        if pf.data then self.page_data[1] = pf.data end
+        self:setPage(math.min(math.max(start_page or 1, 1), self.total_pages))
+        return
+    end
+
     local info, ierr = self.api:getJson(T("/cbz/%1/%2/info", urlencode(self.manga.id), urlencode(fn)))
     if not info then
         -- request failed (likely Wi-Fi dropped on sleep): reconnect and retry once
@@ -410,6 +449,9 @@ function MangaReader:setPage(n, attempt)
     if self.prefetch_ahead > 0 then
         UIManager:scheduleIn(0.15, function()
             for i = 1, self.prefetch_ahead do self:_fetchPage(n + i) end
+            -- On the last page the look-ahead runs off the end of the chapter, so
+            -- instead reach one image into the next chapter for a seamless turn.
+            if n >= self.total_pages then self:_prefetchNextChapter() end
         end)
     end
 end

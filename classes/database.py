@@ -4,13 +4,26 @@ from datetime import datetime
 
 class Database:
 
+    # db_paths whose schema has already been ensured in THIS process. Database() is
+    # constructed per API request (and per worker loop); re-running the schema script —
+    # which COMMITs a write transaction — on every construction needlessly contends the
+    # single SQLite writer. Run it once per process per path instead.
+    _schema_ready = set()
+
     def __init__(self, db_path=None):
         self.db_path = db_path or os.environ.get('MANGA_DB', 'manga.db')
-        self._ensure_schema()
+        if self.db_path not in Database._schema_ready:
+            self._ensure_schema()
+            Database._schema_ready.add(self.db_path)
 
     def _connect(self):
         conn = sqlite3.connect(self.db_path, timeout=15)
         conn.execute("PRAGMA journal_mode=WAL")
+        # NORMAL is durable under WAL (only loses the very last commits on OS crash, not
+        # corruption) and avoids an fsync per commit — important when the worker writes a
+        # multi-hundred-row manifest while the API serves reads/progress writes.
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=15000")
         return conn
 
     def _ensure_schema(self):
@@ -262,20 +275,24 @@ class Database:
         conn.close()
         return n
 
-    def upsert_chapter(self, manga_id, chapter_number, chapter_raw=None, chapter_id=None):
-        """Insert a manifest row if absent (keeps existing status on re-runs); refresh
-        the raw/id fields. Status is only advanced via set_chapter_status / queue_*."""
+    def upsert_chapters_bulk(self, manga_id, rows):
+        """Upsert many manifest rows in a SINGLE transaction. rows: iterable of
+        (chapter_number, chapter_raw, chapter_id). Existing rows keep their status;
+        raw/id are refreshed. One commit instead of one-per-chapter keeps the writer
+        lock held briefly so concurrent API reads/progress writes aren't starved."""
         conn = self._connect()
-        conn.execute(
-            "INSERT OR IGNORE INTO chapters (manga_id, chapter_number, chapter_raw, chapter_id, updated_at) "
-            "VALUES (?, ?, ?, ?, datetime('now'))",
-            (manga_id, chapter_number, chapter_raw, chapter_id)
-        )
-        conn.execute(
-            "UPDATE chapters SET chapter_raw = COALESCE(?, chapter_raw), chapter_id = COALESCE(?, chapter_id) "
-            "WHERE manga_id = ? AND chapter_number = ?",
-            (chapter_raw, chapter_id, manga_id, chapter_number)
-        )
+        c = conn.cursor()
+        for num, raw, cid in rows:
+            c.execute(
+                "INSERT OR IGNORE INTO chapters (manga_id, chapter_number, chapter_raw, chapter_id, updated_at) "
+                "VALUES (?, ?, ?, ?, datetime('now'))",
+                (manga_id, num, raw, cid)
+            )
+            c.execute(
+                "UPDATE chapters SET chapter_raw = COALESCE(?, chapter_raw), chapter_id = COALESCE(?, chapter_id) "
+                "WHERE manga_id = ? AND chapter_number = ?",
+                (raw, cid, manga_id, num)
+            )
         conn.commit()
         conn.close()
 

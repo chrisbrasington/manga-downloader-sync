@@ -65,6 +65,7 @@
     .badge-completed { background:#2a2a2a; color:var(--muted); }
     .badge-hiatus { background:#3a2a1a; color:var(--yellow); }
     .badge-archived { background:#1a1a1a; color:#444; }
+    .badge-ondemand { background:#1a2a3a; color:#6aabdf; }
     .ch-num { font-size:11px; color:var(--muted); margin-left:auto; }
     .star-btn { background:rgba(0,0,0,.55); border:none; border-radius:6px; cursor:pointer; font-size:14px; line-height:1; padding:4px 5px; opacity:.6; position:absolute; top:6px; right:6px; transition:opacity .15s,transform .15s,background .15s; }
     .star-btn:hover { opacity:1; background:rgba(0,0,0,.75); }
@@ -205,6 +206,7 @@
   <button class="filter-btn" data-filter="reading">📖 Reading</button>
   <button class="filter-btn" data-filter="lastread">🕘 Last Read</button>
   <button class="filter-btn" data-filter="active">Downloading</button>
+  <button class="filter-btn" data-filter="on_demand">📥 As You Read</button>
   <button class="filter-btn" data-filter="completed">Completed</button>
   <button class="filter-btn" data-filter="hiatus">Hiatus</button>
   <button class="filter-btn" data-filter="archived">Archived</button>
@@ -285,6 +287,7 @@
       : currentFilter === 'lastread' ? allManga.filter(m => m.last_read_at && !m.hidden)
       : currentFilter === 'all' ? allManga.filter(visible)
       : currentFilter === 'favorites' ? allManga.filter(m => m.favorited)
+      : currentFilter === 'on_demand' ? allManga.filter(m => m.download_mode === 'on_demand' && visible(m))
       : allManga.filter(m => m.status === currentFilter && visible(m));
     const q = currentSearch.trim().toLowerCase();
     if (q) manga = manga.filter(m => {
@@ -309,8 +312,10 @@
       const thumb = m.has_thumbnail
         ? `<div class="thumb" style="background-image:url('${thumbUrl}')"></div>`
         : `<div class="thumb">📖</div>`;
-      const badgeLabel = m.status === 'active' ? 'downloading' : m.status;
-      const badge = `<span class="badge badge-${esc(m.status)}">${esc(badgeLabel)}</span>`;
+      const isOnDemand = m.download_mode === 'on_demand';
+      const badgeLabel = isOnDemand ? 'as you read' : (m.status === 'active' ? 'downloading' : m.status);
+      const badgeClass = isOnDemand ? 'badge-ondemand' : `badge-${esc(m.status)}`;
+      const badge = `<span class="badge ${badgeClass}">${esc(badgeLabel)}</span>`;
       const ch = m.last_chapter_on_disk != null ? `<span class="ch-num">Ch.${m.last_chapter_on_disk}</span>` : '';
       const starClass = m.favorited ? 'star-btn on' : 'star-btn';
       const cardClass = m.status === 'archived' ? 'card archived' : 'card';

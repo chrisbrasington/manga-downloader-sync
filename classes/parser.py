@@ -423,11 +423,18 @@ class Utility:
         if os.path.exists(f'{tmp_chapter}.cbz'):
             return basename
 
+        images = chapter.images
+        if not images:
+            # No hosted pages (e.g. an external-only chapter). Don't zip an empty
+            # directory into a phantom 0-page CBZ — raise so the caller can mark it
+            # failed and the reader never sees a chapter it can't open.
+            raise ValueError(f"chapter {chapter.chapter} has no downloadable pages")
+
         if not os.path.exists(tmp_chapter):
             os.makedirs(tmp_chapter)
 
         i = 0
-        for url in tqdm(chapter.images):
+        for url in tqdm(images):
             i += 1
             response = requests.get(url)
             _, file_extension = os.path.splitext(url)
@@ -443,7 +450,7 @@ class Utility:
     # their status, new chapters are inserted as 'remote'. Returns the count of rows seen.
     def build_manifest(self, manga):
         chapters = self.get_chapters(manga)
-        seen = 0
+        rows = []
         for chapter in chapters:
             # extract_number(Chapter) yields the canonical number used by the bulk
             # sort and normalises letter suffixes (12a -> 12.1), matching the filename
@@ -456,9 +463,10 @@ class Utility:
                 continue
             if num == int(num):
                 num = int(num)
-            self.db.upsert_chapter(manga.id, num, chapter_raw=str(chapter.chapter), chapter_id=chapter.id)
-            seen += 1
-        return seen
+            rows.append((num, str(chapter.chapter), chapter.id))
+        if rows:
+            self.db.upsert_chapters_bulk(manga.id, rows)  # one transaction, not one-per-chapter
+        return len(rows)
 
     # create kobo collection
     def create_kobo_collection(self, sync_dir, title):
@@ -646,6 +654,14 @@ class Utility:
         # print(data)
 
         chapters = [Chapter(d, manga) for d in data]
+
+        # Drop chapters that aren't actually hosted on MangaDex. Some titles list an
+        # "external" entry (e.g. MangaPlus) alongside a real readable version for the
+        # same chapter number; the external one has externalUrl set and pages == 0, and
+        # its at-home server returns no images — downloading it yields an empty CBZ.
+        # Removing them here means both the bulk downloader and the on-demand manifest
+        # only ever consider downloadable chapters, so dedup can't pick the dead version.
+        chapters = [c for c in chapters if not c.external_url]
 
         chapters = self.remove_duplicate_chapters(chapters)
 

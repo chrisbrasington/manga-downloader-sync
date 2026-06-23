@@ -127,6 +127,11 @@ def process_one(util, db):
 def main():
     util = Utility()
     db = Database()
+    # Recover orphaned downloads: any chapter left 'downloading' is from a previous
+    # worker that died mid-download (the queue only re-picks 'queued'), so re-queue them.
+    requeued = db.reset_downloading_to_queued()
+    if requeued:
+        print(f'[queue-worker] re-queued {requeued} orphaned chapter(s) stuck in downloading', flush=True)
     print(f'[queue-worker] started (poll={POLL_SECONDS}s)', flush=True)
     loop = 0
     while True:

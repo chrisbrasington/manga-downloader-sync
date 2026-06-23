@@ -296,6 +296,20 @@ class Database:
         conn.commit()
         conn.close()
 
+    def reset_downloading_to_queued(self):
+        """Re-queue any chapters left in 'downloading'. Only one worker runs and it sets
+        this status only while actively downloading, so on worker startup any 'downloading'
+        row is an orphan from a crash/restart that would otherwise never retry (the queue
+        only picks up 'queued'). Returns how many were reset."""
+        conn = self._connect()
+        cur = conn.execute(
+            "UPDATE chapters SET status = 'queued', updated_at = datetime('now') WHERE status = 'downloading'"
+        )
+        n = cur.rowcount
+        conn.commit()
+        conn.close()
+        return n
+
     def set_chapter_status(self, manga_id, chapter_number, status, error=None):
         conn = self._connect()
         conn.execute(
@@ -326,20 +340,23 @@ class Database:
         conn.commit()
         conn.close()
 
-    def queue_next_chapters(self, manga_id, after_number, count=2):
-        """Queue up to `count` not-yet-downloaded chapters with the smallest chapter
-        numbers strictly greater than after_number. Only 'remote' rows are touched, so
-        already-queued/downloading/available chapters are left alone."""
+    def queue_next_chapters(self, manga_id, after_number, count=4):
+        """Maintain a buffer of `count` chapters ahead of after_number. Looks at the next
+        `count` chapters BY NUMBER (regardless of status) and queues only the ones still
+        'remote'. This is idempotent and bounded: progress is PATCHed on every page turn,
+        so the SELECT must NOT filter on status='remote' — doing so would skip past the
+        already-queued window and march the frontier `count` deeper on every call (the
+        runaway that downloaded ~ch22 while reading ch5). Window-by-number caps it."""
         conn = self._connect()
         c = conn.cursor()
         c.execute(
-            "SELECT chapter_number FROM chapters "
-            "WHERE manga_id = ? AND chapter_number > ? AND status = 'remote' "
+            "SELECT chapter_number, status FROM chapters "
+            "WHERE manga_id = ? AND chapter_number > ? "
             "ORDER BY chapter_number LIMIT ?",
             (manga_id, after_number, count)
         )
-        nums = [r[0] for r in c.fetchall()]
-        for n in nums:
+        to_queue = [num for num, status in c.fetchall() if status == 'remote']
+        for n in to_queue:
             c.execute(
                 "UPDATE chapters SET status = 'queued', requested_at = datetime('now'), updated_at = datetime('now') "
                 "WHERE manga_id = ? AND chapter_number = ?",
@@ -347,7 +364,7 @@ class Database:
             )
         conn.commit()
         conn.close()
-        return nums
+        return to_queue
 
     def get_queued_chapter(self):
         """Oldest queued chapter across all manga (FIFO), or None."""

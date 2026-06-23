@@ -457,13 +457,15 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
     if body.last_read_chapter is not None or body.last_read_page is not None:
         db.update_manga_metadata(manga_id, manga['url'],
                                  last_read_at=time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime()))
-    # Read-ahead for on-demand manga: when the reader reports progress on a chapter,
-    # queue the next chapters (lookahead 2) for the worker. Just flips manifest rows to
-    # 'queued' — a fast DB write, no downloading in the request path.
+    # Read-ahead for on-demand manga: keep a bounded buffer of chapters ahead of the one
+    # being read. queue_next_chapters is idempotent (it queues only the still-remote
+    # chapters in the next-N-by-number window), so being called on every page-turn PATCH
+    # maintains the buffer without marching ahead. Just flips manifest rows to 'queued' —
+    # a fast DB write, no downloading in the request path.
     if body.last_read_chapter is not None and (manga.get('download_mode') or 'full') == 'on_demand':
         num = chapter_sort_key(body.last_read_chapter)
         if num >= 0:
-            db.queue_next_chapters(manga_id, num, count=2)
+            db.queue_next_chapters(manga_id, num, count=4)
     if body.alias is not None:
         db.set_alias(manga_id, body.alias.strip() or None)
     if body.last_chapter_on_disk is not None:

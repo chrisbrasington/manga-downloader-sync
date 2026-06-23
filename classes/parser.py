@@ -384,29 +384,40 @@ class Utility:
         shutil.move(f'{tmp_chapter}.zip', f'{tmp_chapter}.cbz')
         shutil.rmtree(tmp_chapter)
 
-    # Resolve the on-disk folder name for a manga, pinning to the title already
-    # stored/on disk so a MangaDex rename doesn't create a second folder.
+    # Resolve the immutable on-disk folder name for a manga. The folder is pinned in
+    # the DB the first time it's resolved and never changes afterwards, so a later
+    # MangaDex title change can neither rename nor duplicate the folder. The `title`
+    # column is free to track the live MangaDex title independently.
     def resolve_folder_title(self, manga):
         db_row = self.db.get_manga_by_id(manga.id)
+        folder = (db_row.get('folder') if db_row else None) or None
+        if folder:
+            return folder
+        # Not yet pinned (legacy row or first download). Prefer an existing on-disk
+        # folder under the stored title; otherwise use the current title. Persist the
+        # choice so it can never drift again.
         stored_title = db_row.get('title') if db_row else None
         if stored_title and os.path.isdir(f"tmp/{stored_title}"):
-            return stored_title
-        return manga.title
+            folder = stored_title
+        else:
+            folder = manga.title
+        self.db.set_folder(manga.id, folder)
+        return folder
 
     # download a single chapter's images into a CBZ; return the basename written.
     # Shared by the bulk downloader (parse_mangadex) and the on-demand queue worker
     # so there is one definition of how a downloaded chapter looks on disk.
-    # folder_title pins the destination folder (to survive MangaDex title renames);
-    # the CBZ filename uses manga.title to match historical naming and the API's
-    # list_chapter_files glob.
+    # folder_title is the immutable on-disk folder name (see resolve_folder_title). Both
+    # the folder AND the CBZ filename are built from it, so they never disagree even after
+    # a MangaDex title change — the prior bug came from naming the file off the live title.
     def download_single_chapter(self, manga, chapter, folder_title=None):
-        folder_title = folder_title or manga.title
+        folder_title = folder_title or self.resolve_folder_title(manga)
         tmp_dir = f"tmp/{folder_title}"
         if not os.path.exists(tmp_dir):
             os.makedirs(tmp_dir)
 
-        tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}"  # chapter number not volume
-        basename = f"{manga.title} - {chapter.chapter}.cbz"
+        tmp_chapter = f"{tmp_dir}/{folder_title} - {chapter.chapter}"  # chapter number not volume
+        basename = f"{folder_title} - {chapter.chapter}.cbz"
 
         # already on disk — nothing to do
         if os.path.exists(f'{tmp_chapter}.cbz'):
@@ -792,7 +803,7 @@ class Utility:
         latest_chapter_remote = None
         latest_chapter_num_on_disk = -1
         try:
-            latest_chapter_num_on_disk = self.get_latest_chapter_num_on_disk(tmp_dir, manga.title)
+            latest_chapter_num_on_disk = self.get_latest_chapter_num_on_disk(tmp_dir, folder_title)
         except Exception as e:
             # this is ok, may not exist on disk yet
             latest_chapter_num_on_disk = -1
@@ -841,8 +852,9 @@ class Utility:
             # list(reversed(chapters)) or chapters[::-1]
             for chapter in chapters[::-1]:
 
-                # setup cbz file name for download
-                tmp_chapter = f"{tmp_dir}/{manga.title} - {chapter.chapter}" # chapter number not volume
+                # setup cbz file name for download (folder_title, matching what
+                # download_single_chapter writes, so the existence check below works)
+                tmp_chapter = f"{tmp_dir}/{folder_title} - {chapter.chapter}" # chapter number not volume
                 zip_name = f"{tmp_chapter}.cbz"
 
                 chapter_num = float(chapter.chapter)
@@ -885,7 +897,7 @@ class Utility:
             #     self.convert_dir_to_pdf(tmp_dir, manga.author)
 
         try:
-            last_ch = self.get_latest_chapter_num_on_disk(tmp_dir, manga.title)
+            last_ch = self.get_latest_chapter_num_on_disk(tmp_dir, folder_title)
         except Exception:
             last_ch = None
         self.db.update_manga_metadata(

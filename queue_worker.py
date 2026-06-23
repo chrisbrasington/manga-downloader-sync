@@ -110,7 +110,7 @@ def process_one(util, db):
         # Keep last_chapter_on_disk roughly in sync for the library UI, mirroring the
         # bulk downloader's bookkeeping.
         try:
-            last_ch = util.get_latest_chapter_num_on_disk(f"tmp/{folder_title}", manga.title)
+            last_ch = util.get_latest_chapter_num_on_disk(f"tmp/{folder_title}", folder_title)
         except Exception:
             last_ch = None
         db.update_manga_metadata(manga.id, m['url'], title=manga.title, last_chapter_on_disk=last_ch)

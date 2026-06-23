@@ -62,6 +62,14 @@ def large_cover_path(manga_id):
 def has_thumbnail(manga_id):
     return os.path.exists(thumbnail_path(manga_id))
 
+def folder_for(row):
+    """The immutable on-disk folder name for a manga row. Falls back to the title for
+    legacy rows not yet pinned (where folder == title anyway). The `title` column may
+    drift with MangaDex; `folder` must not."""
+    if not row:
+        return None
+    return row.get('folder') or row.get('title')
+
 def list_chapter_files(title):
     if not title:
         return []
@@ -88,7 +96,8 @@ def manga_to_payload(row):
         except Exception:
             tags = []
     title = row.get('title')
-    folder = os.path.join(MANGA_STORAGE, title) if title else None
+    folder_name = folder_for(row)
+    folder = os.path.join(MANGA_STORAGE, folder_name) if folder_name else None
     return {
         'id': row['id'],
         'url': row['url'],
@@ -115,6 +124,7 @@ def manga_to_payload(row):
         'download_enabled': bool(row.get('download_enabled', 0)),
         'download_mode': row.get('download_mode') or 'full',
         'alias': row.get('alias') or None,
+        'folder': folder_name,
         'folder_path': folder,
         'folder_exists': bool(folder and os.path.isdir(folder)),
     }
@@ -318,8 +328,7 @@ def api_manga_detail(manga_id: str):
     if not row:
         raise HTTPException(status_code=404, detail='Not found')
     payload = manga_to_payload(row)
-    title = row.get('title')
-    chapters = list_chapter_files(title)
+    chapters = list_chapter_files(folder_for(row))
     chapters.reverse()
     payload['chapters'] = chapters
     # Guard against stale progress: if the saved chapter file no longer exists on
@@ -464,6 +473,8 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         if existing and existing['id'] != manga_id:
             ex_title = existing.get('title') or existing['id']
             my_title = manga.get('title') or manga_id
+            my_folder = folder_for(manga)
+            ex_folder = folder_for(existing)
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -471,16 +482,16 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
                     'mine': {
                         'id': manga_id,
                         'title': my_title,
-                        'chapter_count': len(list_chapter_files(manga.get('title'))),
-                        'folder_path': os.path.join(MANGA_STORAGE, manga['title']) if manga.get('title') else None,
-                        'folder_exists': bool(manga.get('title') and os.path.isdir(os.path.join(MANGA_STORAGE, manga['title']))),
+                        'chapter_count': len(list_chapter_files(my_folder)),
+                        'folder_path': os.path.join(MANGA_STORAGE, my_folder) if my_folder else None,
+                        'folder_exists': bool(my_folder and os.path.isdir(os.path.join(MANGA_STORAGE, my_folder))),
                     },
                     'conflict': {
                         'id': existing['id'],
                         'title': ex_title,
-                        'chapter_count': len(list_chapter_files(existing.get('title'))),
-                        'folder_path': os.path.join(MANGA_STORAGE, ex_title) if existing.get('title') else None,
-                        'folder_exists': bool(existing.get('title') and os.path.isdir(os.path.join(MANGA_STORAGE, ex_title))),
+                        'chapter_count': len(list_chapter_files(ex_folder)),
+                        'folder_path': os.path.join(MANGA_STORAGE, ex_folder) if ex_folder else None,
+                        'folder_exists': bool(ex_folder and os.path.isdir(os.path.join(MANGA_STORAGE, ex_folder))),
                     },
                 }
             )
@@ -504,9 +515,10 @@ def api_remove_manga(manga_id: str, delete_folder: bool = False):
     if not manga:
         raise HTTPException(status_code=404, detail='Not found')
     deleted_folder = False
-    if delete_folder and manga.get('title'):
+    folder_name = folder_for(manga)
+    if delete_folder and folder_name:
         real_storage = os.path.realpath(MANGA_STORAGE)
-        real_folder = os.path.realpath(os.path.join(MANGA_STORAGE, manga['title']))
+        real_folder = os.path.realpath(os.path.join(MANGA_STORAGE, folder_name))
         if os.path.dirname(real_folder) == real_storage and os.path.isdir(real_folder):
             shutil.rmtree(real_folder)
             deleted_folder = True
@@ -714,7 +726,9 @@ def _run_scan():
     try:
         db = Database(MANGA_DB)
         known = db.get_all_manga()
-        known_norm_titles = {Database._normalize_title(m.get('title') or ''): m['id'] for m in known}
+        # Key by the on-disk FOLDER name (not the display title) so a folder pinned under
+        # an old name isn't mistaken for an untracked folder after a MangaDex rename.
+        known_norm_titles = {Database._normalize_title(folder_for(m) or ''): m['id'] for m in known}
         known_ids = {m['id'] for m in known}
 
         if not os.path.isdir(MANGA_STORAGE):
@@ -740,7 +754,7 @@ def _run_scan():
                 time.sleep(0.35)
 
                 if manga_id and manga_id in known_ids:
-                    db.update_manga_metadata(manga_id, url, title=folder)
+                    db.update_manga_metadata(manga_id, url, title=folder, folder=folder)
                     known_norm_titles[norm_folder] = manga_id
                     continue
 
@@ -750,7 +764,7 @@ def _run_scan():
 
                 db.update_manga_metadata(
                     manga_id, url,
-                    title=folder, status='archived', kobo_sync=0,
+                    title=folder, folder=folder, status='archived', kobo_sync=0,
                     source_type='mangadex' if not url.startswith('local:') else 'local',
                 )
                 known_norm_titles[norm_folder] = manga_id
@@ -828,8 +842,8 @@ def api_dedupe():
             ratio = _title_similarity(t1, t2)
             if ratio < 0.85:
                 continue
-            c1 = len(list_chapter_files(t1))
-            c2 = len(list_chapter_files(t2))
+            c1 = len(list_chapter_files(folder_for(m1)))
+            c2 = len(list_chapter_files(folder_for(m2)))
             # Keep: more chapters; tie → prefer download_enabled; tie → prefer mangadex
             if c1 > c2:
                 keep, drop, ck, cd = m1, m2, c1, c2
@@ -845,9 +859,11 @@ def api_dedupe():
                 keep, drop, ck, cd = m2, m1, c2, c1
             drop_title = drop.get('title') or ''
             keep_title = keep.get('title') or ''
-            drop_folder = os.path.join(MANGA_STORAGE, drop_title) if drop_title else None
-            keep_folder = os.path.join(MANGA_STORAGE, keep_title) if keep_title else None
-            same_folder = bool(keep_title and drop_title and keep_title == drop_title)
+            drop_fname = folder_for(drop)
+            keep_fname = folder_for(keep)
+            drop_folder = os.path.join(MANGA_STORAGE, drop_fname) if drop_fname else None
+            keep_folder = os.path.join(MANGA_STORAGE, keep_fname) if keep_fname else None
+            same_folder = bool(keep_fname and drop_fname and keep_fname == drop_fname)
             duplicates.append({
                 'similarity': round(ratio * 100),
                 'same_folder': same_folder,
@@ -855,7 +871,7 @@ def api_dedupe():
                     'id': keep['id'], 'title': keep_title, 'url': keep['url'],
                     'source_type': keep.get('source_type'), 'status': keep['status'],
                     'chapter_count': ck, 'folder_path': keep_folder,
-                    'folder_exists': bool(keep_title and os.path.isdir(keep_folder)),
+                    'folder_exists': bool(keep_fname and os.path.isdir(keep_folder)),
                     'kobo_sync': keep.get('kobo_sync', 1),
                     'download_enabled': keep.get('download_enabled', 0),
                     'last_chapter_on_disk': keep.get('last_chapter_on_disk'),
@@ -864,7 +880,7 @@ def api_dedupe():
                     'id': drop['id'], 'title': drop_title, 'url': drop['url'],
                     'source_type': drop.get('source_type'), 'status': drop['status'],
                     'chapter_count': cd, 'folder_path': drop_folder,
-                    'folder_exists': bool(drop_title and os.path.isdir(drop_folder)),
+                    'folder_exists': bool(drop_fname and os.path.isdir(drop_folder)),
                     'kobo_sync': drop.get('kobo_sync', 1),
                     'download_enabled': drop.get('download_enabled', 0),
                     'last_chapter_on_disk': drop.get('last_chapter_on_disk'),
@@ -921,11 +937,11 @@ def api_dedupe_merge(body: DedupeMergeRequest):
     if not body.title or '/' in body.title or body.title.startswith('.'):
         raise HTTPException(status_code=400, detail='Invalid title')
 
-    # Rename folder on disk if title changed
-    old_title = keep.get('title') or ''
+    # Rename the on-disk folder if the chosen name differs from the current folder name.
+    old_folder_name = folder_for(keep) or ''
     renamed = False
-    if old_title and body.title != old_title:
-        old_folder = os.path.join(MANGA_STORAGE, old_title)
+    if old_folder_name and body.title != old_folder_name:
+        old_folder = os.path.join(MANGA_STORAGE, old_folder_name)
         new_folder = os.path.join(MANGA_STORAGE, body.title)
         real_storage = os.path.realpath(MANGA_STORAGE)
         if os.path.dirname(os.path.realpath(new_folder)) != real_storage:
@@ -941,7 +957,10 @@ def api_dedupe_merge(body: DedupeMergeRequest):
     d_ch = drop.get('last_chapter_on_disk') or 0
     best_chapter = max(k_ch, d_ch)
 
-    update_kwargs = dict(title=body.title, kobo_sync=body.kobo_sync, download_enabled=body.download_enabled)
+    # The merge consolidates under body.title for both the display title and the
+    # (now authoritative) folder name, keeping the immutable folder column in sync.
+    update_kwargs = dict(title=body.title, folder=body.title,
+                         kobo_sync=body.kobo_sync, download_enabled=body.download_enabled)
     if best_chapter:
         update_kwargs['last_chapter_on_disk'] = best_chapter
     db.update_manga_metadata(body.keep_id, keep['url'], **update_kwargs)
@@ -1211,10 +1230,11 @@ def _cbz_ext(name):
 def _cbz_resolve(manga_id, filename):
     db = get_db()
     manga = db.get_manga_by_id(manga_id)
-    if not manga or not manga.get('title'):
+    folder_name = folder_for(manga)
+    if not folder_name:
         raise HTTPException(status_code=404, detail='Not found')
     safe_name = os.path.basename(filename)
-    path = os.path.join(MANGA_STORAGE, manga['title'], safe_name)
+    path = os.path.join(MANGA_STORAGE, folder_name, safe_name)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail='File not found')
     return path, safe_name

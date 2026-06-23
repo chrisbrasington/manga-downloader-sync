@@ -78,6 +78,10 @@ class Database:
             "ALTER TABLE manga ADD COLUMN english_title TEXT",
             "ALTER TABLE manga ADD COLUMN japanese_title TEXT",
             "ALTER TABLE manga ADD COLUMN download_mode TEXT NOT NULL DEFAULT 'full'",
+            # Immutable on-disk folder name, set once at first download. The `title`
+            # column tracks the live MangaDex title (and may change), but `folder` must
+            # not, or the downloader/readers would drift to or duplicate a new folder.
+            "ALTER TABLE manga ADD COLUMN folder TEXT",
         ]:
             try:
                 conn.execute(stmt)
@@ -93,6 +97,11 @@ class Database:
         if version < 1:
             conn.execute("UPDATE manga SET download_enabled = 1 WHERE status = 'active'")
             conn.execute("PRAGMA user_version = 1")
+        if version < 2:
+            # Backfill the folder name from the existing (title-named) folders so the
+            # immutable folder key matches what is already on disk. No disk migration.
+            conn.execute("UPDATE manga SET folder = title WHERE folder IS NULL AND title IS NOT NULL")
+            conn.execute("PRAGMA user_version = 2")
         conn.commit()
         conn.close()
 
@@ -180,7 +189,7 @@ class Database:
             'title', 'cover_url', 'description', 'author', 'demographic', 'tags',
             'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type',
             'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page', 'last_read_at', 'download_enabled',
-            'alias', 'english_title', 'japanese_title', 'download_mode',
+            'alias', 'english_title', 'japanese_title', 'download_mode', 'folder',
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
 
@@ -218,6 +227,19 @@ class Database:
     def set_download_enabled(self, manga_id, value):
         conn = self._connect()
         conn.execute("UPDATE manga SET download_enabled = ? WHERE id = ?", (value, manga_id))
+        conn.commit()
+        conn.close()
+
+    def set_folder(self, manga_id, folder, force=False):
+        """Pin the immutable on-disk folder name. By default only sets it if not already
+        pinned (so the title-refresh churn can never move it); force=True for explicit
+        renames (e.g. the dedupe-merge UI)."""
+        conn = self._connect()
+        if force:
+            conn.execute("UPDATE manga SET folder = ? WHERE id = ?", (folder, manga_id))
+        else:
+            conn.execute("UPDATE manga SET folder = ? WHERE id = ? AND (folder IS NULL OR folder = '')",
+                         (folder, manga_id))
         conn.commit()
         conn.close()
 

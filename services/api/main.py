@@ -123,6 +123,7 @@ def manga_to_payload(row):
         'last_read_at': row.get('last_read_at'),
         'download_enabled': bool(row.get('download_enabled', 0)),
         'download_mode': row.get('download_mode') or 'full',
+        'manhwa': bool(row.get('manhwa', 0)),
         'alias': row.get('alias') or None,
         'folder': folder_name,
         'folder_path': folder,
@@ -405,6 +406,7 @@ class UpdateMangaRequest(BaseModel):
     clear_progress: bool | None = None
     alias: str | None = None
     last_chapter_on_disk: float | None = None
+    manhwa: int | None = None
 
 
 @app.post('/api/manga', status_code=201)
@@ -470,6 +472,8 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.set_alias(manga_id, body.alias.strip() or None)
     if body.last_chapter_on_disk is not None:
         db.update_manga_metadata(manga_id, manga['url'], last_chapter_on_disk=body.last_chapter_on_disk)
+    if body.manhwa is not None:
+        db.update_manga_metadata(manga_id, manga['url'], manhwa=1 if body.manhwa else 0)
     if body.url is not None:
         existing = db.get_manga_by_url(body.url)
         if existing and existing['id'] != manga_id:
@@ -1372,12 +1376,22 @@ def read_chapter(manga_id: str, filename: str):
     #back-btn-end {{ color:#888; font-size:13px; text-decoration:none; }}
     #back-btn-end:hover {{ color:#ccc; }}
     #loading {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#555; font-size:14px; }}
+    /* manhwa (Korean webtoon) — full-width vertical scroll instead of the paged viewer */
+    body.manhwa #viewer {{ display:block; overflow-y:auto; -webkit-overflow-scrolling:touch; }}
+    body.manhwa .hit-zone {{ display:none; }}
+    #manhwa-pages {{ width:100%; max-width:720px; margin:0 auto; }}
+    #manhwa-pages img {{ display:block; width:100%; height:auto; background:#1a1a2e; }}
+    #manhwa-next {{ position:fixed; bottom:18px; right:18px; z-index:30; display:none;
+      background:#e2b96f; color:#111; border:none; padding:11px 18px; border-radius:8px;
+      font-size:14px; font-weight:600; cursor:pointer; box-shadow:0 2px 12px rgba(0,0,0,.55); font-family:inherit; }}
+    #manhwa-next:hover {{ background:#f0cc88; }}
     @media (max-width:768px), (pointer:coarse) {{
       .bar {{ padding:0 4px; gap:0; min-height:64px; justify-content:space-between; }}
       .bar-m-hide {{ display:none; }}
       .bar a, .bar button {{ font-size:36px; padding:12px 24px; }}
       #next-ch-btn {{ font-size:19px; padding:16px 40px; width:80%; text-align:center; }}
       #back-btn-end {{ font-size:16px; }}
+      #manhwa-next {{ font-size:16px; padding:14px 20px; bottom:22px; right:14px; }}
     }}
   </style>
 </head>
@@ -1403,6 +1417,7 @@ def read_chapter(manga_id: str, filename: str):
     </div>
   </div>
   <div class="page-info" id="page-info"></div>
+  <button id="manhwa-next">Continue to next chapter →</button>
   <script>
     const MANGA_ID = {manga_id_js};
     const FILENAME = {filename_js};
@@ -1413,6 +1428,10 @@ def read_chapter(manga_id: str, filename: str):
     let chapters = [], currentChIdx = -1;
     let nextPending = null;  // on-demand: next chapter still downloading, or null
     let downloadMode = 'full';
+    let isManhwa = false;    // webtoon: full-width vertical scroll instead of paged viewer
+    let manhwaImgs = [];     // the stacked <img> elements in vertical mode
+    let manhwaEndAction = null;  // what the bottom "continue" button does
+    let markedRead = false;  // guard so reaching the end marks read only once per chapter
     let saveTimer = null;
     let activeFilename = FILENAME;
     let prefetchImg = null;  // {{ img: Image, page: number }}
@@ -1526,6 +1545,92 @@ def read_chapter(manga_id: str, filename: str):
       img.src = pageUrl(n);
     }}
 
+    // Dispatch to the paged viewer or the manhwa vertical-scroll view.
+    function displayChapter(startPage) {{
+      if (isManhwa) buildVertical(startPage);
+      else renderPage(startPage);
+    }}
+
+    // Manhwa (webtoon): stack every page full-width and let the viewer scroll.
+    function buildVertical(startPage) {{
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('page-img').style.display = 'none';
+      document.getElementById('end-screen').classList.remove('show');
+      if (prefetchImg) {{ prefetchImg.img.src = ''; prefetchImg = null; }}
+      const old = document.getElementById('manhwa-pages');
+      if (old) old.remove();
+      const cont = document.createElement('div');
+      cont.id = 'manhwa-pages';
+      manhwaImgs = [];
+      for (let n = 1; n <= totalPages; n++) {{
+        const im = document.createElement('img');
+        im.src = pageUrl(n);
+        im.alt = '';
+        cont.appendChild(im);
+        manhwaImgs.push(im);
+      }}
+      // If the last page finishes loading while the user is already at the bottom,
+      // no scroll event fires — re-check so the end button still appears.
+      if (manhwaImgs.length) manhwaImgs[manhwaImgs.length - 1].addEventListener('load', onManhwaScroll, {{ once: true }});
+      zViewer.appendChild(cont);
+      zViewer.scrollTop = 0;
+      document.getElementById('manhwa-next').style.display = 'none';
+      markedRead = false;
+      currentPage = Math.min(Math.max(startPage, 1), totalPages);
+      document.getElementById('page-info').textContent = `${{currentPage}} / ${{totalPages}}`;
+      if (currentPage > 1) scrollToPage(currentPage);
+    }}
+
+    function scrollToPage(n) {{
+      const im = manhwaImgs[n - 1];
+      if (!im) return;
+      const go = () => im.scrollIntoView({{ block: 'start' }});
+      // Image height is unknown until it loads, so defer the scroll until then.
+      if (im.complete && im.naturalWidth > 0) go();
+      else im.addEventListener('load', go, {{ once: true }});
+    }}
+
+    // Track which page is at the top of the viewport, save progress, and reveal the
+    // end-of-chapter screen once scrolled to the bottom.
+    function onManhwaScroll() {{
+      if (!isManhwa || !manhwaImgs.length) return;
+      const top = zViewer.scrollTop;
+      let p = 1;
+      for (let i = 0; i < manhwaImgs.length; i++) {{
+        if (manhwaImgs[i].offsetTop <= top + 8) p = i + 1; else break;
+      }}
+      if (p !== currentPage) {{
+        currentPage = p;
+        document.getElementById('page-info').textContent = `${{p}} / ${{totalPages}}`;
+        saveProgress(p);
+      }}
+      // Only treat "scrolled to the bottom" as the end once the last page has actually
+      // loaded — otherwise a freshly built chapter (still 0-height) reads as already-ended.
+      const last = manhwaImgs[manhwaImgs.length - 1];
+      const loaded = last && last.complete && last.naturalWidth > 0;
+      const atBottom = top + zViewer.clientHeight >= zViewer.scrollHeight - 6;
+      if (loaded && atBottom) showManhwaEnd();
+      else document.getElementById('manhwa-next').style.display = 'none';
+    }}
+
+    // A small bottom-right button shown only at the genuine end of a manhwa chapter.
+    // Scrolling back up hides it; clicking it continues to the next chapter.
+    function showManhwaEnd() {{
+      const btn = document.getElementById('manhwa-next');
+      if (currentChIdx >= 0 && currentChIdx < chapters.length - 1) {{
+        btn.textContent = 'Continue to next chapter →';
+        manhwaEndAction = () => loadChapter(chapters[currentChIdx + 1]);
+      }} else if (downloadMode === 'on_demand') {{
+        btn.textContent = nextPending ? 'Next chapter downloading — check ↻' : 'Check for new chapter ↻';
+        manhwaEndAction = () => refreshChapters();
+      }} else {{
+        if (!markedRead) {{ markRead(); markedRead = true; }}
+        btn.textContent = 'End — back to library';
+        manhwaEndAction = () => {{ window.location.href = '/'; }};
+      }}
+      btn.style.display = 'block';
+    }}
+
     async function init() {{
       document.getElementById('ch-title').textContent = DISPLAY_NAME;
       try {{
@@ -1533,6 +1638,8 @@ def read_chapter(manga_id: str, filename: str):
         chapters = (data.chapters || []).slice().sort((a, b) => extractNum(a) - extractNum(b));
         nextPending = data.next_pending || null;
         downloadMode = data.download_mode || 'full';
+        isManhwa = !!data.manhwa;
+        document.body.classList.toggle('manhwa', isManhwa);
         currentChIdx = chapters.indexOf(FILENAME);
         updateNav();
       }} catch(e) {{}}
@@ -1541,7 +1648,7 @@ def read_chapter(manga_id: str, filename: str):
         const info = await fetch(`/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(FILENAME)}}/info`).then(r => r.json());
         totalPages = info.page_count;
         const startPage = Math.min(Math.max(parseInt(new URLSearchParams(window.location.search).get('page')) || 1, 1), totalPages);
-        renderPage(startPage);
+        displayChapter(startPage);
       }} catch(e) {{
         document.getElementById('loading').textContent = 'Failed to load chapter.';
       }}
@@ -1568,7 +1675,7 @@ def read_chapter(manga_id: str, filename: str):
       try {{
         const info = await fetch(`/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(filename)}}/info`).then(r => r.json());
         totalPages = info.page_count;
-        renderPage(startAtEnd ? totalPages : 1);
+        displayChapter(startAtEnd ? totalPages : 1);
       }} catch(e) {{
         document.getElementById('loading').textContent = 'Failed to load chapter.';
       }}
@@ -1587,18 +1694,24 @@ def read_chapter(manga_id: str, filename: str):
         }}
         return;
       }}
+      if (isManhwa) {{ zViewer.scrollBy({{ top: zViewer.clientHeight * 0.9, behavior: 'smooth' }}); return; }}
       if (currentPage < totalPages) {{
         renderPage(currentPage + 1);
       }} else {{
-        endScreen.classList.add('show');
-        if (chapters.length > 0 && currentChIdx === chapters.length - 1) {{
-          if (downloadMode === 'on_demand') {{
-            showBoundary();  // next chapter may be downloading, or this may be the end
-          }} else {{
-            markRead();
-            document.getElementById('end-msg').textContent = 'End of manga';
-            document.getElementById('back-btn-end').href = '/';
-          }}
+        showEndScreen();
+      }}
+    }}
+
+    function showEndScreen() {{
+      const endScreen = document.getElementById('end-screen');
+      endScreen.classList.add('show');
+      if (chapters.length > 0 && currentChIdx === chapters.length - 1) {{
+        if (downloadMode === 'on_demand') {{
+          showBoundary();  // next chapter may be downloading, or this may be the end
+        }} else {{
+          markRead();
+          document.getElementById('end-msg').textContent = 'End of manga';
+          document.getElementById('back-btn-end').href = '/';
         }}
       }}
     }}
@@ -1627,10 +1740,14 @@ def read_chapter(manga_id: str, filename: str):
         chapters = (data.chapters || []).slice().sort((a, b) => extractNum(a) - extractNum(b));
         nextPending = data.next_pending || null;
         downloadMode = data.download_mode || 'full';
+        isManhwa = !!data.manhwa;
+        document.body.classList.toggle('manhwa', isManhwa);
         currentChIdx = chapters.indexOf(activeFilename);
         updateNav();
         if (currentChIdx >= 0 && currentChIdx < chapters.length - 1) {{
           loadChapter(chapters[currentChIdx + 1]);  // it landed — read on
+        }} else if (isManhwa) {{
+          showManhwaEnd();  // still nothing newer — refresh the bottom button label
         }} else {{
           showBoundary();
         }}
@@ -1639,7 +1756,10 @@ def read_chapter(manga_id: str, filename: str):
     function goPrev() {{
       if (document.getElementById('end-screen').classList.contains('show')) {{
         document.getElementById('end-screen').classList.remove('show');
-      }} else if (currentPage > 1) {{
+        return;
+      }}
+      if (isManhwa) {{ zViewer.scrollBy({{ top: -zViewer.clientHeight * 0.9, behavior: 'smooth' }}); return; }}
+      if (currentPage > 1) {{
         renderPage(currentPage - 1);
       }} else if (currentChIdx > 0) {{
         loadChapter(chapters[currentChIdx - 1], true);
@@ -1666,6 +1786,9 @@ def read_chapter(manga_id: str, filename: str):
     document.getElementById('refresh-ch-btn').addEventListener('click', function(e) {{
       e.preventDefault();
       refreshChapters();
+    }});
+    document.getElementById('manhwa-next').addEventListener('click', function() {{
+      if (manhwaEndAction) manhwaEndAction();
     }});
     document.addEventListener('keydown', e => {{
       if (e.key === 'Escape' && !document.fullscreenElement) {{ history.back(); return; }}
@@ -1772,6 +1895,7 @@ def read_chapter(manga_id: str, filename: str):
     let zPanX = 0, zPanY = 0;
     const zViewer = document.getElementById('viewer');
     const zImg = document.getElementById('page-img');
+    zViewer.addEventListener('scroll', onManhwaScroll, {{ passive: true }});
 
     function zApply() {{
       if (zSc <= 1) {{ zSc = 1; zTx = 0; zTy = 0; }}

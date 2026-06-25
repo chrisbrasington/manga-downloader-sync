@@ -90,9 +90,9 @@
 
       .manga-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
-      /* hide URL (col 2) and Last Ch. (col 6) — less useful for admin actions */
+      /* hide URL (col 2) and Last Ch. (col 7) — less useful for admin actions */
       .manga-table th:nth-child(2), .manga-table td:nth-child(2),
-      .manga-table th:nth-child(6), .manga-table td:nth-child(6) { display: none; }
+      .manga-table th:nth-child(7), .manga-table td:nth-child(7) { display: none; }
 
       .manga-table th, .manga-table td { padding: 8px 8px; font-size: 12px; }
       .title-cell { max-width: 120px; }
@@ -215,6 +215,7 @@
           <th>Status</th>
           <th>DL</th>
           <th>Mode</th>
+          <th>Manhwa</th>
           <th>Last Ch.</th>
           <th>Actions</th>
         </tr>
@@ -328,6 +329,7 @@
         <td><select class="inline-select status-sel">${statOpts}</select></td>
         <td><input type="checkbox" class="dl-toggle dl-chk" ${m.download_enabled ? 'checked' : ''}></td>
         <td><select class="inline-select mode-sel">${modeOpts}</select></td>
+        <td><input type="checkbox" class="sync-toggle manhwa-chk" ${m.manhwa ? 'checked' : ''}></td>
         <td><input type="number" class="inline-select ch-input" value="${esc(ch)}" placeholder="—" step="any" style="width:60px"></td>
         <td class="actions">
           <button class="btn-sm btn-thumb thumb-btn">🖼 Thumb</button>
@@ -354,6 +356,13 @@
       sel.addEventListener('change', async e => {
         const id = e.target.closest('tr').dataset.id;
         await patchManga(id, { download_mode: e.target.value });
+      });
+    });
+
+    document.querySelectorAll('.manhwa-chk').forEach(chk => {
+      chk.addEventListener('change', async e => {
+        const id = e.target.closest('tr').dataset.id;
+        await patchManga(id, { manhwa: e.target.checked ? 1 : 0 });
       });
     });
 

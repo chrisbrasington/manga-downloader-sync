@@ -95,6 +95,9 @@ class Database:
             # column tracks the live MangaDex title (and may change), but `folder` must
             # not, or the downloader/readers would drift to or duplicate a new folder.
             "ALTER TABLE manga ADD COLUMN folder TEXT",
+            # Korean webtoon ("manhwa"): tall strips read as a full-width vertical scroll
+            # rather than the paged fit-to-screen viewer used for manga.
+            "ALTER TABLE manga ADD COLUMN manhwa INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
                 conn.execute(stmt)
@@ -202,7 +205,7 @@ class Database:
             'title', 'cover_url', 'description', 'author', 'demographic', 'tags',
             'last_downloaded_at', 'last_chapter_on_disk', 'status', 'kobo_sync', 'source_type',
             'favorited', 'hidden', 'read', 'last_read_chapter', 'last_read_page', 'last_read_at', 'download_enabled',
-            'alias', 'english_title', 'japanese_title', 'download_mode', 'folder',
+            'alias', 'english_title', 'japanese_title', 'download_mode', 'folder', 'manhwa',
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed and v is not None}
 

@@ -228,6 +228,7 @@ local MangaReader = InputContainer:extend{
     next_prefetch = nil, -- { fn, info, data } first page of the next chapter, preloaded at a chapter's end
     crop = true,        -- ask the backend to trim uniform page margins
     page_width = nil,
+    rotation = 0,       -- per-chapter page rotation in degrees (0/90/180/270); reset on chapter change
     on_close = nil,     -- function(last_chapter, last_page) called when reader closes
     plugin = nil,       -- the MangaLibrary instance, for Main Menu / Close app
 }
@@ -346,6 +347,7 @@ function MangaReader:loadChapter(idx, start_page, attempt)
     attempt = attempt or 1
     self.chapter_index = idx
     self.page_data = {}   -- page cache is per-chapter
+    self.rotation = 0     -- rotation is per-chapter; a new chapter starts upright
     local fn = self.chapters[idx]
 
     -- Seamless forward turn: if we preloaded this chapter's first page while sitting
@@ -426,6 +428,7 @@ function MangaReader:setPage(n, attempt)
         height = h - bar_h,
         scale_factor = 0,          -- scale to fit, keep aspect
         center = true,
+        rotation_angle = self.rotation,  -- ImageWidget rotates first, then scales to fit
     }
     self[1] = FrameContainer:new{
         background = Blitbuffer.COLOR_WHITE,
@@ -484,6 +487,9 @@ function MangaReader:onKeyPrev() self:prevPage(); return true end
 --   down from the top edge         -> the page menu (same as a centre tap)
 --   up/down in the LEFT third      -> frontlight brightness
 --   up/down in the RIGHT third     -> warmth (red/night light)
+--   diagonal up-right (northeast)  -> full screen refresh (clear e-ink ghosting)
+-- Brightness/warmth step count scales with swipe distance: a short flick nudges
+-- by one step, a full-height drag covers the whole range.
 function MangaReader:onSwipeNav(_arg, ges)
     local dir = ges and ges.direction
     local pos = ges and ges.pos
@@ -495,17 +501,30 @@ function MangaReader:onSwipeNav(_arg, ges)
         self:nextPage()
     elseif dir == "east" then
         self:prevPage()
+    elseif dir == "northeast" then
+        self:_redraw()
     elseif dir == "north" or dir == "south" then
         local up = (dir == "north")                  -- "north" = finger moved upward
+        -- Map swipe length to a step count: ~10 steps over a full screen height,
+        -- so each step is roughly a tenth of the brightness/warmth range.
+        local dist = (ges and ges.distance) or 0
+        local steps = math.max(1, math.min(10, math.floor(dist / h * 10 + 0.5)))
+        local mag = up and steps or -steps
         if dir == "south" and y < h * 0.15 then
             self:onTapMenu()                          -- swipe down from the top edge -> menu
         elseif x < w / 3 then
-            self:_adjustBrightness(up and 1 or -1)
+            self:_adjustBrightness(mag)
         elseif x > w * 2 / 3 then
-            self:_adjustWarmth(up and 1 or -1)
+            self:_adjustWarmth(mag)
         end
     end
     return true
+end
+
+-- Full e-ink refresh: forces a flashing repaint to clear accumulated ghosting.
+function MangaReader:_redraw()
+    UIManager:setDirty(self, "full")
+    UIManager:forceRePaint()
 end
 
 function MangaReader:_notify(text)
@@ -616,8 +635,27 @@ function MangaReader:prevPage()
     end
 end
 
+-- Rotate the page by delta degrees (multiples of 90). Rotation is per-chapter
+-- and lives only in memory: it resets on chapter change and when the reader closes.
+-- The current page is cached, so re-rendering it costs no network round-trip.
+function MangaReader:_rotate(delta)
+    self.rotation = (self.rotation + delta) % 360
+    self:setPage(self.page)
+end
+
 function MangaReader:onTapMenu()
     local dialog
+    -- A row of rotation controls; "Reset rotation" appears only when rotated.
+    local rotate_buttons = {
+        { text = _("Rotate left"), callback = function()
+            UIManager:close(dialog); self:_rotate(-90) end },
+        { text = _("Rotate right"), callback = function()
+            UIManager:close(dialog); self:_rotate(90) end },
+    }
+    if self.rotation ~= 0 then
+        table.insert(rotate_buttons, { text = _("Reset rotation"), callback = function()
+            UIManager:close(dialog); self.rotation = 0; self:setPage(self.page) end })
+    end
     dialog = ButtonDialog:new{
         title = T(_("%1\nPage %2 / %3"),
             self.chapters[self.chapter_index]:gsub("%.cbz$", ""), self.page, self.total_pages),
@@ -634,6 +672,7 @@ function MangaReader:onTapMenu()
                 NetworkMgr:runWhenOnline(function() self:loadChapter(self.chapter_index + 1, 1) end) end }},
             {{ text = _("Go to page…"), callback = function()
                 UIManager:close(dialog); self:_goToPage() end }},
+            rotate_buttons,
             {{ text = _("Close Chapter"), callback = function()
                 UIManager:close(dialog); self:onClose() end }},
             {{ text = _("Main Menu"), callback = function()

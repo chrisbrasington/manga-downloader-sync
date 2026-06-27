@@ -80,7 +80,6 @@ local FILTERS = {
     { key = "lastread",    text = _("Last Read"), recent = true },
     { key = "downloading", text = _("Downloading") },
     { key = "completed",   text = _("Completed") },
-    { key = "hiatus",      text = _("Hiatus") },
     { key = "archived",    text = _("Archived") },
     { key = "read",        text = _("Read") },
     { key = "hidden",      text = _("Hidden") },
@@ -93,7 +92,6 @@ local function matchesFilter(m, key)
     if key == "lastread" then return m.last_read_at ~= nil and not m.hidden end
     if key == "downloading" then return m.download_enabled and not m.hidden end
     if key == "completed" then return m.status == "completed" and not m.hidden end
-    if key == "hiatus" then return m.status == "hiatus" and not m.hidden end
     if key == "archived" then return m.status == "archived" and not m.hidden end
     if key == "read" then return m.read and not m.hidden end
     if key == "hidden" then return m.hidden end
@@ -1116,82 +1114,92 @@ function MangaLibrary:getScreensaverUseCover()
 end
 
 function MangaLibrary:addToMainMenu(menu_items)
+    -- One tap opens the library. Settings live inside the library (and on the
+    -- start-error fallback), so they stay reachable even with no server set.
+    -- A long-press is a discoverable shortcut straight to Settings.
     menu_items.manga_library = {
         text = _("Manga Library"),
         sorting_hint = "tools",
-        sub_item_table = {
-            {
-                text = _("Open library"),
-                callback = function() self:openLibrary() end,
-            },
-            {
-                text = _("Test connection"),
-                keep_menu_open = true,
-                callback = function() self:testConnection() end,
-            },
-            {
-                text_func = function() return T(_("Server: %1"), self:getBaseUrl()) end,
-                keep_menu_open = true,
-                callback = function() self:editServer() end,
-            },
-            {
-                text_func = function()
-                    return T(_("Preload pages ahead: %1"), self:getPrefetch())
-                end,
-                sub_item_table = {
-                    self:_prefetchOption(0),
-                    self:_prefetchOption(1),
-                    self:_prefetchOption(2),
-                },
-            },
-            {
-                text = _("Crop page margins"),
-                checked_func = function() return self:getCrop() end,
-                callback = function()
-                    self.settings:saveSetting("crop_margins", not self:getCrop())
-                    self.settings:flush()
-                end,
-            },
-            {
-                text = _("Cover grid (off: text list)"),
-                checked_func = function() return self:getGridEnabled() end,
-                callback = function()
-                    self.settings:saveSetting("cover_grid", not self:getGridEnabled())
-                    self.settings:flush()
-                end,
-            },
-            {
-                text = _("Use as screensaver"),
-                checked_func = function() return self:getScreensaverEnabled() end,
-                callback = function()
-                    local on = not self:getScreensaverEnabled()
-                    self.settings:saveSetting("screensaver_enabled", on)
-                    self.settings:flush()
-                    -- Turning the master switch off restores the user's own
-                    -- screensaver right away if a reader had overridden it.
-                    if not on then self:_restoreScreensaver() end
-                end,
-            },
-            {
-                text = _("Use cover as screensaver (off: use current page)"),
-                enabled_func = function() return self:getScreensaverEnabled() end,
-                checked_func = function() return self:getScreensaverUseCover() end,
-                callback = function()
-                    self.settings:saveSetting("screensaver_use_cover", not self:getScreensaverUseCover())
-                    self.settings:flush()
-                end,
-            },
-        },
+        callback = function() self:openLibrary() end,
+        hold_callback = function() self:showSettings() end,
     }
 end
 
-function MangaLibrary:_prefetchOption(n)
-    return {
-        text = tostring(n),
-        checked_func = function() return self:getPrefetch() == n end,
-        callback = function() self.settings:saveSetting("prefetch_ahead", n); self.settings:flush() end,
-        radio = true,
-    }
+-- Full settings, shown as the plugin's own full-screen menu so it's reachable
+-- from inside the library and from the start-error fallback (no working server
+-- required). The plain Menu widget doesn't draw the main-menu checkmarks, so
+-- toggle state is shown inline in the right-hand "mandatory" column.
+function MangaLibrary:showSettings()
+    local menu
+    local function onoff(b) return b and _("On") or _("Off") end
+    local function build()
+        local server = self:getBaseUrl()
+        return {
+            { text = _("Test connection"),
+              callback = function() self:testConnection() end },
+            { text = _("Server address"),
+              mandatory = server ~= "" and server or _("(not set)"),
+              callback = function() self:editServer() end },
+            { text = _("Preload pages ahead"),
+              mandatory = tostring(self:getPrefetch()),
+              callback = function()
+                  self.settings:saveSetting("prefetch_ahead", (self:getPrefetch() + 1) % 3)
+                  self.settings:flush()
+                  menu:switchItemTable(_("Manga Library settings"), build())
+              end },
+            { text = _("Crop page margins"),
+              mandatory = onoff(self:getCrop()),
+              callback = function()
+                  self.settings:saveSetting("crop_margins", not self:getCrop())
+                  self.settings:flush()
+                  menu:switchItemTable(_("Manga Library settings"), build())
+              end },
+            { text = _("Cover grid (off: text list)"),
+              mandatory = onoff(self:getGridEnabled()),
+              callback = function()
+                  self.settings:saveSetting("cover_grid", not self:getGridEnabled())
+                  self.settings:flush()
+                  menu:switchItemTable(_("Manga Library settings"), build())
+              end },
+            { text = _("Use as screensaver"),
+              mandatory = onoff(self:getScreensaverEnabled()),
+              callback = function()
+                  local on = not self:getScreensaverEnabled()
+                  self.settings:saveSetting("screensaver_enabled", on)
+                  self.settings:flush()
+                  -- Turning the master switch off restores the user's own
+                  -- screensaver right away if a reader had overridden it.
+                  if not on then self:_restoreScreensaver() end
+                  menu:switchItemTable(_("Manga Library settings"), build())
+              end },
+            { text = _("Screensaver uses cover (off: current page)"),
+              mandatory = onoff(self:getScreensaverUseCover()),
+              callback = function()
+                  if not self:getScreensaverEnabled() then
+                      UIManager:show(InfoMessage:new{
+                          text = _("Turn on \"Use as screensaver\" first."), timeout = 2 })
+                      return
+                  end
+                  self.settings:saveSetting("screensaver_use_cover", not self:getScreensaverUseCover())
+                  self.settings:flush()
+                  menu:switchItemTable(_("Manga Library settings"), build())
+              end },
+        }
+    end
+    menu = self:_showMenu(_("Manga Library settings"), build())
+end
+
+-- Shown when the library can't open: no server configured, or the first fetch
+-- failed. Always offers a route into Settings (to set/fix the server without a
+-- working connection) plus a quick retry.
+function MangaLibrary:_showStartError(msg)
+    local menu
+    menu = self:_showMenu(_("Manga Library"), {
+        { text = _("Settings"), callback = function() self:showSettings() end },
+        { text = _("Try again"), callback = function()
+            UIManager:close(menu); self:_untrack(menu); self:openLibrary() end },
+    })
+    UIManager:show(InfoMessage:new{ text = msg })
 end
 
 function MangaLibrary:editServer()
@@ -1271,14 +1279,19 @@ function MangaLibrary:_hint(err)
 end
 
 function MangaLibrary:openLibrary()
-    if not self:_haveServer() then return end
+    -- No server yet: don't dead-end on a plain prompt — open the fallback so
+    -- Settings (and the server field) are one tap away.
+    if self:getBaseUrl() == "" then
+        self:_showStartError(_("No server set yet.\nOpen Settings to enter your manga server address (e.g. http://192.168.0.x:8684)."))
+        return
+    end
     self:_online(function()
         local api = MangaApi.new(self:getBaseUrl())
         local list, err = api:getJson("/api/manga")
         if not list then
-            UIManager:show(InfoMessage:new{ text = T(
+            self:_showStartError(T(
                 _("Could not reach the manga server.\n\nServer: %1\nError: %2\n\n%3"),
-                self:getBaseUrl(), err or _("unknown"), self:_hint(err)) })
+                self:getBaseUrl(), err or _("unknown"), self:_hint(err)))
             return
         end
         self._library = list
@@ -1333,6 +1346,10 @@ function MangaLibrary:showFilterMenu(api)
         table.insert(items, {
             text = _("Browse by tag"),
             callback = function() self:showTagMenu(api) end,
+        })
+        table.insert(items, {
+            text = _("Settings"),
+            callback = function() self:showSettings() end,
         })
         table.insert(items, {
             text = _("Connect Wi-Fi"),

@@ -19,6 +19,23 @@ class SourceUnavailable(Exception):
     pass
 
 
+def _mangadex_json(url, **kwargs):
+    """GET a MangaDex JSON endpoint, raising SourceUnavailable on a non-200 or non-JSON
+    response (maintenance, rate-limiting, a Cloudflare page) so callers leave the work
+    queued and retry, instead of crashing on response.json()'s cryptic decode error."""
+    response = requests.get(url, **kwargs)
+    if response.status_code != 200:
+        raise SourceUnavailable(
+            f'MangaDex returned HTTP {response.status_code} for {url} '
+            f'(likely maintenance or rate-limiting)')
+    try:
+        return response.json()
+    except ValueError:
+        raise SourceUnavailable(
+            f'MangaDex returned a non-JSON response for {url} '
+            f'(likely a maintenance/error page)')
+
+
 class Manga:
     def __init__(self, data):
         # print(json.dumps(data, indent=4))
@@ -193,12 +210,15 @@ class Chapter:
     def images(self):
         if not self._images:
 
-            response = requests.get(
-                    f'https://api.mangadex.org/at-home/server/{self.id}'
-                )
-
-            self._images = response.json()['chapter']['data']
-            hash = response.json()['chapter']['hash']
+            # at-home server hands back the page filenames + hash; treat a maintenance/
+            # rate-limit or malformed response as transient so the chapter stays queued.
+            block = _mangadex_json(
+                f'https://api.mangadex.org/at-home/server/{self.id}').get('chapter')
+            if not block or 'data' not in block or 'hash' not in block:
+                raise SourceUnavailable(
+                    f'MangaDex at-home server gave no page data for chapter {self.id}')
+            self._images = block['data']
+            hash = block['hash']
 
             full_images = []
             for image in self._images:
@@ -445,6 +465,12 @@ class Utility:
         for url in tqdm(images):
             i += 1
             response = requests.get(url)
+            # A page server hiccup mid-chapter is transient — bail out as
+            # SourceUnavailable so the chapter is re-queued (and re-downloaded cleanly,
+            # overwriting any partial pages) rather than marked permanently errored.
+            if response.status_code != 200:
+                raise SourceUnavailable(
+                    f'MangaDex image server returned HTTP {response.status_code} for {url}')
             _, file_extension = os.path.splitext(url)
             # pad page number (001 002 ...) so the cbz stays naturally sorted
             path = f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}"
@@ -648,16 +674,18 @@ class Utility:
         url = f'https://api.mangadex.org/manga/{manga.id}/feed'
         # print(url)
 
-        # Make the request
-        response = requests.get(
+        # Make the request (SourceUnavailable on maintenance/rate-limit, so an on-demand
+        # download leaves the chapter queued to retry rather than erroring it out).
+        data = _mangadex_json(
             url,
             params={
                 'translatedLanguage[]': 'en',
                 'order[chapter]': 'desc',
                 'limit': 500
             }
-        )
-        data = response.json()['data']
+        ).get('data')
+        if data is None:
+            raise SourceUnavailable(f'MangaDex feed for {manga.id} contained no chapter data')
 
         # print(data)
 
@@ -734,23 +762,9 @@ class Utility:
 
         # Get the single instance of the Utility class
         utility = Utility.instance()
-        response = requests.get(
-            f'https://api.mangadex.org/manga/{guid}'
-        )
-        # MangaDex periodically serves a non-JSON page (503 maintenance, Cloudflare,
-        # rate-limiting). Surface that as a clear, catchable signal instead of letting
-        # response.json() blow up with a cryptic "Expecting value" JSONDecodeError.
-        if response.status_code != 200:
-            raise SourceUnavailable(
-                f'MangaDex returned HTTP {response.status_code} for {guid} '
-                f'(likely maintenance or rate-limiting)')
-        try:
-            payload = response.json()
-        except ValueError:
-            raise SourceUnavailable(
-                f'MangaDex returned a non-JSON response for {guid} '
-                f'(likely a maintenance/error page)')
-        data = payload.get('data')
+        # _mangadex_json surfaces maintenance/rate-limit (503, non-JSON) as
+        # SourceUnavailable so the caller retries instead of crashing on .json().
+        data = _mangadex_json(f'https://api.mangadex.org/manga/{guid}').get('data')
         if not data:
             raise SourceUnavailable(f'MangaDex response for {guid} contained no manga data')
 

@@ -268,24 +268,12 @@ function MangaReader:init()
     -- unclosable blank window even if the first page fails to load. A FrameContainer
     -- MUST wrap a child widget, so we use a centred message rather than an empty frame.
     self[1] = self:_messageFrame(_("Loading…"))
-    -- Highest position viewed this session, so the jump-ahead prompt fires only when
-    -- the server's stored progress is beyond where this reader has actually been (i.e.
-    -- another device read ahead) — never on ordinary back-paging.
-    self._session_max = { idx = self.chapter_index, page = self.page }
-    self._force_progress = false   -- once true, progress writes overwrite even if behind
-    self._ahead_dismissed = false  -- ask about a jump-ahead at most once per session
+    self._force_progress = false   -- one-shot: set by "Stay here" to write a behind spot once
+    self._ahead_answered = nil     -- filename of the recorded-ahead chapter we last answered
     self._ahead_prompt_open = false
     self._reconnected = false      -- set true when Wi-Fi comes back, so the next rendered
                                    -- page checks progress immediately (not via the debounce)
     self:loadChapter(self.chapter_index, self.page)
-end
-
--- Track the furthest spot reached this session (chapter index, then page).
-function MangaReader:_bumpSessionMax(idx, page)
-    local sm = self._session_max
-    if not sm or idx > sm.idx or (idx == sm.idx and page > sm.page) then
-        self._session_max = { idx = idx, page = page }
-    end
 end
 
 -- A full-screen frame showing centred text. Used as the initial placeholder and for
@@ -433,7 +421,6 @@ function MangaReader:setPage(n, attempt)
     end
 
     self.page = n
-    self:_bumpSessionMax(self.chapter_index, n)
     local w, h = Screen:getWidth(), Screen:getHeight()
     local bar_h = self:bar_height()
     if self.image_widget then self.image_widget:free() end
@@ -746,27 +733,36 @@ function MangaReader:_flushProgress()
     self._progress_scheduled = false
     local fn = self.chapters[self.chapter_index]
     local body = { last_read_chapter = fn, last_read_page = self.page }
-    if self._force_progress then body.force_progress = true end
+    if self._force_progress then
+        -- One-shot: "Stay here" persists the current (behind) spot exactly once. If we
+        -- left this set, every later page turn would force-write and permanently stomp
+        -- whatever another device records — disabling the guard for the whole session.
+        body.force_progress = true
+        self._force_progress = false
+    end
     local resp = self.api:patch("/api/manga/" .. urlencode(self.manga.id), body)
     -- The server refuses a write that's behind the stored progress and hands back where
-    -- that progress is (resp.ahead). Offer to jump there, but only once per session and
-    -- only when it's beyond anything we've seen — so back-paging never triggers it.
+    -- that progress is (resp.ahead). Prompt to jump there when the recorded progress is
+    -- in a LATER chapter than the one we're reading — that's the cross-device case. We
+    -- ignore same-chapter differences (those are our own back-paging) and don't re-ask
+    -- about a recorded chapter we already answered for.
     if self._closing or type(resp) ~= "table" or not resp.ahead then return end
-    if self._ahead_dismissed or self._ahead_prompt_open then return end
+    if self._ahead_prompt_open then return end
     local a_ch, a_pg = resp.ahead.chapter, resp.ahead.page or 1
+    if self._ahead_answered == a_ch then return end
     local a_idx
     for i, cfn in ipairs(self.chapters) do
         if cfn == a_ch then a_idx = i break end
     end
-    if not a_idx then return end  -- a chapter we don't have on this server's list
-    local sm = self._session_max or { idx = self.chapter_index, page = self.page }
-    if a_idx < sm.idx or (a_idx == sm.idx and a_pg <= sm.page) then return end
+    -- a_idx nil = the recorded chapter isn't in our (possibly stale) list yet; still a
+    -- later chapter, so prompt and let "Jump ahead" refresh the list to find it.
+    if a_idx and a_idx <= self.chapter_index then return end
     self:_promptJumpAhead(a_idx, a_ch, a_pg)
 end
 
--- Another device read further than this reader has. Offer to jump to it, or stay put
--- (which forces the current spot to stick so we don't keep re-asking or get dragged
--- forward). Asked at most once per reading session.
+-- Another device recorded progress in a later chapter. Offer to jump to it, or stay put
+-- (which writes the current spot once so it sticks). We won't re-ask for this same
+-- recorded chapter again; if the other device later moves to a *newer* chapter, we will.
 function MangaReader:_promptJumpAhead(idx, fn, page)
     self._ahead_prompt_open = true
     local dialog
@@ -778,16 +774,33 @@ function MangaReader:_promptJumpAhead(idx, fn, page)
             {{ text = _("Jump ahead"), callback = function()
                 UIManager:close(dialog)
                 self._ahead_prompt_open = false
-                self._ahead_dismissed = true
-                self:_bumpSessionMax(idx, page)
-                NetworkMgr:runWhenOnline(function() self:loadChapter(idx, page) end)
+                self._ahead_answered = fn
+                NetworkMgr:runWhenOnline(function()
+                    local j = idx
+                    if not j then
+                        -- Our chapter list predated this chapter — refresh and re-find it.
+                        local detail = self.api:getJson("/api/manga/" .. urlencode(self.manga.id))
+                        if detail and detail.chapters then
+                            self.chapters = detail.chapters
+                            for i, cfn in ipairs(self.chapters) do
+                                if cfn == fn then j = i break end
+                            end
+                        end
+                    end
+                    if j then
+                        self:loadChapter(j, page)
+                    else
+                        UIManager:show(InfoMessage:new{
+                            text = _("That chapter isn't available on this device yet.") })
+                    end
+                end)
             end }},
             {{ text = _("Stay here"), callback = function()
                 UIManager:close(dialog)
                 self._ahead_prompt_open = false
-                self._ahead_dismissed = true
+                self._ahead_answered = fn
                 self._force_progress = true
-                self:_scheduleProgress()  -- persist where we actually are, now forced
+                self:_scheduleProgress()  -- persist where we actually are, written once
             end }},
         },
     }

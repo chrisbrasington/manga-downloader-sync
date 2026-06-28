@@ -268,7 +268,22 @@ function MangaReader:init()
     -- unclosable blank window even if the first page fails to load. A FrameContainer
     -- MUST wrap a child widget, so we use a centred message rather than an empty frame.
     self[1] = self:_messageFrame(_("Loading…"))
+    -- Highest position viewed this session, so the jump-ahead prompt fires only when
+    -- the server's stored progress is beyond where this reader has actually been (i.e.
+    -- another device read ahead) — never on ordinary back-paging.
+    self._session_max = { idx = self.chapter_index, page = self.page }
+    self._force_progress = false   -- once true, progress writes overwrite even if behind
+    self._ahead_dismissed = false  -- ask about a jump-ahead at most once per session
+    self._ahead_prompt_open = false
     self:loadChapter(self.chapter_index, self.page)
+end
+
+-- Track the furthest spot reached this session (chapter index, then page).
+function MangaReader:_bumpSessionMax(idx, page)
+    local sm = self._session_max
+    if not sm or idx > sm.idx or (idx == sm.idx and page > sm.page) then
+        self._session_max = { idx = idx, page = page }
+    end
 end
 
 -- A full-screen frame showing centred text. Used as the initial placeholder and for
@@ -416,6 +431,7 @@ function MangaReader:setPage(n, attempt)
     end
 
     self.page = n
+    self:_bumpSessionMax(self.chapter_index, n)
     local w, h = Screen:getWidth(), Screen:getHeight()
     local bar_h = self:bar_height()
     if self.image_widget then self.image_widget:free() end
@@ -716,11 +732,57 @@ end
 function MangaReader:_flushProgress()
     self._progress_scheduled = false
     local fn = self.chapters[self.chapter_index]
-    self.api:patch("/api/manga/" .. urlencode(self.manga.id),
-        { last_read_chapter = fn, last_read_page = self.page })
+    local body = { last_read_chapter = fn, last_read_page = self.page }
+    if self._force_progress then body.force_progress = true end
+    local resp = self.api:patch("/api/manga/" .. urlencode(self.manga.id), body)
+    -- The server refuses a write that's behind the stored progress and hands back where
+    -- that progress is (resp.ahead). Offer to jump there, but only once per session and
+    -- only when it's beyond anything we've seen — so back-paging never triggers it.
+    if self._closing or type(resp) ~= "table" or not resp.ahead then return end
+    if self._ahead_dismissed or self._ahead_prompt_open then return end
+    local a_ch, a_pg = resp.ahead.chapter, resp.ahead.page or 1
+    local a_idx
+    for i, cfn in ipairs(self.chapters) do
+        if cfn == a_ch then a_idx = i break end
+    end
+    if not a_idx then return end  -- a chapter we don't have on this server's list
+    local sm = self._session_max or { idx = self.chapter_index, page = self.page }
+    if a_idx < sm.idx or (a_idx == sm.idx and a_pg <= sm.page) then return end
+    self:_promptJumpAhead(a_idx, a_ch, a_pg)
+end
+
+-- Another device read further than this reader has. Offer to jump to it, or stay put
+-- (which forces the current spot to stick so we don't keep re-asking or get dragged
+-- forward). Asked at most once per reading session.
+function MangaReader:_promptJumpAhead(idx, fn, page)
+    self._ahead_prompt_open = true
+    local dialog
+    dialog = ButtonDialog:new{
+        title = T(_("Read further on another device:\n%1, page %2.\nJump there?"),
+            fn:gsub("%.cbz$", ""), page),
+        title_align = "center",
+        buttons = {
+            {{ text = _("Jump ahead"), callback = function()
+                UIManager:close(dialog)
+                self._ahead_prompt_open = false
+                self._ahead_dismissed = true
+                self:_bumpSessionMax(idx, page)
+                NetworkMgr:runWhenOnline(function() self:loadChapter(idx, page) end)
+            end }},
+            {{ text = _("Stay here"), callback = function()
+                UIManager:close(dialog)
+                self._ahead_prompt_open = false
+                self._ahead_dismissed = true
+                self._force_progress = true
+                self:_scheduleProgress()  -- persist where we actually are, now forced
+            end }},
+        },
+    }
+    UIManager:show(dialog)
 end
 
 function MangaReader:onClose()
+    self._closing = true  -- suppress the jump-ahead prompt on the closing flush
     if self._progress_scheduled then
         UIManager:unschedule(self._flush_progress_fn)
         self:_flushProgress()

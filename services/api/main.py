@@ -403,6 +403,7 @@ class UpdateMangaRequest(BaseModel):
     read: int | None = None
     last_read_chapter: str | None = None
     last_read_page: int | None = None
+    force_progress: bool | None = None
     clear_progress: bool | None = None
     alias: str | None = None
     last_chapter_on_disk: float | None = None
@@ -429,6 +430,7 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
     manga = db.get_manga_by_id(manga_id)
     if not manga:
         raise HTTPException(status_code=404, detail='Not found')
+    ahead = None  # set below if a progress write was refused for being behind
     if body.status is not None:
         if body.status not in ('active', 'completed', 'hiatus'):
             raise HTTPException(status_code=400, detail='Invalid status')
@@ -449,25 +451,40 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.update_manga_metadata(manga_id, manga['url'], read=body.read)
     if body.clear_progress:
         db.clear_reading_progress(manga_id)
-    if body.last_read_chapter is not None:
-        db.update_manga_metadata(manga_id, manga['url'], last_read_chapter=body.last_read_chapter)
-    if body.last_read_page is not None:
-        db.update_manga_metadata(manga_id, manga['url'], last_read_page=body.last_read_page)
-    # Stamp when reading progress was last written (UTC, matching the DB's datetime('now')
-    # format) so clients can offer a most-recently-read view. Both the webapp reader and
-    # the KOReader plugin PATCH progress, so stamping here covers both.
     if body.last_read_chapter is not None or body.last_read_page is not None:
-        db.update_manga_metadata(manga_id, manga['url'],
-                                 last_read_at=time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime()))
-    # Read-ahead for on-demand manga: keep a bounded buffer of chapters ahead of the one
-    # being read. queue_next_chapters is idempotent (it queues only the still-remote
-    # chapters in the next-N-by-number window), so being called on every page-turn PATCH
-    # maintains the buffer without marching ahead. Just flips manifest rows to 'queued' —
-    # a fast DB write, no downloading in the request path.
-    if body.last_read_chapter is not None and (manga.get('download_mode') or 'full') == 'on_demand':
-        num = chapter_sort_key(body.last_read_chapter)
-        if num >= 0:
-            db.queue_next_chapters(manga_id, num, count=4)
+        # Advance-only progress. An offline device can resume at a stale page and then
+        # reconnect after another device has already read further; without this guard
+        # its lower position would stomp the higher one. So we only move the saved
+        # resume point forward — unless the client sets force_progress, which is how it
+        # says "the user chose to stay/re-read here, write it even though it's behind".
+        # When we refuse, we hand back where the real progress is (`ahead`) so the
+        # client can offer to jump there. Position order is (chapter number, page).
+        in_ch = body.last_read_chapter if body.last_read_chapter is not None else manga.get('last_read_chapter')
+        in_pg = body.last_read_page if body.last_read_page is not None else (manga.get('last_read_page') or 1)
+        stored_ch = manga.get('last_read_chapter')
+        stored_pg = manga.get('last_read_page') or 1
+        in_pos = (chapter_sort_key(in_ch) if in_ch else -1.0, in_pg)
+        stored_pos = (chapter_sort_key(stored_ch) if stored_ch else -1.0, stored_pg)
+        if body.force_progress or stored_ch is None or in_pos >= stored_pos:
+            if body.last_read_chapter is not None:
+                db.update_manga_metadata(manga_id, manga['url'], last_read_chapter=body.last_read_chapter)
+            if body.last_read_page is not None:
+                db.update_manga_metadata(manga_id, manga['url'], last_read_page=body.last_read_page)
+            # Stamp when reading progress was last written (UTC, matching the DB's
+            # datetime('now') format) so clients can offer a most-recently-read view.
+            db.update_manga_metadata(manga_id, manga['url'],
+                                     last_read_at=time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime()))
+            # Read-ahead for on-demand manga: keep a bounded buffer of chapters ahead of
+            # the one being read. queue_next_chapters is idempotent (it queues only the
+            # still-remote chapters in the next-N-by-number window), so being called on
+            # every page-turn PATCH maintains the buffer without marching ahead. Just
+            # flips manifest rows to 'queued' — a fast DB write, no downloading here.
+            if body.last_read_chapter is not None and (manga.get('download_mode') or 'full') == 'on_demand':
+                num = chapter_sort_key(body.last_read_chapter)
+                if num >= 0:
+                    db.queue_next_chapters(manga_id, num, count=4)
+        else:
+            ahead = {'chapter': stored_ch, 'page': stored_pg}
     if body.alias is not None:
         db.set_alias(manga_id, body.alias.strip() or None)
     if body.last_chapter_on_disk is not None:
@@ -511,7 +528,7 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.update_manga_metadata(manga_id, body.url, source_type=new_source)
         if new_source == 'mangadex' and not has_thumbnail(manga_id):
             background_tasks.add_task(fetch_and_save_thumbnail, manga_id)
-    return {'ok': True}
+    return {'ok': True, 'ahead': ahead}
 
 
 @app.delete('/api/manga/{manga_id}')
@@ -1433,6 +1450,11 @@ def read_chapter(manga_id: str, filename: str):
     let manhwaEndAction = null;  // what the bottom "continue" button does
     let markedRead = false;  // guard so reaching the end marks read only once per chapter
     let saveTimer = null;
+    // Progress-divergence handling: only prompt to jump ahead when the server's stored
+    // progress is beyond anything THIS session has reached (another device read on), and
+    // ask at most once. "Stay here" sets progressForced so our spot overwrites theirs.
+    let sessionMaxChIdx = -1, sessionMaxPage = 0;
+    let progressForced = false, aheadDismissed = false;
     let activeFilename = FILENAME;
     let prefetchImg = null;  // {{ img: Image, page: number }}
     let renderSeq = 0;
@@ -1441,13 +1463,42 @@ def read_chapter(manga_id: str, filename: str):
       return `/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(activeFilename)}}/${{n}}`;
     }}
 
+    function bumpSessionMax(idx, page) {{
+      if (idx > sessionMaxChIdx || (idx === sessionMaxChIdx && page > sessionMaxPage)) {{
+        sessionMaxChIdx = idx; sessionMaxPage = page;
+      }}
+    }}
+
+    // The server refused a write for being behind the stored progress and told us where
+    // that progress is. Offer to jump there — but only if it's beyond anything we've seen
+    // this session (so back-paging never asks), and only once.
+    function maybePromptAhead(ahead) {{
+      const aIdx = chapters.indexOf(ahead.chapter);
+      if (aIdx < 0) return;
+      const aPage = ahead.page || 1;
+      if (aIdx < sessionMaxChIdx || (aIdx === sessionMaxChIdx && aPage <= sessionMaxPage)) return;
+      aheadDismissed = true;  // ask once per session, whatever the answer
+      const label = ahead.chapter.replace(/\.cbz$/, '');
+      if (confirm(`You've read further on another device:\\n${{label}}, page ${{aPage}}.\\n\\nJump there?`)) {{
+        window.location.href = `/read/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(ahead.chapter)}}?page=${{aPage}}`;
+      }} else {{
+        progressForced = true;      // honor "stay here": our spot overwrites theirs
+        saveProgress(currentPage);
+      }}
+    }}
+
     function saveProgress(page) {{
+      bumpSessionMax(currentChIdx, page);
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {{
+        const body = {{last_read_chapter: activeFilename, last_read_page: page}};
+        if (progressForced) body.force_progress = true;
         fetch(`/api/manga/${{encodeURIComponent(MANGA_ID)}}`, {{
           method: 'PATCH',
           headers: {{'Content-Type': 'application/json'}},
-          body: JSON.stringify({{last_read_chapter: activeFilename, last_read_page: page}})
+          body: JSON.stringify(body)
+        }}).then(r => r.json()).then(d => {{
+          if (d && d.ahead && !aheadDismissed) maybePromptAhead(d.ahead);
         }}).catch(() => {{}});
       }}, 800);
     }}
@@ -1648,6 +1699,7 @@ def read_chapter(manga_id: str, filename: str):
         const info = await fetch(`/cbz/${{encodeURIComponent(MANGA_ID)}}/${{encodeURIComponent(FILENAME)}}/info`).then(r => r.json());
         totalPages = info.page_count;
         const startPage = Math.min(Math.max(parseInt(new URLSearchParams(window.location.search).get('page')) || 1, 1), totalPages);
+        bumpSessionMax(currentChIdx, startPage);  // start point isn't "behind" anything
         displayChapter(startPage);
       }} catch(e) {{
         document.getElementById('loading').textContent = 'Failed to load chapter.';

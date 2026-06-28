@@ -11,6 +11,14 @@ import sqlite3, datetime, uuid, json
 from classes.database import Database
 from collections import defaultdict
 
+
+class SourceUnavailable(Exception):
+    """The upstream source (e.g. MangaDex) is temporarily unreachable or returned a
+    non-data response — maintenance, rate-limiting, a Cloudflare page, etc. Transient:
+    callers should retry later rather than treat the item as permanently failed."""
+    pass
+
+
 class Manga:
     def __init__(self, data):
         # print(json.dumps(data, indent=4))
@@ -729,7 +737,22 @@ class Utility:
         response = requests.get(
             f'https://api.mangadex.org/manga/{guid}'
         )
-        data = response.json()['data']
+        # MangaDex periodically serves a non-JSON page (503 maintenance, Cloudflare,
+        # rate-limiting). Surface that as a clear, catchable signal instead of letting
+        # response.json() blow up with a cryptic "Expecting value" JSONDecodeError.
+        if response.status_code != 200:
+            raise SourceUnavailable(
+                f'MangaDex returned HTTP {response.status_code} for {guid} '
+                f'(likely maintenance or rate-limiting)')
+        try:
+            payload = response.json()
+        except ValueError:
+            raise SourceUnavailable(
+                f'MangaDex returned a non-JSON response for {guid} '
+                f'(likely a maintenance/error page)')
+        data = payload.get('data')
+        if not data:
+            raise SourceUnavailable(f'MangaDex response for {guid} contained no manga data')
 
         manga = Manga(data)
 

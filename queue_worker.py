@@ -17,8 +17,12 @@ and by step 1 above. The worker never bulk-downloads — that is the whole point
 """
 import os, time, traceback
 
-from classes.parser import Utility
+from classes.parser import Utility, SourceUnavailable
 from classes.database import Database
+
+# Set while the upstream source is down, so we log the outage once rather than every
+# poll. Cleared on the next successful download.
+_source_unavailable_logged = False
 
 POLL_SECONDS = int(os.environ.get('QUEUE_POLL_SECONDS', '30'))
 # How often (in poll loops) to re-fetch feeds for existing on-demand manga to pick up
@@ -61,6 +65,7 @@ def refresh_manifests(util, db):
 
 def process_one(util, db):
     """Download a single queued chapter. Returns True if a chapter was processed."""
+    global _source_unavailable_logged
     row = db.get_queued_chapter()
     if not row:
         return False
@@ -116,7 +121,17 @@ def process_one(util, db):
         db.update_manga_metadata(manga.id, m['url'], title=manga.title, last_chapter_on_disk=last_ch)
 
         db.set_chapter_status(manga_id, num, 'available')
+        _source_unavailable_logged = False  # source is clearly back
         print(f'[queue-worker] downloaded "{manga.title}" chapter {num}', flush=True)
+    except SourceUnavailable as e:
+        # Transient upstream outage (e.g. MangaDex maintenance). Put the chapter back on
+        # the queue so it downloads once the source returns, and log one readable line
+        # for the outage instead of a traceback every poll cycle.
+        db.set_chapter_status(manga_id, num, 'queued')
+        if not _source_unavailable_logged:
+            print(f'[queue-worker] {e} — leaving chapter {num} queued; will retry when the source is back', flush=True)
+            _source_unavailable_logged = True
+        return False  # stop draining this cycle; retry after the poll interval
     except Exception as e:
         traceback.print_exc()
         db.set_chapter_status(manga_id, num, 'error', str(e)[:500])

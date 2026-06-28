@@ -275,6 +275,8 @@ function MangaReader:init()
     self._force_progress = false   -- once true, progress writes overwrite even if behind
     self._ahead_dismissed = false  -- ask about a jump-ahead at most once per session
     self._ahead_prompt_open = false
+    self._reconnected = false      -- set true when Wi-Fi comes back, so the next rendered
+                                   -- page checks progress immediately (not via the debounce)
     self:loadChapter(self.chapter_index, self.page)
 end
 
@@ -352,7 +354,7 @@ function MangaReader:_reconnectThen(retry)
         or _("Connection lost — reconnecting Wi-Fi…"))
     UIManager:setDirty(self, "ui")
     UIManager:forceRePaint()
-    NetworkMgr:runWhenOnline(function() retry() end)
+    NetworkMgr:runWhenOnline(function() self._reconnected = true; retry() end)
 end
 
 function MangaReader:loadChapter(idx, start_page, attempt)
@@ -456,7 +458,18 @@ function MangaReader:setPage(n, attempt)
         },
     }
     UIManager:setDirty(self, "full")
-    self:_scheduleProgress()
+    if self._reconnected then
+        -- First page rendered after Wi-Fi came back. Check progress NOW rather than on
+        -- the idle debounce: the reader may turn straight into already-cached pages and
+        -- never go idle, so the debounced flush (and its behind-check) could be deferred
+        -- indefinitely. Paint the page first, then flush — this is where the jump-ahead
+        -- prompt fires when another device read past us while we were offline.
+        self._reconnected = false
+        UIManager:forceRePaint()
+        self:_flushProgress()
+    else
+        self:_scheduleProgress()
+    end
 
     -- Let the plugin update the device sleep screen with the cover or this page.
     if self.plugin then self.plugin:onReaderPage(self.api, self.manga, data) end

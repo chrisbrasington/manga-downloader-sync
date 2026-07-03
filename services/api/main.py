@@ -1942,12 +1942,20 @@ def read_chapter(manga_id: str, filename: str):
 
     // Pinch zoom + single-finger pan
     let zSc = 1, zTx = 0, zTy = 0;
-    let zDistStart = 0, zScStart = 1, zTxStart = 0, zTyStart = 0;
-    let zMidXStart = 0, zMidYStart = 0;
-    let zPanX = 0, zPanY = 0;
+    let zPd = null;              // previous pinch distance
+    let zPanX = 0, zPanY = 0;    // last single-finger position
+    // A pinch isn't "over" until every finger lifts. Hold a lock for a short
+    // tolerance after the last finger so a lingering finger from an uneven
+    // release can't snap into a pan. Pan needs a fresh single-finger touch.
+    let zPinchLock = false, zPinchTimer = null;
     const zViewer = document.getElementById('viewer');
     const zImg = document.getElementById('page-img');
     zViewer.addEventListener('scroll', onManhwaScroll, {{ passive: true }});
+
+    function zReleasePinchLock() {{
+      clearTimeout(zPinchTimer);
+      zPinchTimer = setTimeout(() => {{ zPinchLock = false; }}, 250);
+    }}
 
     function zApply() {{
       if (zSc <= 1) {{ zSc = 1; zTx = 0; zTy = 0; }}
@@ -1966,13 +1974,9 @@ def read_chapter(manga_id: str, filename: str):
     function zReset() {{ zSc = 1; zTx = 0; zTy = 0; zApply(); }}
 
     zViewer.addEventListener('touchstart', e => {{
-      if (e.touches.length === 2) {{
-        const t0 = e.touches[0], t1 = e.touches[1];
-        zDistStart = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
-        zScStart = zSc; zTxStart = zTx; zTyStart = zTy;
-        zMidXStart = (t0.clientX + t1.clientX) / 2;
-        zMidYStart = (t0.clientY + t1.clientY) / 2;
-      }} else if (e.touches.length === 1 && zSc > 1) {{
+      if (e.touches.length >= 2) {{
+        zPd = null; zPinchLock = true; clearTimeout(zPinchTimer);
+      }} else if (e.touches.length === 1 && zSc > 1 && !zPinchLock) {{
         zPanX = e.touches[0].clientX;
         zPanY = e.touches[0].clientY;
       }}
@@ -1982,12 +1986,27 @@ def read_chapter(manga_id: str, filename: str):
       if (e.touches.length === 2) {{
         const t0 = e.touches[0], t1 = e.touches[1];
         const d = Math.hypot(t0.clientX - t1.clientX, t0.clientY - t1.clientY);
-        zSc = Math.max(1, Math.min(5, zScStart * d / zDistStart));
-        zTx = zTxStart + (t0.clientX + t1.clientX) / 2 - zMidXStart;
-        zTy = zTyStart + (t0.clientY + t1.clientY) / 2 - zMidYStart;
-        zApply();
+        if (zPd !== null) {{
+          const newSc = Math.max(1, Math.min(5, zSc * d / zPd));
+          // Focal-point zoom: keep the point between the fingers anchored so the
+          // image doesn't jump. Transform maps a local point to
+          // centre + s*p + T, so for scale ratio r = newSc/zSc and focal offset
+          // F from centre: T' = F*(1 - r) + r*T.
+          const r = newSc / zSc;
+          const rect = zViewer.getBoundingClientRect();
+          const fx = (t0.clientX + t1.clientX) / 2 - (rect.left + rect.width / 2);
+          const fy = (t0.clientY + t1.clientY) / 2 - (rect.top + rect.height / 2);
+          zTx = fx * (1 - r) + r * zTx;
+          zTy = fy * (1 - r) + r * zTy;
+          zSc = newSc;
+          zApply();
+        }}
+        zPd = d;
         e.preventDefault();
       }} else if (e.touches.length === 1 && zSc > 1) {{
+        // Keep the anchor current while the pinch lock holds so releasing the
+        // lock mid-touch can't produce a delta jump. Pan needs a fresh finger.
+        if (zPinchLock) {{ zPanX = e.touches[0].clientX; zPanY = e.touches[0].clientY; return; }}
         zTx += e.touches[0].clientX - zPanX;
         zTy += e.touches[0].clientY - zPanY;
         zPanX = e.touches[0].clientX;
@@ -1997,11 +2016,17 @@ def read_chapter(manga_id: str, filename: str):
       }}
     }}, {{ passive: false }});
 
-    zViewer.addEventListener('touchend', e => {{
-      if (e.touches.length === 0 && zSc < 1.05) zReset();
+    function zOnTouchEnd(e) {{
+      if (e.touches.length < 2) zPd = null;
+      if (e.touches.length === 0) {{
+        if (zPinchLock) zReleasePinchLock();
+        if (zSc < 1.05) zReset();
+      }}
       // Block hit-zone click while zoomed so single-finger pan doesn't flip pages
       if (zSc > 1.05 && e.touches.length === 0) e.preventDefault();
-    }}, {{ passive: false }});
+    }}
+    zViewer.addEventListener('touchend', zOnTouchEnd, {{ passive: false }});
+    zViewer.addEventListener('touchcancel', zOnTouchEnd, {{ passive: false }});
 
     // Swipe right from left edge → exit fullscreen (only when not zoomed)
     let tsX = 0, tsY = 0;

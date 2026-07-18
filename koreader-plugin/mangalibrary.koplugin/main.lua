@@ -807,6 +807,13 @@ function MangaReader:_promptJumpAhead(idx, fn, page)
     UIManager:show(dialog)
 end
 
+-- Safety net: if the reader is torn down by something other than our own onClose
+-- (app teardown, a UIManager:close from elsewhere), still put the screensaver back.
+-- Idempotent with onClose's restore — _restoreScreensaver no-ops once _saved_ss is gone.
+function MangaReader:onCloseWidget()
+    if self.plugin then self.plugin:_restoreScreensaver() end
+end
+
 function MangaReader:onClose()
     self._closing = true  -- suppress the jump-ahead prompt on the closing flush
     if self._progress_scheduled then
@@ -1159,7 +1166,36 @@ local MangaLibrary = WidgetContainer:extend{
 
 function MangaLibrary:init()
     self.settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/mangalibrary.lua")
+    -- Undo a screensaver override that outlived its reader last run (app killed,
+    -- battery died, or a crash before onClose could restore it).
+    self:_recoverScreensaver()
     self.ui.menu:registerToMainMenu(self)
+end
+
+-- The single sleep-screen image file this plugin writes and points KOReader at.
+function MangaLibrary:_sleepCoverPath()
+    return DataStorage:getSettingsDir() .. "/mangalibrary_sleep_cover.jpg"
+end
+
+-- On startup, if the device sleep screen is still pointed at our image file, the
+-- last run overrode the screensaver and never restored it. Put the user's saved
+-- settings back from the durable copy written when we first overrode.
+function MangaLibrary:_recoverScreensaver()
+    if G_reader_settings:readSetting("screensaver_document_cover") ~= self:_sleepCoverPath() then
+        return   -- our override isn't active; nothing to undo
+    end
+    local saved = self.settings:readSetting("saved_screensaver")
+    if saved then
+        G_reader_settings:saveSetting("screensaver_type", saved.type)
+        G_reader_settings:saveSetting("screensaver_document_cover", saved.cover)
+    else
+        -- No durable record (override predates this recovery code). Best effort:
+        -- fall back to KOReader's current book cover and drop our image path.
+        G_reader_settings:saveSetting("screensaver_type", "cover")
+        G_reader_settings:delSetting("screensaver_document_cover")
+    end
+    self.settings:delSetting("saved_screensaver")
+    self.settings:flush()
 end
 
 function MangaLibrary:getBaseUrl()
@@ -1665,29 +1701,34 @@ end
 -- pointing at it (KOReader detects it's an image file and shows it directly).
 function MangaLibrary:_useImageScreensaver(data)
     if not data or #data == 0 then return end   -- nothing to show; leave sleep screen alone
-    local path = DataStorage:getSettingsDir() .. "/mangalibrary_sleep_cover.jpg"
+    local path = self:_sleepCoverPath()
     local f = io.open(path, "wb")
     if not f then return end
     f:write(data)
     f:close()
     -- Capture the user's real setting once (guard against re-capturing our own value
-    -- if a reader is opened again before the previous one restored).
+    -- if a reader is opened again before the previous one restored), and persist it
+    -- so a crash/kill before restore can be recovered on the next launch.
     if not self._saved_ss then
         self._saved_ss = {
             type = G_reader_settings:readSetting("screensaver_type"),
             cover = G_reader_settings:readSetting("screensaver_document_cover"),
         }
+        self.settings:saveSetting("saved_screensaver", self._saved_ss)
+        self.settings:flush()
     end
     G_reader_settings:saveSetting("screensaver_type", "document_cover")
     G_reader_settings:saveSetting("screensaver_document_cover", path)
 end
 
--- Put the user's pre-reading screensaver settings back.
+-- Put the user's pre-reading screensaver settings back and drop the durable copy.
 function MangaLibrary:_restoreScreensaver()
     if not self._saved_ss then return end
     G_reader_settings:saveSetting("screensaver_type", self._saved_ss.type)
     G_reader_settings:saveSetting("screensaver_document_cover", self._saved_ss.cover)
     self._saved_ss = nil
+    self.settings:delSetting("saved_screensaver")
+    self.settings:flush()
 end
 
 -- Remember the most recently read manga/chapter/page on the device, for the

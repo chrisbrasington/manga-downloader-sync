@@ -5,8 +5,8 @@ Runs continuously in the downloader image (which has classes/parser.py and all t
 download deps). The daily program.py handles full-download manga; this worker handles
 manga with download_mode='on_demand':
 
-  1. For a newly added on-demand manga (no manifest yet): fetch the MangaDex feed,
-     build the per-chapter manifest, and queue its FIRST chapter.
+  1. For a newly added on-demand manga (no manifest yet): fetch the source feed
+     (MangaDex or danke.moe), build the per-chapter manifest, and queue its FIRST chapter.
   2. Periodically refresh manifests so newly published chapters become visible
      (they are only downloaded when the reader requests them, never in bulk).
   3. Drain the work queue: download one queued chapter at a time and mark it
@@ -33,7 +33,7 @@ MANIFEST_REFRESH_EVERY = int(os.environ.get('QUEUE_MANIFEST_REFRESH_LOOPS', '120
 def discover_new_manga(util, db):
     """Build manifests for on-demand manga that don't have one yet and queue chapter 1."""
     for m in db.get_on_demand_manga():
-        if m.get('source_type') != 'mangadex':
+        if m.get('source_type') not in ('mangadex', 'danke'):
             continue
         if db.manifest_count(m['id']) > 0:
             continue
@@ -53,7 +53,7 @@ def discover_new_manga(util, db):
 def refresh_manifests(util, db):
     """Refresh manifests for existing on-demand manga (no auto-download)."""
     for m in db.get_on_demand_manga():
-        if m.get('source_type') != 'mangadex':
+        if m.get('source_type') not in ('mangadex', 'danke'):
             continue
         try:
             manga = util.get_manga(m['url'])

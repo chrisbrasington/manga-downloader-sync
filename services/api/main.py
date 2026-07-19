@@ -215,6 +215,46 @@ def fetch_and_save_titles(manga_id, db_path=None):
         print(f'titles fetch failed for {manga_id}: {e}')
 
 
+def fetch_and_save_danke_meta(manga_id, db_path=None):
+    """Title/description/author/cover for a danke.moe (guyamoe) series — the danke
+    counterpart of the MangaDex thumbnail+titles tasks, so a newly added entry shows
+    up as a real card instead of a bare URL."""
+    db = Database(db_path or MANGA_DB)
+    manga = db.get_manga_by_id(manga_id)
+    if not manga or manga.get('source_type') != 'danke':
+        return
+    m = re.search(r'danke\.moe/read/manga/([^/?#]+)', manga.get('url', ''))
+    if not m:
+        return
+    slug = m.group(1)
+    try:
+        resp = http_requests.get(f'https://danke.moe/api/series/{slug}/', timeout=10)
+        data = resp.json()
+        updates = {}
+        if data.get('title'):
+            updates['title'] = data['title']
+            updates['english_title'] = data['title']
+        desc = re.sub(r'<[^>]+>', ' ', data.get('description') or '')
+        desc = re.sub(r'\s+', ' ', desc).strip()
+        if desc:
+            updates['description'] = desc
+        if data.get('author'):
+            updates['author'] = data['author']
+        if updates:
+            db.update_manga_metadata(manga_id, manga['url'], **updates)
+        cover = data.get('cover')
+        if cover and not has_thumbnail(manga_id):
+            cover_url = f'https://danke.moe{cover}' if cover.startswith('/') else cover
+            img_resp = http_requests.get(cover_url, timeout=15)
+            if img_resp.status_code == 200:
+                os.makedirs(THUMBNAILS_DIR, exist_ok=True)
+                with open(thumbnail_path(manga_id), 'wb') as f:
+                    f.write(img_resp.content)
+                db.update_manga_metadata(manga_id, manga['url'], cover_url=cover_url)
+    except Exception as e:
+        print(f'danke meta fetch failed for {manga_id}: {e}')
+
+
 # --- page routes ---
 
 @app.get('/', response_class=FileResponse)
@@ -421,6 +461,8 @@ def api_add_manga(body: AddMangaRequest, background_tasks: BackgroundTasks):
     if 'mangadex' in body.url:
         background_tasks.add_task(fetch_and_save_thumbnail, manga_id)
         background_tasks.add_task(fetch_and_save_titles, manga_id)
+    elif 'danke.moe' in body.url:
+        background_tasks.add_task(fetch_and_save_danke_meta, manga_id)
     return {'id': manga_id, 'url': body.url}
 
 
@@ -528,6 +570,8 @@ def api_update_manga(manga_id: str, body: UpdateMangaRequest, background_tasks: 
         db.update_manga_metadata(manga_id, body.url, source_type=new_source)
         if new_source == 'mangadex' and not has_thumbnail(manga_id):
             background_tasks.add_task(fetch_and_save_thumbnail, manga_id)
+        elif new_source == 'danke':
+            background_tasks.add_task(fetch_and_save_danke_meta, manga_id)
     return {'ok': True, 'ahead': ahead}
 
 

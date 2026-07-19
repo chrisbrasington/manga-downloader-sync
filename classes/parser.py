@@ -36,6 +36,26 @@ def _mangadex_json(url, **kwargs):
             f'(likely a maintenance/error page)')
 
 
+DANKE_BASE = 'https://danke.moe'
+
+
+def _danke_json(url, **kwargs):
+    """GET a danke.moe (guyamoe) JSON endpoint with the same transient-failure
+    semantics as _mangadex_json, so on-demand chapters stay queued through outages."""
+    response = requests.get(url, **kwargs)
+    if response.status_code != 200:
+        raise SourceUnavailable(f'danke.moe returned HTTP {response.status_code} for {url}')
+    try:
+        return response.json()
+    except ValueError:
+        raise SourceUnavailable(f'danke.moe returned a non-JSON response for {url}')
+
+
+def _danke_slug(url):
+    match = re.search(r'danke\.moe/read/manga/([^/?#]+)', url)
+    return match.group(1) if match else None
+
+
 class Manga:
     def __init__(self, data):
         # print(json.dumps(data, indent=4))
@@ -470,7 +490,7 @@ class Utility:
             # overwriting any partial pages) rather than marked permanently errored.
             if response.status_code != 200:
                 raise SourceUnavailable(
-                    f'MangaDex image server returned HTTP {response.status_code} for {url}')
+                    f'image server returned HTTP {response.status_code} for {url}')
             _, file_extension = os.path.splitext(url)
             # pad page number (001 002 ...) so the cbz stays naturally sorted
             path = f"{tmp_chapter}/{str(i).zfill(3)}{file_extension}"
@@ -671,6 +691,9 @@ class Utility:
     # very quick due to lazy-loading of images
     def get_chapters(self, manga):
 
+        if getattr(manga, 'danke_slug', None):
+            return self.get_danke_chapters(manga)
+
         url = f'https://api.mangadex.org/manga/{manga.id}/feed'
         # print(url)
 
@@ -745,7 +768,94 @@ class Utility:
 
         return result # float
     
+    # build a Manga from the guyamoe series API. The object carries danke_slug/danke_data
+    # so get_chapters can build the chapter list without a second fetch, and its id is
+    # Database._extract_id(url) so it always matches the DB row keyed on the same URL.
+    def get_danke_manga(self, source):
+        slug = _danke_slug(source)
+        if not slug:
+            print('failure parsing danke.moe slug')
+            return
+        data = _danke_json(f'{DANKE_BASE}/api/series/{slug}/')
+        if not data.get('chapters'):
+            raise SourceUnavailable(f'danke.moe series {slug} contained no chapter data')
+
+        description = re.sub(r'<[^>]+>', ' ', data.get('description') or '')
+        description = re.sub(r'\s+', ' ', description).strip()
+        manga = Manga({
+            'id': Database._extract_id(source),
+            'attributes': {
+                'title': {'en': data.get('title') or slug},
+                'description': {'en': description},
+                'status': 'ongoing',  # guyamoe doesn't expose a publication status
+                'publicationDemographic': None,
+                'tags': [],
+                'altTitles': [],
+            },
+            'relationships': [],
+        })
+        # author/artist are plain strings on guyamoe, not MangaDex relationship ids —
+        # leave the id-based lookups disarmed so the properties fall back to 'unknown'.
+        manga._author_id = None
+        manga._artist_id = None
+        manga.danke_slug = slug
+        manga.danke_data = data
+        return manga
+
+    # chapter list for a danke/guyamoe manga, shaped exactly like MangaDex chapters
+    # (real Chapter objects, newest first) so build_manifest, the dedup-by-number
+    # manifest matching, and download_single_chapter all work unchanged.
+    def get_danke_chapters(self, manga):
+        slug = manga.danke_slug
+        data = getattr(manga, 'danke_data', None) or _danke_json(f'{DANKE_BASE}/api/series/{slug}/')
+        preferred = [str(g) for g in data.get('preferred_sort') or []]
+
+        chapters = []
+        for key, meta in (data.get('chapters') or {}).items():
+            if not meta.get('is_public', True):
+                continue
+            groups = meta.get('groups') or {}
+            group = next((g for g in preferred if g in groups), None) or next(iter(groups), None)
+            pages = groups.get(group) or []
+            if not pages:
+                continue
+            released = (meta.get('release_date') or {}).get(group)
+            stamp = datetime.datetime.utcfromtimestamp(released).isoformat() if released else None
+            chapter = Chapter({
+                'id': f'danke:{slug}:{key}',
+                'type': 'chapter',
+                'attributes': {
+                    'volume': meta.get('volume'),
+                    'title': meta.get('title'),
+                    'translatedLanguage': 'en',
+                    'externalUrl': None,
+                    'publishAt': stamp,
+                    'readableAt': stamp,
+                    'createdAt': stamp,
+                    'updatedAt': stamp,
+                    'pages': len(pages),
+                    'version': 1,
+                    'chapter': key,
+                },
+                'relationships': [],
+            }, manga)
+            # pre-resolve the page URLs so Chapter.images never consults MangaDex
+            folder = meta.get('folder')
+            chapter._images = [
+                f'{DANKE_BASE}/media/manga/{slug}/chapters/{folder}/{group}/{page}'
+                for page in pages
+            ]
+            chapters.append(chapter)
+
+        ignored_ids = self.load_ignored_chapters()
+        chapters = [c for c in chapters if c.id not in ignored_ids]
+        chapters.sort(key=self.extract_number, reverse=True)
+        return chapters
+
     def get_manga(self, source):
+        if 'danke.moe' in source:
+            return self.get_danke_manga(source)
+
         # extract manga GUID
         pattern = r"/mangadex/(?P<guid>[\w-]+)/?"
         match = re.search(pattern, source)
